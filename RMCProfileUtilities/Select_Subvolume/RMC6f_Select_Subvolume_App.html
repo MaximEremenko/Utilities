@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>RMC6f Reader JavaScript App</title>
+  <style>
+    /* PAGE BACKGROUND */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #f0f0f0 30%, #c8dfec 100%);
+      min-height: 100vh;
+    }
+
+    /* MAIN CONTAINER */
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+      overflow: hidden;
+      padding: 20px 30px;
+    }
+
+    h1, h2 {
+      margin-top: 0;
+    }
+
+    /* FILE INPUT SECTION */
+    .file-input-section {
+      background: #f7f7f9;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+    }
+
+    /* HEADER INFO CARD */
+    .header-info {
+      background: #f7f7f9;
+      padding: 15px;
+      border: 1px solid #cccccc;
+      border-radius: 4px;
+      margin-top: 15px;
+    }
+    .header-info h2 {
+      margin-top: 0;
+    }
+
+    /* SUBVOLUME INPUT */
+    .subvolume-input {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #f2faff;
+      border: 1px solid #eee;
+      border-radius: 4px;
+    }
+    .subvolume-input label {
+      font-weight: 600;
+    }
+
+    input[type="number"] {
+      width: 60px;
+      padding: 4px;
+      margin: 4px 4px 4px 0;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      text-align: center;
+    }
+
+    /* BUTTONS */
+    .btn {
+      display: inline-block;
+      padding: 8px 14px;
+      color: #fff;
+      background: #007bff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px 0;
+      transition: background 0.3s ease;
+    }
+    .btn:hover {
+      background: #0056b3;
+    }
+
+    /* MESSAGES */
+    #messages {
+      margin: 10px 0;
+    }
+    .success-msg {
+      color: #28a745;
+      font-weight: 500;
+    }
+    .error-msg {
+      color: #dc3545;
+      font-weight: 500;
+    }
+
+    /* SUBVOLUMES TABLE */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    thead tr {
+      background: #007bff;
+      color: #fff;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      text-align: center;
+    }
+    tbody tr:nth-child(even) {
+      background: #f9f9f9;
+    }
+
+    /* DOWNLOAD BUTTON IN TABLE */
+    td button {
+      background: #28a745;
+      color: #fff;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    td button:hover {
+      background: #218838;
+    }
+
+    /* MEDIA QUERIES - FOR SMALLER SCREENS */
+    @media (max-width: 600px) {
+      .container {
+        margin: 20px;
+        padding: 10px;
+      }
+      table, th, td {
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>RMC6f Select Subvolume  App</h1>
+
+  <!-- FILE INPUT SECTION -->
+  <div class="file-input-section">
+    <label for="fileInput">Select RMC6f File:</label>
+    <input type="file" id="fileInput" accept=".rmc6f" />
+  </div>
+
+  <!-- BASIC FILE INFO -->
+  <div id="file-info" class="header-info" style="display:none;">
+    <h2>File Loaded</h2>
+    <p><strong>Filename:</strong> <span id="filename"></span></p>
+    <p><strong>Number of Atoms (Original):</strong> <span id="numAtoms"></span></p>
+    <p><strong>Supercell (Original):</strong> <span id="supercell"></span></p>
+    <p><strong>Cell Parameters (a, b, c, α, β, γ):</strong> <span id="cellParams"></span></p>
+  </div>
+
+  <!-- SUBVOLUME INPUTS -->
+  <div class="subvolume-input">
+    <h2>Select Sub-volume</h2>
+    <p>
+      <label>Min cell IDs (x, y, z):</label><br/>
+      <input type="number" id="minX" class="cellIdInput" value="0" />
+      <input type="number" id="minY" class="cellIdInput" value="0" />
+      <input type="number" id="minZ" class="cellIdInput" value="0" />
+    </p>
+    <p>
+      <label>Max cell IDs (x, y, z):</label><br/>
+      <input type="number" id="maxX" class="cellIdInput" value="0" />
+      <input type="number" id="maxY" class="cellIdInput" value="0" />
+      <input type="number" id="maxZ" class="cellIdInput" value="0" />
+    </p>
+    <button id="subvolumeBtn" class="btn">Select Sub-volume</button>
+  </div>
+
+  <!-- MESSAGES -->
+  <div id="messages"></div>
+
+  <!-- LIST OF SUBVOLUMES -->
+  <h2>Subvolumes</h2>
+  <table id="subvolumeTable" style="display:none;">
+    <thead>
+      <tr>
+        <th>Subvolume #</th>
+        <th>Min Cell IDs</th>
+        <th>Max Cell IDs</th>
+        <th>Atoms Found</th>
+        <th>Download</th>
+      </tr>
+    </thead>
+    <tbody id="subvolumeBody"></tbody>
+  </table>
+</div>
+
+<script>
+/* --------------------- */
+/*    RMC6fReaderJS      */
+/* --------------------- */
+class RMC6fReaderJS {
+  constructor() {
+    this.headerLines = [];
+    this.dataRows = [];
+    this.skipRows = 0;
+    this.supercell = [1, 1, 1];
+    this.cellParam = [NaN, NaN, NaN, NaN, NaN, NaN];
+    this.numCols = 0;
+    this.colNames = [];
+  }
+
+  parseFile(fileContent) {
+    const lines = fileContent.split(/\r?\n/);
+    const cleanLines = lines.map(line => line.replace(/\x00/g, ''));
+    this.skipRows = this.findHeaderLine(cleanLines);
+
+    for (let i = 0; i < this.skipRows; i++) {
+      this.headerLines.push(cleanLines[i]);
+    }
+    const dataLines = cleanLines.slice(this.skipRows);
+    this.dataRows = this.parseData(dataLines);
+
+    this.getNumCells();
+    this.getVectors();
+  }
+
+  findHeaderLine(lines) {
+    for (let i = 0; i < Math.min(lines.length, 151); i++) {
+      if (lines[i].includes("Atoms:")) {
+        return i + 1;
+      }
+    }
+    console.warn('"Atoms:" not found within the first 151 lines. Defaulting skiprows to 0.');
+    return 0;
+  }
+
+  parseData(dataLines) {
+    const rows = [];
+    for (let i = 0; i < dataLines.length; i++) {
+      const line = dataLines[i].trim();
+      if (!line) continue;
+
+      const parts = line.split(/\s+/);
+      if (this.numCols === 0) {
+        this.numCols = parts.length;
+        if (this.numCols === 10) {
+          this.colNames = [
+            'atomNumber', 'element', 'id', 'x', 'y', 'z',
+            'refNumber', 'cellRefNumX', 'cellRefNumY', 'cellRefNumZ'
+          ];
+        } else if (this.numCols === 9) {
+          this.colNames = [
+            'atomNumber', 'element', 'x', 'y', 'z',
+            'refNumber', 'cellRefNumX', 'cellRefNumY', 'cellRefNumZ'
+          ];
+        } else {
+          alert("Warning: Unsupported RMC6f format (neither 9 nor 10 columns).");
+        }
+      }
+
+      const rowObj = {};
+      for (let j = 0; j < this.numCols; j++) {
+        const colName = this.colNames[j] || ('col' + j);
+        if (['x','y','z','atomNumber','refNumber','cellRefNumX','cellRefNumY','cellRefNumZ'].includes(colName)) {
+          rowObj[colName] = parseFloat(parts[j]);
+        } else {
+          rowObj[colName] = isNaN(parseFloat(parts[j])) ? parts[j] : parseFloat(parts[j]);
+        }
+      }
+      rows.push(rowObj);
+    }
+    return rows;
+  }
+
+  getNumCells() {
+    const searchKey = "Supercell";
+    const line = this.headerLines.find(l => l.includes(searchKey));
+    if (line) {
+      const found = line.split(/\s+/).filter(part => /^\d+$/.test(part));
+      if (found.length >= 3) {
+        this.supercell = found.slice(0, 3).map(val => parseInt(val, 10));
+      } else {
+        console.warn("Supercell info incomplete; defaulting to [1,1,1].");
+      }
+    } else {
+      console.warn("Supercell not found; defaulting to [1,1,1].");
+    }
+  }
+
+  getVectors() {
+    const searchKey = "Cell (Ang/deg):";
+    const line = this.headerLines.find(l => l.includes(searchKey));
+    if (line) {
+      const parts = line.split(/\s+/).filter(str => !isNaN(parseFloat(str)));
+      if (parts.length >= 6) {
+        this.cellParam = parts.slice(0,6).map(parseFloat);
+        // Convert alpha, beta, gamma to radians
+        this.cellParam[3] = (Math.PI/180)*this.cellParam[3];
+        this.cellParam[4] = (Math.PI/180)*this.cellParam[4];
+        this.cellParam[5] = (Math.PI/180)*this.cellParam[5];
+      } else {
+        console.warn("Incomplete cell parameters; defaulting to [1,1,1,90,90,90].");
+        this.cellParam = [1,1,1,Math.PI/2,Math.PI/2,Math.PI/2];
+      }
+    } else {
+      console.warn("Cell (Ang/deg) not found in header.");
+      this.cellParam = [NaN, NaN, NaN, NaN, NaN, NaN];
+    }
+  }
+
+  selectSubvolume(minCellIds, maxCellIds) {
+    const [minX, minY, minZ] = minCellIds;
+    const [maxX, maxY, maxZ] = maxCellIds;
+
+    // Filter from the original data
+    const subRows = this.dataRows.filter(row => {
+      return (row.cellRefNumX >= minX && row.cellRefNumX <= maxX) &&
+             (row.cellRefNumY >= minY && row.cellRefNumY <= maxY) &&
+             (row.cellRefNumZ >= minZ && row.cellRefNumZ <= maxZ);
+    });
+
+    if (subRows.length === 0) {
+      throw new Error("No atoms found in the specified sub-volume.");
+    }
+
+    const newSupercell = [
+      maxX - minX + 1,
+      maxY - minY + 1,
+      maxZ - minZ + 1
+    ];
+
+    const oldSupercell = this.supercell;
+    const fractionalShift = [
+      minX / oldSupercell[0],
+      minY / oldSupercell[1],
+      minZ / oldSupercell[2]
+    ];
+
+    // Renormalize fractional coords
+    subRows.forEach((row) => {
+      const fracX = (row.x - fractionalShift[0]) * (oldSupercell[0] / newSupercell[0]);
+      const fracY = (row.y - fractionalShift[1]) * (oldSupercell[1] / newSupercell[1]);
+      const fracZ = (row.z - fractionalShift[2]) * (oldSupercell[2] / newSupercell[2]);
+
+      row.x = this.wrapFrac(fracX);
+      row.y = this.wrapFrac(fracY);
+      row.z = this.wrapFrac(fracZ);
+
+      row.cellRefNumX -= minX;
+      row.cellRefNumY -= minY;
+      row.cellRefNumZ -= minZ;
+    });
+
+    // Re-index atomNumber
+    subRows.forEach((row, idx) => {
+      row.atomNumber = idx + 1;
+    });
+
+    // Build new vectors
+    const [a, b, c, alpha, beta, gamma] = this.cellParam;
+    const fx = newSupercell[0] / oldSupercell[0];
+    const fy = newSupercell[1] / oldSupercell[1];
+    const fz = newSupercell[2] / oldSupercell[2];
+
+    const newA = a * fx;
+    const newB = b * fy;
+    const newC = c * fz;
+    const cutVectors = this.cell2vec(newA, newB, newC, alpha, beta, gamma);
+
+    // Build new header
+    const cutHeaderLines = [...this.headerLines];
+    this.updateCutHeader(cutHeaderLines, newSupercell, cutVectors);
+
+    // Combine into final content
+    const subvolumeContent = this.generateFileContent(
+      cutHeaderLines, subRows, cutVectors
+    );
+
+    return {
+      cutHeaderLines,
+      cutDataRows: subRows,
+      subvolumeContent,
+      countAtoms: subRows.length
+    };
+  }
+
+  wrapFrac(v) {
+    let val = v;
+    while (val < 0) val += 1.0;
+    while (val >= 1) val -= 1.0;
+    return val;
+  }
+
+  cell2vec(a, b, c, alpha, beta, gamma) {
+    const vectors = [
+      [0,0,0],
+      [0,0,0],
+      [0,0,0]
+    ];
+
+    vectors[0][0] = a;
+    vectors[0][1] = b * Math.cos(gamma);
+    vectors[0][2] = c * Math.cos(beta);
+
+    vectors[1][0] = 0;
+    vectors[1][1] = b * Math.sin(gamma);
+    vectors[1][2] = ( c * (Math.cos(alpha) - Math.cos(beta)*Math.cos(gamma)) ) / Math.sin(gamma);
+
+    vectors[2][0] = 0;
+    vectors[2][1] = 0;
+    const temp = c*c - vectors[0][2]*vectors[0][2] - vectors[1][2]*vectors[1][2];
+    vectors[2][2] = (temp > 0) ? Math.sqrt(temp) : 0;
+    return this.transpose(vectors);
+  }
+
+  transpose(matrix) {
+    const rows = matrix.length;
+    const cols = matrix[0].length;
+    const result = Array.from({length: cols}, () => Array(rows).fill(0));
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        result[c][r] = matrix[r][c];
+      }
+    }
+    return result;
+  }
+
+  updateCutHeader(cutHeaderLines, newSupercell, cutVectors) {
+    this.replaceOrAppendLine(cutHeaderLines, "Supercell", () => {
+      return `Supercell                              ${newSupercell.join(" ")}`;
+    });
+
+    const [a, b, c, alpha, beta, gamma] = this.cellParam;
+    const fx = newSupercell[0]/this.supercell[0];
+    const fy = newSupercell[1]/this.supercell[1];
+    const fz = newSupercell[2]/this.supercell[2];
+    const newA = a*fx;
+    const newB = b*fy;
+    const newC = c*fz;
+    const degAlpha = alpha*180/Math.PI;
+    const degBeta  = beta*180/Math.PI;
+    const degGamma = gamma*180/Math.PI;
+    const cellLine = [
+      newA.toFixed(6),
+      newB.toFixed(6),
+      newC.toFixed(6),
+      degAlpha.toFixed(6),
+      degBeta.toFixed(6),
+      degGamma.toFixed(6)
+    ].join("   ");
+    this.replaceOrAppendLine(cutHeaderLines, "Cell (Ang/deg):", () => {
+      return `Cell (Ang/deg):                       ${cellLine}`;
+    });
+
+    const searchKey = "Lattice vectors (Ang):";
+    let idx = cutHeaderLines.findIndex(l => l.includes(searchKey));
+    if (idx >= 0) {
+      for (let i = 0; i < 3; i++) {
+        const vecRow = cutVectors[i].map(x => x.toFixed(6)).join("    ");
+        if (cutHeaderLines[idx + 1 + i] !== undefined) {
+          cutHeaderLines[idx + 1 + i] = vecRow;
+        } else {
+          cutHeaderLines.push(vecRow);
+        }
+      }
+    } else {
+      cutHeaderLines.push(searchKey);
+      for (let i = 0; i < 3; i++) {
+        const vecRow = cutVectors[i].map(x => x.toFixed(6)).join("    ");
+        cutHeaderLines.push(vecRow);
+      }
+    }
+
+    const moveKeys = [
+      "Number of moves generated:",
+      "Number of moves tried:",
+      "Number of moves accepted:",
+      "Accumulated time (s) in running loop:"
+    ];
+    moveKeys.forEach(key => {
+      this.replaceOrAppendLine(cutHeaderLines, key, () => {
+        return `${key}                   0`;
+      });
+    });
+  }
+
+  replaceOrAppendLine(linesArr, searchKey, lineGenerator) {
+    const idx = linesArr.findIndex(l => l.includes(searchKey));
+    if (idx >= 0) {
+      linesArr[idx] = lineGenerator(linesArr[idx]);
+    } else {
+      linesArr.push(lineGenerator(""));
+    }
+  }
+
+  generateFileContent(cutHeaderLines, subRows, cutVectors) {
+    const atomCounts = {};
+    subRows.forEach(r => {
+      const elem = r.element;
+      atomCounts[elem] = (atomCounts[elem] || 0) + 1;
+    });
+    const originalAtomTypes = this.getAtomTypes();
+    let countsStr = "";
+    if (originalAtomTypes.length) {
+      const arr = originalAtomTypes.map(e => atomCounts[e] || 0);
+      countsStr = arr.join(" ");
+    } else {
+      countsStr = Object.keys(atomCounts).map(e => atomCounts[e]).join(" ");
+    }
+    this.replaceOrAppendLine(cutHeaderLines, "Number of each atom type:", () => {
+      return `Number of each atom type:             ${countsStr}`;
+    });
+
+    const totalAtoms = subRows.length;
+    this.replaceOrAppendLine(cutHeaderLines, "Number of atoms:", () => {
+      return `Number of atoms:                       ${totalAtoms}`;
+    });
+
+    const volume = Math.abs(this.determinant3x3(cutVectors));
+    const density = totalAtoms / volume;
+    this.replaceOrAppendLine(cutHeaderLines, "Number density (Ang^-3):", () => {
+      return `Number density (Ang^-3):              ${density.toFixed(6)}`;
+    });
+
+    let lines = [...cutHeaderLines];
+
+    subRows.forEach(row => {
+      let lineParts = [];
+      for (let i = 0; i < this.numCols; i++) {
+        const colName = this.colNames[i];
+        const val = row[colName];
+        lineParts.push(typeof val === "number" ? val.toString() : val);
+      }
+      lines.push(lineParts.join(" "));
+    });
+
+    return lines.join("\n");
+  }
+
+  getAtomTypes() {
+    const searchKey = "Atom types present:";
+    const line = this.headerLines.find(l => l.includes(searchKey));
+    if (line) {
+      const stripped = line.replace(searchKey, "").trim();
+      return stripped.split(/\s+/).filter(Boolean);
+    }
+    return [];
+  }
+
+  determinant3x3(m) {
+    return (
+      m[0][0]*(m[1][1]*m[2][2] - m[1][2]*m[2][1]) -
+      m[0][1]*(m[1][0]*m[2][2] - m[1][2]*m[2][0]) +
+      m[0][2]*(m[1][0]*m[2][1] - m[1][1]*m[2][0])
+    );
+  }
+}
+
+/* --------------------- */
+/*     Global Logic      */
+/* --------------------- */
+let rmc6f = null;
+let loadedFilename = "";
+let subvolumeIndex = 0;
+const subvolumeList = [];
+
+const fileInfoDiv = document.getElementById("file-info");
+const fileNameSpan = document.getElementById("filename");
+const numAtomsSpan = document.getElementById("numAtoms");
+const supercellSpan = document.getElementById("supercell");
+const cellParamsSpan = document.getElementById("cellParams");
+const messagesDiv = document.getElementById("messages");
+const subvolumeTable = document.getElementById("subvolumeTable");
+const subvolumeBody = document.getElementById("subvolumeBody");
+
+// AFTER file parse, we can set the <input> min/max based on supercell dimensions
+function setNumberInputLimits(sx, sy, sz) {
+  // For each coordinate axis, set the HTML min="0" max="(supercell - 1)"
+  document.getElementById("minX").min = 0;
+  document.getElementById("minX").max = sx - 1;
+  document.getElementById("maxX").min = 0;
+  document.getElementById("maxX").max = sx - 1;
+
+  document.getElementById("minY").min = 0;
+  document.getElementById("minY").max = sy - 1;
+  document.getElementById("maxY").min = 0;
+  document.getElementById("maxY").max = sy - 1;
+
+  document.getElementById("minZ").min = 0;
+  document.getElementById("minZ").max = sz - 1;
+  document.getElementById("maxZ").min = 0;
+  document.getElementById("maxZ").max = sz - 1;
+}
+
+/**
+ * This function clamps the typed values in real-time.
+ * Ensures:
+ * 1) each field >= 0
+ * 2) each field <= supercell[i] - 1
+ * 3) min <= max
+ */
+function syncMinMaxInputs() {
+  if (!rmc6f) return; // If no file loaded, do nothing
+
+  // Grab supercell from rmc6f
+  const [sx, sy, sz] = rmc6f.supercell;
+
+  // Get references
+  const minXInput = document.getElementById("minX");
+  const minYInput = document.getElementById("minY");
+  const minZInput = document.getElementById("minZ");
+  const maxXInput = document.getElementById("maxX");
+  const maxYInput = document.getElementById("maxY");
+  const maxZInput = document.getElementById("maxZ");
+
+  // Convert them to numbers (or default 0)
+  let minX = parseInt(minXInput.value) || 0;
+  let minY = parseInt(minYInput.value) || 0;
+  let minZ = parseInt(minZInput.value) || 0;
+  let maxX = parseInt(maxXInput.value) || 0;
+  let maxY = parseInt(maxYInput.value) || 0;
+  let maxZ = parseInt(maxZInput.value) || 0;
+
+  // 1) clamp each to [0, supercell - 1]
+  minX = Math.min(Math.max(0, minX), sx - 1);
+  minY = Math.min(Math.max(0, minY), sy - 1);
+  minZ = Math.min(Math.max(0, minZ), sz - 1);
+
+  maxX = Math.min(Math.max(0, maxX), sx - 1);
+  maxY = Math.min(Math.max(0, maxY), sy - 1);
+  maxZ = Math.min(Math.max(0, maxZ), sz - 1);
+
+  // 2) Force min <= max for each axis
+  if (minX > maxX) maxX = minX;
+  if (minY > maxY) maxY = minY;
+  if (minZ > maxZ) maxZ = minZ;
+
+  // Update the DOM so user sees the corrected values
+  minXInput.value = minX;
+  minYInput.value = minY;
+  minZInput.value = minZ;
+  maxXInput.value = maxX;
+  maxYInput.value = maxY;
+  maxZInput.value = maxZ;
+}
+
+// Attach "input" listener to each cell ID field so changes reflect in real-time
+document.querySelectorAll(".cellIdInput").forEach(inputEl => {
+  inputEl.addEventListener("input", syncMinMaxInputs);
+});
+
+// File input event: read the file, parse, then set number input limits
+document.getElementById("fileInput").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  loadedFilename = file.name;
+  const text = await file.text();
+
+  try {
+    rmc6f = new RMC6fReaderJS();
+    rmc6f.parseFile(text);
+
+    fileNameSpan.textContent = loadedFilename;
+    numAtomsSpan.textContent = rmc6f.dataRows.length;
+    supercellSpan.textContent = rmc6f.supercell.join(" x ");
+    if (rmc6f.cellParam.length === 6) {
+      const [a, b, c, alpha, beta, gamma] = rmc6f.cellParam;
+      cellParamsSpan.textContent =
+        `a=${a.toFixed(3)}, b=${b.toFixed(3)}, c=${c.toFixed(3)}, ` +
+        `α=${(alpha*180/Math.PI).toFixed(2)}, ` +
+        `β=${(beta*180/Math.PI).toFixed(2)}, ` +
+        `γ=${(gamma*180/Math.PI).toFixed(2)}`;
+    }
+
+    // Show file info block
+    fileInfoDiv.style.display = "block";
+    messagesDiv.innerHTML = "";
+    subvolumeList.length = 0;
+    subvolumeBody.innerHTML = "";
+    subvolumeTable.style.display = "none";
+
+    // Dynamically set the <input> min/max based on the supercell
+    const [sx, sy, sz] = rmc6f.supercell;
+    setNumberInputLimits(sx, sy, sz);
+
+    // Also do an immediate sync so the fields clamp if needed
+    syncMinMaxInputs();
+  } catch (err) {
+    alert("Error parsing RMC6f file: " + err.message);
+  }
+});
+
+// Handle subvolume creation
+document.getElementById("subvolumeBtn").addEventListener("click", () => {
+  if (!rmc6f || rmc6f.dataRows.length === 0) {
+    alert("No RMC6f data loaded yet.");
+    return;
+  }
+
+  // Ensure we do a final sync of min/max inputs
+  syncMinMaxInputs();
+
+  // Now read them
+  const minX = parseInt(document.getElementById("minX").value);
+  const minY = parseInt(document.getElementById("minY").value);
+  const minZ = parseInt(document.getElementById("minZ").value);
+  const maxX = parseInt(document.getElementById("maxX").value);
+  const maxY = parseInt(document.getElementById("maxY").value);
+  const maxZ = parseInt(document.getElementById("maxZ").value);
+
+  try {
+    const result = rmc6f.selectSubvolume([minX, minY, minZ],[maxX, maxY, maxZ]);
+    subvolumeIndex++;
+
+    subvolumeList.push({
+      index: subvolumeIndex,
+      minCell: [minX, minY, minZ],
+      maxCell: [maxX, maxY, maxZ],
+      countAtoms: result.countAtoms,
+      content: result.subvolumeContent
+    });
+
+    addSubvolumeRow(
+      subvolumeIndex,
+      [minX, minY, minZ],
+      [maxX, maxY, maxZ],
+      result.countAtoms
+    );
+
+    messagesDiv.innerHTML = `<p class="success-msg">
+      Sub-volume #${subvolumeIndex} created. Found ${result.countAtoms} atoms.
+    </p>`;
+
+    subvolumeTable.style.display = "";
+  } catch (err) {
+    messagesDiv.innerHTML = `<p class="error-msg">${err.message}</p>`;
+  }
+});
+
+function addSubvolumeRow(idx, minCell, maxCell, countAtoms) {
+  const tr = document.createElement("tr");
+
+  const tdIndex = document.createElement("td");
+  tdIndex.textContent = idx;
+  tr.appendChild(tdIndex);
+
+  const tdMin = document.createElement("td");
+  tdMin.textContent = minCell.join(",");
+  tr.appendChild(tdMin);
+
+  const tdMax = document.createElement("td");
+  tdMax.textContent = maxCell.join(",");
+  tr.appendChild(tdMax);
+
+  const tdCount = document.createElement("td");
+  tdCount.textContent = countAtoms;
+  tr.appendChild(tdCount);
+
+  const tdDownload = document.createElement("td");
+  const downloadBtn = document.createElement("button");
+  downloadBtn.textContent = "Download";
+  downloadBtn.addEventListener("click", () => {
+    downloadSubvolume(idx);
+  });
+  tdDownload.appendChild(downloadBtn);
+  tr.appendChild(tdDownload);
+
+  subvolumeBody.appendChild(tr);
+}
+
+function downloadSubvolume(idx) {
+  const subv = subvolumeList.find(sv => sv.index === idx);
+  if (!subv) {
+    alert("Subvolume not found.");
+    return;
+  }
+  const blob = new Blob([subv.content], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `subvolume_${idx}.rmc6f`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+</script>
+
+</body>
+</html>
