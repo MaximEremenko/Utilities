@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RMC6f Analysis, PCA Stats & 3D KDE Isosurface with 2D Projections</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* Base Styles */
+    body {
+      margin: 0;
+      padding: 10px;
+      font-family: 'Roboto', sans-serif;
+      background: #f9f9f9;
+      color: #333;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 20px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      box-sizing: border-box;
+    }
+    h1 {
+      text-align: center;
+      color: #2c3e50;
+      margin: 10px 0;
+    }
+    /* Main Layout */
+    .main-content {
+      display: flex;
+      gap: 20px;
+    }
+    .left-panels {
+      width: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .right-panel {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* Panels */
+    .panel {
+      background: #f0f8ff;
+      border: 1px solid #3498db;
+      border-radius: 5px;
+      padding: 10px;
+      box-sizing: border-box;
+      font-family: monospace;
+    }
+    .file-info { 
+      height: 180px; 
+      overflow-y: auto; 
+    }
+    .file-info p { margin: 5px 0; line-height: 1.2; }
+    .ref-selector { 
+      height: 60px; 
+      display: flex; 
+      align-items: center; 
+      gap: 10px; 
+    }
+    .ref-selector label { white-space: nowrap; }
+    .pca-results { 
+      height: 350px; 
+      overflow-y: auto; 
+    }
+    /* Plot Container */
+    #plotContainer {
+      width: 100%;
+      max-width: 1200px;
+      height: 800px;
+    }
+    #plot {
+      width: 100%;
+      height: 100%;
+    }
+    /* Form Controls */
+    select, button {
+      padding: 6px 10px;
+      font-size: 0.9rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      outline: none;
+      transition: border 0.2s;
+    }
+    select:focus, button:focus { border-color: #3498db; }
+    button {
+      background: #3498db;
+      color: #fff;
+      cursor: pointer;
+      border: none;
+    }
+    button:hover { background: #2980b9; }
+    /* Table Styles */
+    table.matrix {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+    }
+    table.matrix th,
+    table.matrix td {
+      border: 1px solid #ccc;
+      padding: 2px 4px;
+      text-align: center;
+      font-family: monospace;
+    }
+    /* Notifications */
+    #messages p {
+      padding: 6px;
+      border-radius: 4px;
+      margin: 5px 0;
+      font-weight: 500;
+      font-family: sans-serif;
+    }
+    .success-msg {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .error-msg {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    /* Responsive */
+    @media (max-width: 768px) {
+      .main-content { flex-direction: column; }
+      .left-panels { width: 100%; }
+      #plotContainer { max-width: 100%; height: 500px; }
+    }
+  </style>
+  <!-- Plotly -->
+  <script src="https://cdn.plot.ly/plotly-2.16.1.min.js"></script>
+  <!-- Numeric.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
+  <!-- KDE.js -->
+  <script src="KDE.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>RMC6f Analysis, PCA Stats & 3D KDE Isosurface</h1>
+    
+    <!-- File Drag & Drop Zone -->
+    <div id="dropZone" class="file-drop-zone" style="border:2px dashed #3498db; background:#ecf0f1; padding:20px; text-align:center; cursor:pointer; border-radius:8px;">
+      <p>Drag & Drop your RMC6f file here or click to select.</p>
+      <input type="file" id="fileInput" accept=".rmc6f" style="display:none;">
+    </div>
+    
+    <div class="main-content">
+      <!-- Left Panels -->
+      <div class="left-panels">
+        <div id="file-info" class="panel file-info" style="display:none;">
+          <h2>File Loaded</h2>
+          <p><strong>Filename (Original):</strong> <span id="filename"></span></p>
+          <p><strong>Number of Atoms (Original):</strong> <span id="numAtoms"></span></p>
+          <p><strong>Supercell (Original):</strong> <span id="supercell"></span></p>
+          <p><strong>Cell Parameters (a, b, c, α, β, γ):</strong> <span id="cellParams"></span></p>
+        </div>
+        <div id="refSelector" class="panel ref-selector" style="display:none;">
+          <label for="refDropdown"><strong>Select Reference Number (Element):</strong></label>
+          <select id="refDropdown"></select>
+          <button id="analyzeBtn">Analyze</button>
+        </div>
+        <div id="pcaResults" class="panel pca-results" style="display:none;"></div>
+        <div id="messages"></div>
+      </div>
+      
+      <!-- Right Panel: Plot -->
+      <div class="right-panel">
+        <div id="plotContainer" style="display:none;">
+          <div id="plot"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Helper: 2D Gaussian KDE with optional limits.
+    function compute2DKDE(data, key1, key2, limits) {
+      const xs = data.map(d => d[key1]);
+      const ys = data.map(d => d[key2]);
+      const n = xs.length;
+      
+      // Use provided limits if available
+      const minX = limits && limits.minX !== undefined ? limits.minX : Math.min(...xs);
+      const maxX = limits && limits.maxX !== undefined ? limits.maxX : Math.max(...xs);
+      const minY = limits && limits.minY !== undefined ? limits.minY : Math.min(...ys);
+      const maxY = limits && limits.maxY !== undefined ? limits.maxY : Math.max(...ys);
+      
+      // Set margin to zero if limits are provided, otherwise compute a 10% margin
+      const marginX = limits ? 0 : (maxX - minX) * 0.1;
+      const marginY = limits ? 0 : (maxY - minY) * 0.1;
+      
+      const gridDim = 50;
+      const gridX = [];
+      const gridY = [];
+      const stepX = (maxX - minX + 2 * marginX) / (gridDim - 1);
+      const stepY = (maxY - minY + 2 * marginY) / (gridDim - 1);
+      for (let i = 0; i < gridDim; i++) {
+        gridX.push(minX - marginX + i * stepX);
+        gridY.push(minY - marginY + i * stepY);
+      }
+      
+      const density = [];
+      const factor = 1 / (2 * Math.PI * stepX * stepY * n);
+      for (let i = 0; i < gridDim; i++) {
+        density[i] = [];
+        for (let j = 0; j < gridDim; j++) {
+          let sum = 0;
+          const xVal = gridX[j];
+          const yVal = gridY[i];
+          for (let k = 0; k < n; k++) {
+            const u = (xs[k] - xVal) / stepX;
+            const v = (ys[k] - yVal) / stepY;
+            sum += Math.exp(-0.5 * (u * u + v * v));
+          }
+          density[i][j] = factor * sum;
+        }
+      }
+      return { x: gridX, y: gridY, z: density };
+    }
+
+    // Helper: Create a meshgrid from two 1D arrays.
+    function meshgrid(x, y) {
+      const X = [];
+      const Y = [];
+      for (let i = 0; i < y.length; i++) {
+        const rowX = [];
+        const rowY = [];
+        for (let j = 0; j < x.length; j++) {
+          rowX.push(x[j]);
+          rowY.push(y[i]);
+        }
+        X.push(rowX);
+        Y.push(rowY);
+      }
+      return { X, Y };
+    }
+
+    // RMC6fReaderJS class and file handling
+    document.addEventListener("DOMContentLoaded", function() {
+      class RMC6fReaderJS {
+        constructor() {
+          this.headerLines = [];
+          this.dataRows = [];
+          this.skipRows = 0;
+          this.supercell = [1, 1, 1];
+          this.cellParam = [NaN, NaN, NaN, NaN, NaN, NaN];
+          this.numCols = 0;
+          this.colNames = [];
+        }
+        parseFile(fileContent) {
+          const lines = fileContent.split(/\r?\n/).map(line => line.replace(/\x00/g, ''));
+          this.skipRows = this.findHeaderLine(lines);
+          this.headerLines = lines.slice(0, this.skipRows);
+          const dataLines = lines.slice(this.skipRows);
+          this.dataRows = this.parseData(dataLines);
+          this.getNumCells();
+          this.getVectors();
+        }
+        findHeaderLine(lines) {
+          for (let i = 0; i < Math.min(lines.length, 151); i++) {
+            if (lines[i].includes("Atoms:")) return i + 1;
+          }
+          console.warn('"Atoms:" not found. Defaulting skiprows to 0.');
+          return 0;
+        }
+        parseData(dataLines) {
+          const rows = [];
+          dataLines.forEach(line => {
+            if (!line.trim()) return;
+            const parts = line.trim().split(/\s+/);
+            if (!this.numCols) {
+              this.numCols = parts.length;
+              if (this.numCols === 10) {
+                this.colNames = ['atomNumber','element','id','x','y','z','refNumber','cellRefNumX','cellRefNumY','cellRefNumZ'];
+              } else if (this.numCols === 9) {
+                this.colNames = ['atomNumber','element','x','y','z','refNumber','cellRefNumX','cellRefNumY','cellRefNumZ'];
+              } else {
+                this.showNotification("Warning: Unsupported RMC6f format.", "error");
+              }
+            }
+            const rowObj = {};
+            for (let j = 0; j < this.numCols; j++) {
+              const key = this.colNames[j] || ('col' + j);
+              rowObj[key] = ['x','y','z','atomNumber','refNumber','cellRefNumX','cellRefNumY','cellRefNumZ'].includes(key)
+                ? parseFloat(parts[j])
+                : (isNaN(parseFloat(parts[j])) ? parts[j] : parseFloat(parts[j]));
+            }
+            rows.push(rowObj);
+          });
+          return rows;
+        }
+        getNumCells() {
+          const line = this.headerLines.find(l => l.includes("Supercell"));
+          if (line) {
+            const nums = line.split(/\s+/).filter(part => /^\d+$/.test(part));
+            if (nums.length >= 3) this.supercell = nums.slice(0, 3).map(Number);
+            else console.warn("Incomplete supercell info; defaulting to [1,1,1].");
+          } else console.warn("Supercell not found; defaulting to [1,1,1].");
+        }
+        getVectors() {
+          const line = this.headerLines.find(l => l.includes("Cell (Ang/deg):"));
+          if (line) {
+            const parts = line.split(/\s+/).filter(str => !isNaN(parseFloat(str)));
+            if (parts.length >= 6) {
+              this.cellParam = parts.slice(0,6).map(parseFloat);
+              this.cellParam[3] *= Math.PI/180;
+              this.cellParam[4] *= Math.PI/180;
+              this.cellParam[5] *= Math.PI/180;
+            } else {
+              console.warn("Incomplete cell parameters.");
+              this.cellParam = [1,1,1,Math.PI/2,Math.PI/2,Math.PI/2];
+            }
+          } else {
+            console.warn("Cell parameters not found.");
+            this.cellParam = [NaN, NaN, NaN, NaN, NaN, NaN];
+          }
+        }
+        cell2vec(a, b, c, alpha, beta, gamma) {
+          return [
+            [a, 0, 0],
+            [b * Math.cos(gamma), b * Math.sin(gamma), 0],
+            [
+              c * Math.cos(beta),
+              c * (Math.cos(alpha) - Math.cos(beta)*Math.cos(gamma)) / Math.sin(gamma),
+              Math.sqrt(c*c - Math.pow(c * Math.cos(beta),2) - Math.pow(c * (Math.cos(alpha)-Math.cos(beta)*Math.cos(gamma))/Math.sin(gamma),2))
+            ]
+          ];
+        }
+        showNotification(message, type) {
+          console.log(message);
+        }
+      }
+      
+      /*********************************
+       * Global Variables & Elements *
+       *********************************/
+      let rmc6f = null;
+      let loadedFilename = "";
+      const messagesDiv = document.getElementById("messages");
+      const fileInfoDiv = document.getElementById("file-info");
+      const filenameSpan = document.getElementById("filename");
+      const numAtomsSpan = document.getElementById("numAtoms");
+      const supercellSpan = document.getElementById("supercell");
+      const cellParamsSpan = document.getElementById("cellParams");
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("fileInput");
+      const refSelectorDiv = document.getElementById("refSelector");
+      const refDropdown = document.getElementById("refDropdown");
+      const analyzeBtn = document.getElementById("analyzeBtn");
+      const pcaResultsDiv = document.getElementById("pcaResults");
+      const plotContainer = document.getElementById("plotContainer");
+      
+      function showNotification(message, type = "success") {
+        messagesDiv.innerHTML = `<p class="${type === "success" ? "success-msg" : "error-msg"}">${message}</p>`;
+      }
+      
+      /*************************************
+       * File Drag/Drop & Loading Process *
+       *************************************/
+      dropZone.addEventListener("click", () => fileInput.click());
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("hover");
+      });
+      dropZone.addEventListener("dragleave", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("hover");
+      });
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("hover");
+        const file = e.dataTransfer.files[0];
+        if (file) { fileInput.files = e.dataTransfer.files; loadFile(file); }
+      });
+      fileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (file) loadFile(file);
+      });
+      
+      function loadFile(file) {
+        loadedFilename = file.name;
+        file.text().then(text => {
+          try {
+            rmc6f = new RMC6fReaderJS();
+            rmc6f.showNotification = showNotification;
+            rmc6f.parseFile(text);
+            filenameSpan.textContent = loadedFilename;
+            numAtomsSpan.textContent = rmc6f.dataRows.length;
+            supercellSpan.textContent = rmc6f.supercell.join(" x ");
+            if (rmc6f.cellParam.length === 6) {
+              const [a, b, c, alpha, beta, gamma] = rmc6f.cellParam;
+              cellParamsSpan.textContent =
+                `a=${a.toFixed(3)}, b=${b.toFixed(3)}, c=${c.toFixed(3)}, ` +
+                `α=${(alpha*180/Math.PI).toFixed(2)}, β=${(beta*180/Math.PI).toFixed(2)}, γ=${(gamma*180/Math.PI).toFixed(2)}`;
+            }
+            fileInfoDiv.style.display = "block";
+            showNotification("File loaded successfully.", "success");
+            populateRefDropdown();
+          } catch (err) {
+            showNotification("Error parsing file: " + err.message, "error");
+          }
+        }).catch(err => {
+          showNotification("Error reading file: " + err.message, "error");
+        });
+      }
+      
+      // Populate Reference Dropdown
+      function populateRefDropdown() {
+        const refMap = new Map();
+        rmc6f.dataRows.forEach(row => {
+          if (!refMap.has(row.refNumber)) {
+            refMap.set(row.refNumber, row.element || "Unknown");
+          }
+        });
+        refDropdown.innerHTML = "";
+        refMap.forEach((element, ref) => {
+          const option = document.createElement("option");
+          option.value = ref;
+          option.textContent = `${ref} (${element})`;
+          refDropdown.appendChild(option);
+        });
+        refSelectorDiv.style.display = "block";
+      }
+      
+      // Compute delta displacements and center them
+      function computeDeltaDisplacements(dataRows, ncells) {
+        const deltas = dataRows.map(row => {
+          let dx = row.x - (row.cellRefNumX / ncells[0]);
+          let dy = row.y - (row.cellRefNumY / ncells[1]);
+          let dz = row.z - (row.cellRefNumZ / ncells[2]);
+          if (dx < -0.5) dx += 1; else if (dx > 0.5) dx -= 1;
+          if (dy < -0.5) dy += 1; else if (dy > 0.5) dy -= 1;
+          if (dz < -0.5) dz += 1; else if (dz > 0.5) dz -= 1;
+          return { dx, dy, dz, refNumber: row.refNumber };
+        });
+        const groups = {};
+        deltas.forEach(d => {
+          if (!groups[d.refNumber]) groups[d.refNumber] = [];
+          groups[d.refNumber].push(d);
+        });
+        const centered = [];
+        Object.keys(groups).forEach(ref => {
+          const group = groups[ref];
+          const n = group.length;
+          let sum = [0, 0, 0];
+          group.forEach(d => { sum[0] += d.dx; sum[1] += d.dy; sum[2] += d.dz; });
+          const avg = sum.map(s => s/n);
+          group.forEach(d => {
+            centered.push({
+              dx: d.dx - avg[0],
+              dy: d.dy - avg[1],
+              dz: d.dz - avg[2],
+              refNumber: d.refNumber
+            });
+          });
+        });
+        return centered;
+      }
+      
+      function computeStatistics(points) {
+        const n = points.length;
+        const sums = points.reduce((acc, p) => {
+          acc[0] += p.dx; acc[1] += p.dy; acc[2] += p.dz;
+          return acc;
+        }, [0, 0, 0]);
+        const mean = sums.map(s => s/n);
+        const variances = [0, 0, 0];
+        points.forEach(p => {
+          variances[0] += Math.pow(p.dx - mean[0], 2);
+          variances[1] += Math.pow(p.dy - mean[1], 2);
+          variances[2] += Math.pow(p.dz - mean[2], 2);
+        });
+        const variance = variances.map(v => v/n);
+        const stdDev = variance.map(v => Math.sqrt(v));
+        let cov = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+        points.forEach(p => {
+          cov[0][0] += Math.pow(p.dx - mean[0], 2);
+          cov[0][1] += (p.dx - mean[0]) * (p.dy - mean[1]);
+          cov[0][2] += (p.dx - mean[0]) * (p.dz - mean[2]);
+          cov[1][0] += (p.dy - mean[1]) * (p.dx - mean[0]);
+          cov[1][1] += Math.pow(p.dy - mean[1], 2);
+          cov[1][2] += (p.dy - mean[1]) * (p.dz - mean[2]);
+          cov[2][0] += (p.dz - mean[2]) * (p.dx - mean[0]);
+          cov[2][1] += (p.dz - mean[2]) * (p.dy - mean[1]);
+          cov[2][2] += Math.pow(p.dz - mean[2], 2);
+        });
+        cov = cov.map(row => row.map(val => val/(n-1)));
+        return { mean, variance, covariance: cov, stdDev };
+      }
+      
+      function performPCA(points) {
+        const data = points.map(p => [p.dx, p.dy, p.dz]);
+        const n = data.length;
+        let mean = [0, 0, 0];
+        for (let i = 0; i < n; i++) {
+          mean[0] += data[i][0];
+          mean[1] += data[i][1];
+          mean[2] += data[i][2];
+        }
+        mean = mean.map(x => x/n);
+        const centered = data.map(row => row.map((val, i) => val - mean[i]));
+        const svd = numeric.svd(centered);
+        const components = numeric.transpose(svd.V);
+        const explainedVariance = svd.S.map(s => (s*s)/(n-1));
+        const indices = [0, 1, 2];
+        indices.sort((a, b) => explainedVariance[b] - explainedVariance[a]);
+        const sortedExplainedVariance = indices.map(i => explainedVariance[i]);
+        const sortedComponents = indices.map(i => components[i]);
+        return { mean, components: sortedComponents, explainedVariance: sortedExplainedVariance };
+      }
+      
+      // Helper functions for HTML tables.
+      function buildMatrixHTML(matrix) {
+        let html = '<table class="matrix">';
+        matrix.forEach(row => {
+          html += '<tr>';
+          row.forEach(val => {
+            html += `<td>${val.toFixed(4)}</td>`;
+          });
+          html += '</tr>';
+        });
+        html += '</table>';
+        return html;
+      }
+      
+      function buildPCAComponentsHTML(components, eigenvalues) {
+        let html = '<table class="matrix">';
+        html += '<tr><th>Component</th><th>Vector</th><th>Eigenvalue</th></tr>';
+        components.forEach((comp, idx) => {
+          html += `<tr>
+                    <td>${idx+1}</td>
+                    <td>[${comp.map(v => v.toFixed(4)).join(', ')}]</td>
+                    <td>${eigenvalues[idx].toExponential(2)}</td>
+                  </tr>`;
+        });
+        html += '</table>';
+        return html;
+      }
+      
+      analyzeBtn.addEventListener("click", () => {
+        const selectedRef = parseFloat(refDropdown.value);
+        const allDeltas = computeDeltaDisplacements(rmc6f.dataRows, rmc6f.supercell);
+        const B = rmc6f.cell2vec(
+          rmc6f.cellParam[0],
+          rmc6f.cellParam[1],
+          rmc6f.cellParam[2],
+          rmc6f.cellParam[3],
+          rmc6f.cellParam[4],
+          rmc6f.cellParam[5]
+        );
+        const transformed = allDeltas.map(d => {
+          const vec = numeric.dot([d.dx, d.dy, d.dz], B);
+          return { dx: vec[0], dy: vec[1], dz: vec[2], refNumber: d.refNumber };
+        });
+        const subset = transformed.filter(p => p.refNumber === selectedRef);
+        if (subset.length === 0) {
+          showNotification("No data points found for refNumber " + selectedRef, "error");
+          return;
+        }
+        const pcaResult = performPCA(subset);
+        const stats = computeStatistics(subset);
+        
+        // Build PCA results HTML
+        let html = '<h2>PCA & Statistics Results</h2>';
+        html += `<p><strong>Variance:</strong> [${stats.variance.map(v => v.toFixed(4)).join(', ')}]</p>`;
+        html += `<p><strong>Standard Deviation:</strong> [${stats.stdDev.map(v => v.toFixed(4)).join(', ')}]</p>`;
+        html += '<h3>Covariance Matrix:</h3>' + buildMatrixHTML(stats.covariance);
+        html += '<h3>PCA Components:</h3>' + buildPCAComponentsHTML(pcaResult.components, pcaResult.explainedVariance);
+        pcaResultsDiv.innerHTML = html;
+        pcaResultsDiv.style.display = "block";
+        
+        // Define limits for 3D grid (using standard deviations)
+        const xMin = -1.5 * stats.stdDev[0],
+              xMax =  1.5 * stats.stdDev[0],
+              yMin = -1.5 * stats.stdDev[1],
+              yMax =  1.5 * stats.stdDev[1],
+              zMin = -1.5 * stats.stdDev[2],
+              zMax =  1.5 * stats.stdDev[2];
+        
+        // 3D Density Estimation using KDE.
+        const xdim = 50, ydim = 50, zdim = 50;
+        // Construct dataset as a 2D array with shape [3][n]
+        const dataset3D = [
+          subset.map(p => p.dx),
+          subset.map(p => p.dy),
+          subset.map(p => p.dz)
+        ];
+        const kde = new GaussianKDE(dataset3D, "scott");
+        
+        // Create grid points for evaluation (grid arrays with length xdim*ydim*zdim)
+        const xArr = [], yArr = [], zArr = [];
+        const dxGrid = (xMax - xMin) / (xdim - 1);
+        const dyGrid = (yMax - yMin) / (ydim - 1);
+        const dzGrid = (zMax - zMin) / (zdim - 1);
+        for (let k = 0; k < zdim; k++) {
+          for (let j = 0; j < ydim; j++) {
+            for (let i = 0; i < xdim; i++) {
+              xArr.push(xMin + i * dxGrid);
+              yArr.push(yMin + j * dyGrid);
+              zArr.push(zMin + k * dzGrid);
+            }
+          }
+        }
+        // Build points array with shape [3][N]
+        const gridPoints = [xArr, yArr, zArr];
+        const density = kde.evaluate(gridPoints);
+        const minDensity = Math.min(...density);
+        const maxDensity = Math.max(...density);
+        const initialIso = minDensity + (maxDensity - minDensity) * 0.5;
+        const trace3D = {
+          type: 'isosurface',
+          x: xArr,
+          y: yArr,
+          z: zArr,
+          value: density,
+          isomin: initialIso,
+          isomax: initialIso,
+          caps: { x: { show: true }, y: { show: true }, z: { show: true } },
+          surface: {show: true, count: 4, fill: 1},
+          colorscale: 'Viridis',
+//'Viridis',
+          opacity: 0.5,
+          cmin: minDensity,
+          cmax: maxDensity
+        };
+/*
+        // Compute 2D KDEs using the same limits as 3D:
+        const kdeXY = compute2DKDE(subset, 'dx', 'dy', { minX: xMin, maxX: xMax, minY: yMin, maxY: yMax });
+        const kdeYZ = compute2DKDE(subset, 'dy', 'dz', { minX: yMin, maxX: yMax, minY: zMin, maxY: zMax });
+        const kdeZX = compute2DKDE(subset, 'dx', 'dz', { minX: xMin, maxX: xMax, minY: zMin, maxY: zMax });
+
+        // Create meshgrids for each 2D KDE (density z arrays are 2D)
+        const meshXY = meshgrid(kdeXY.x, kdeXY.y);
+        const meshYZ = meshgrid(kdeYZ.x, kdeYZ.y);
+        const meshZX = meshgrid(kdeZX.x, kdeZX.y);
+
+        // For the XY plane, fix z = zMin
+        const zPlaneXY = meshXY.X.map(row => row.map(() => zMin));
+        const traceXY = {
+          type: 'surface',
+          x: meshXY.X,
+          y: meshXY.Y,
+          z: zPlaneXY,
+          surfacecolor: kdeXY.z,
+          colorscale: 'Viridis',
+          showscale: false,
+          opacity: 0.7,
+          contours: {
+            z: { show: true, usecolormap: true, highlightcolor: "#42f462", project: { z: true } }
+          }
+        };
+
+        // For the YZ plane, fix x = xMin 
+        const xPlaneYZ = meshYZ.X.map(row => row.map(() => xMin));
+        const traceYZ = {
+          type: 'surface',
+          x: xPlaneYZ,
+          y: meshYZ.X,
+          z: meshYZ.Y,
+          surfacecolor: kdeYZ.z,
+          colorscale: 'Viridis',
+          showscale: false,
+          opacity: 0.7,
+          contours: {
+            x: { show: true, usecolormap: true, highlightcolor: "#42f462", project: { x: true } }
+          }
+        };
+
+        // For the ZX plane, fix y = yMin 
+        const yPlaneZX = meshZX.X.map(row => row.map(() => yMin));
+        const traceZX = {
+          type: 'surface',
+          x: meshZX.X,
+          y: yPlaneZX,
+          z: meshZX.Y,
+          surfacecolor: kdeZX.z,
+          colorscale: 'Viridis',
+          showscale: false,
+          opacity: 0.7,
+          contours: {
+            y: { show: true, usecolormap: true, highlightcolor: "#42f462", project: { y: true } }
+          }
+        };
+*/
+        // Combine all traces and plot
+        const data = [trace3D];//[trace3D, traceXY, traceYZ, traceZX];
+        const layout = {
+          width: 1000,
+          height: 700,
+          title: '3D Density Isosurface with 2D KDE Projections',
+          scene: { aspectratio: { x: 1, y: 1, z: 1 } },
+          sliders: [{
+            pad: { l: 130, t: 55 },
+            currentvalue: { prefix: 'Iso Level: ', visible: true, xanchor: 'right' },
+            steps: Array.from({length: 101}, (_, s) => {
+              const iso = minDensity + s * (maxDensity - minDensity) / 100;
+              return {
+                method: 'restyle',
+                args: [{ isomin: iso, isomax: iso }],
+                label: iso.toFixed(2)
+              };
+            })
+          }]
+        };
+        Plotly.newPlot('plot', data, layout);
+        plotContainer.style.display = "block";
+      });
+      
+    });
+  </script>
+</body>
+</html>
