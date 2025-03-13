@@ -40,10 +40,10 @@ This repository includes several utilities designed to help analyze RMC6f files:
   A tool for selecting subvolumes within RMC6f files.
 
 - **PCA KDE Tool:**  
-  Utilizes Kernel Density Estimation (KDE) as part of the principal component analysis.
+  Utilizes Kernel Density Estimation (KDE) as part of the RMC analysis.
 
 - **PCA SDE Tool:**  
-  Utilizes Surface Density Estimation (SDE) as part of the principal component analysis.
+  Utilizes Surface Density Estimation (SDE) as part of the RMC analysis.
 
 ## How to Contribute
 
