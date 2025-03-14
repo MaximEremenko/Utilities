@@ -9,9 +9,9 @@ Access live demos via GitHub Pages:
 - **Home Page:** [Utilities Home](https://maximeremenko.github.io/Utilities/)
 - **Select Subvolume App:** [RMC6f Select Subvolume App](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/Select_Subvolume/RMC6f_Select_Subvolume_App.html)
 - **PCA KDE Tool:** [PCA KDE Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/PCA_KDE/PCA_KDE_rmcdisplacements.html)  
-  *(Tool for performing Kernel Density Estimation as part of the PCA analysis)*
+  *(Tool for performing Kernel Density Estimation as part of the RMC analysis)*
 - **PCA SDE Tool:** [PCA SDE Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/PCA_SDE/PCA_SDE_rmcdisplacements.html)  
-  *(Tool for performing Surface Density Estimation as part of the PCA analysis)*
+  *(Tool for performing Surface Density Estimation as part of the RMC analysis)*
 
 ## Repository Structure
 
@@ -40,10 +40,10 @@ This repository includes several utilities designed to help analyze RMC6f files:
   A tool for selecting subvolumes within RMC6f files.
 
 - **PCA KDE Tool:**  
-  Utilizes Kernel Density Estimation (KDE) as part of the principal component analysis.
+  Utilizes Kernel Density Estimation (KDE) as part of the RMC analysis.
 
 - **PCA SDE Tool:**  
-  Utilizes Surface Density Estimation (SDE) as part of the principal component analysis.
+  Utilizes Surface Density Estimation (SDE) as part of the RMC analysis.
 
 ## How to Contribute
 
