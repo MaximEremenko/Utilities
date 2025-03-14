@@ -142,7 +142,7 @@
   <!-- Numeric.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
   <!-- sde library -->
-  <script src="https://github.com/MaximEremenko/Utilities/blob/main/RMCProfileUtilities/PCA_SDE/sde.js"></script>
+  <script src="sde.js"></script>
 </head>
 <body>
   <div class="container">
@@ -556,6 +556,7 @@
         html += '</table>';
         return html;
       }
+      
       analyzeBtn.addEventListener("click", () => {
         const selectedRef = parseFloat(refDropdown.value);
         const allDeltas = computeDeltaDisplacements(rmc6f.dataRows, rmc6f.supercell);
@@ -588,7 +589,7 @@
         pcaResultsDiv.innerHTML = html;
         pcaResultsDiv.style.display = "block";
         
-        // Define the same limits for 3D and 2D grids
+        // Define the limits for both 3D and 2D grids based on standard deviations.
         const xMin = -1.5 * stats.stdDev[0],
               xMax =  1.5 * stats.stdDev[0],
               yMin = -1.5 * stats.stdDev[1],
@@ -596,28 +597,55 @@
               zMin = -1.5 * stats.stdDev[2],
               zMax =  1.5 * stats.stdDev[2];
         
-        // 3D Density Estimation using sde (grid dimensions)
-        const xdim = 50, ydim = 50, zdim = 50;
+        // 3D Density Estimation using sde (with dynamic grid sizing)
         const n = rmc6f.dataRows.length;
         const h_x = 1.06 * stats.stdDev[0] * Math.pow(n, -1/1.8);
         const h_y = 1.06 * stats.stdDev[1] * Math.pow(n, -1/1.8);
         const h_z = 1.06 * stats.stdDev[2] * Math.pow(n, -1/1.8);
         const H = [[h_x, 0, 0],[0, h_y, 0],[0, 0, h_z]];
         const estimator = new DensityEstimator(subset.flatMap(p => [p.dx, p.dy, p.dz]));
-        const density = estimator.Compute(xMin, yMin, zMin, xMax, yMax, zMax, xdim, ydim, zdim, H);
+        
+        // Binary search to find the maximum available grid dimension
+        function findMaxGridDimSDE(minDim, maxDim, xMin, yMin, zMin, xMax, yMax, zMax, H, estimator) {
+          let bestDim = minDim;
+          let low = minDim;
+          let high = maxDim;
+          while (low <= high) {
+            const mid = Math.floor((low + high) / 2);
+            try {
+              estimator.Compute(xMin, yMin, zMin, xMax, yMax, zMax, mid, mid, mid, H);
+              bestDim = mid;
+              low = mid + 1;
+            } catch (e) {
+              high = mid - 1;
+            }
+          }
+          return bestDim;
+        }
+        
+        const minGridDim = 20;
+        const upperBoundGridDim = 50; // adjust as needed
+        const optimalGridDim = findMaxGridDimSDE(minGridDim, upperBoundGridDim, xMin, yMin, zMin, xMax, yMax, zMax, H, estimator);
+        console.log("Using grid dimension: " + optimalGridDim);
+        
+        // Compute density using the optimal grid dimension.
+        const density = estimator.Compute(xMin, yMin, zMin, xMax, yMax, zMax, optimalGridDim, optimalGridDim, optimalGridDim, H);
+        
+        // Generate grid arrays based on optimalGridDim.
         const xArr = [], yArr = [], zArr = [];
-        const dxGrid = (xMax - xMin) / (xdim - 1);
-        const dyGrid = (yMax - yMin) / (ydim - 1);
-        const dzGrid = (zMax - zMin) / (zdim - 1);
-        for (let k = 0; k < zdim; k++) {
-          for (let j = 0; j < ydim; j++) {
-            for (let i = 0; i < xdim; i++) {
+        const dxGrid = (xMax - xMin) / (optimalGridDim - 1);
+        const dyGrid = (yMax - yMin) / (optimalGridDim - 1);
+        const dzGrid = (zMax - zMin) / (optimalGridDim - 1);
+        for (let k = 0; k < optimalGridDim; k++) {
+          for (let j = 0; j < optimalGridDim; j++) {
+            for (let i = 0; i < optimalGridDim; i++) {
               xArr.push(xMin + i * dxGrid);
               yArr.push(yMin + j * dyGrid);
               zArr.push(zMin + k * dzGrid);
             }
           }
         }
+        
         const minDensity = Math.min(...density);
         const maxDensity = Math.max(...density);
         const initialIso = minDensity + (maxDensity - minDensity) * 0.5;
@@ -694,7 +722,7 @@
           }
         };
 
-        // Combine all traces
+        // Combine all traces and plot.
         const data = [trace3D, traceXY, traceYZ, traceZX];
         const layout = {
           width: 1000,

@@ -189,13 +189,11 @@
       const ys = data.map(d => d[key2]);
       const n = xs.length;
       
-      // Use provided limits if available
       const minX = limits && limits.minX !== undefined ? limits.minX : Math.min(...xs);
       const maxX = limits && limits.maxX !== undefined ? limits.maxX : Math.max(...xs);
       const minY = limits && limits.minY !== undefined ? limits.minY : Math.min(...ys);
       const maxY = limits && limits.maxY !== undefined ? limits.maxY : Math.max(...ys);
       
-      // Set margin to zero if limits are provided, otherwise compute a 10% margin
       const marginX = limits ? 0 : (maxX - minX) * 0.1;
       const marginY = limits ? 0 : (maxY - minY) * 0.1;
       
@@ -579,7 +577,7 @@
         pcaResultsDiv.innerHTML = html;
         pcaResultsDiv.style.display = "block";
         
-        // Define limits for 3D grid (using standard deviations)
+        // Define grid limits for 3D density based on standard deviations.
         const xMin = -1.5 * stats.stdDev[0],
               xMax =  1.5 * stats.stdDev[0],
               yMin = -1.5 * stats.stdDev[1],
@@ -588,7 +586,6 @@
               zMax =  1.5 * stats.stdDev[2];
         
         // 3D Density Estimation using KDE.
-        const xdim = 50, ydim = 50, zdim = 50;
         // Construct dataset as a 2D array with shape [3][n]
         const dataset3D = [
           subset.map(p => p.dx),
@@ -597,23 +594,68 @@
         ];
         const kde = new GaussianKDE(dataset3D, "scott");
         
-        // Create grid points for evaluation (grid arrays with length xdim*ydim*zdim)
+        // --- Determine the maximum available grid dimension using a binary search ---
+        // We'll search between a minimum (e.g. 20) and a high upper bound (e.g. 500).
+        function findMaxGridDim(minDim, maxDim) {
+          let bestDim = minDim;
+          while (minDim <= maxDim) {
+            const mid = Math.floor((minDim + maxDim) / 2);
+            try {
+              const xArr = [], yArr = [], zArr = [];
+              const dxGrid = (xMax - xMin) / (mid - 1);
+              const dyGrid = (yMax - yMin) / (mid - 1);
+              const dzGrid = (zMax - zMin) / (mid - 1);
+              for (let k = 0; k < mid; k++) {
+                for (let j = 0; j < mid; j++) {
+                  for (let i = 0; i < mid; i++) {
+                    xArr.push(xMin + i * dxGrid);
+                    yArr.push(yMin + j * dyGrid);
+                    zArr.push(zMin + k * dzGrid);
+                  }
+                }
+              }
+              // Attempt to evaluate density using the current grid.
+              const gridPoints = [xArr, yArr, zArr];
+              const density = kde.evaluate(gridPoints);
+              // If no error, we can try a larger grid.
+              bestDim = mid;
+              minDim = mid + 1;
+            } catch (e) {
+              // If an error occurs (e.g., due to memory limitations), reduce the upper bound.
+              maxDim = mid - 1;
+            }
+          }
+          return bestDim;
+        }
+        
+        const minGridDim = 20;
+        const upperBoundGridDim = 50; // Adjust if necessary.
+        const optimalGridDim = findMaxGridDim(minGridDim, upperBoundGridDim);
+        console.log("Using grid dimension: " + optimalGridDim);
+        
+        // Generate the grid using the found optimal dimension.
         const xArr = [], yArr = [], zArr = [];
-        const dxGrid = (xMax - xMin) / (xdim - 1);
-        const dyGrid = (yMax - yMin) / (ydim - 1);
-        const dzGrid = (zMax - zMin) / (zdim - 1);
-        for (let k = 0; k < zdim; k++) {
-          for (let j = 0; j < ydim; j++) {
-            for (let i = 0; i < xdim; i++) {
+        const dxGrid = (xMax - xMin) / (optimalGridDim - 1);
+        const dyGrid = (yMax - yMin) / (optimalGridDim - 1);
+        const dzGrid = (zMax - zMin) / (optimalGridDim - 1);
+        for (let k = 0; k < optimalGridDim; k++) {
+          for (let j = 0; j < optimalGridDim; j++) {
+            for (let i = 0; i < optimalGridDim; i++) {
               xArr.push(xMin + i * dxGrid);
               yArr.push(yMin + j * dyGrid);
               zArr.push(zMin + k * dzGrid);
             }
           }
         }
-        // Build points array with shape [3][N]
-        const gridPoints = [xArr, yArr, zArr];
-        const density = kde.evaluate(gridPoints);
+        
+        let density;
+        try {
+          density = kde.evaluate([xArr, yArr, zArr]);
+        } catch (e) {
+          showNotification("Error evaluating KDE: " + e.message, "error");
+          return;
+        }
+        
         const minDensity = Math.min(...density);
         const maxDensity = Math.max(...density);
         const initialIso = minDensity + (maxDensity - minDensity) * 0.5;
@@ -628,72 +670,13 @@
           caps: { x: { show: true }, y: { show: true }, z: { show: true } },
           surface: {show: true, count: 4, fill: 1},
           colorscale: 'Viridis',
-//'Viridis',
           opacity: 0.5,
           cmin: minDensity,
           cmax: maxDensity
         };
-/*
-        // Compute 2D KDEs using the same limits as 3D:
-        const kdeXY = compute2DKDE(subset, 'dx', 'dy', { minX: xMin, maxX: xMax, minY: yMin, maxY: yMax });
-        const kdeYZ = compute2DKDE(subset, 'dy', 'dz', { minX: yMin, maxX: yMax, minY: zMin, maxY: zMax });
-        const kdeZX = compute2DKDE(subset, 'dx', 'dz', { minX: xMin, maxX: xMax, minY: zMin, maxY: zMax });
-
-        // Create meshgrids for each 2D KDE (density z arrays are 2D)
-        const meshXY = meshgrid(kdeXY.x, kdeXY.y);
-        const meshYZ = meshgrid(kdeYZ.x, kdeYZ.y);
-        const meshZX = meshgrid(kdeZX.x, kdeZX.y);
-
-        // For the XY plane, fix z = zMin
-        const zPlaneXY = meshXY.X.map(row => row.map(() => zMin));
-        const traceXY = {
-          type: 'surface',
-          x: meshXY.X,
-          y: meshXY.Y,
-          z: zPlaneXY,
-          surfacecolor: kdeXY.z,
-          colorscale: 'Viridis',
-          showscale: false,
-          opacity: 0.7,
-          contours: {
-            z: { show: true, usecolormap: true, highlightcolor: "#42f462", project: { z: true } }
-          }
-        };
-
-        // For the YZ plane, fix x = xMin 
-        const xPlaneYZ = meshYZ.X.map(row => row.map(() => xMin));
-        const traceYZ = {
-          type: 'surface',
-          x: xPlaneYZ,
-          y: meshYZ.X,
-          z: meshYZ.Y,
-          surfacecolor: kdeYZ.z,
-          colorscale: 'Viridis',
-          showscale: false,
-          opacity: 0.7,
-          contours: {
-            x: { show: true, usecolormap: true, highlightcolor: "#42f462", project: { x: true } }
-          }
-        };
-
-        // For the ZX plane, fix y = yMin 
-        const yPlaneZX = meshZX.X.map(row => row.map(() => yMin));
-        const traceZX = {
-          type: 'surface',
-          x: meshZX.X,
-          y: yPlaneZX,
-          z: meshZX.Y,
-          surfacecolor: kdeZX.z,
-          colorscale: 'Viridis',
-          showscale: false,
-          opacity: 0.7,
-          contours: {
-            y: { show: true, usecolormap: true, highlightcolor: "#42f462", project: { y: true } }
-          }
-        };
-*/
-        // Combine all traces and plot
-        const data = [trace3D];//[trace3D, traceXY, traceYZ, traceZX];
+        
+        // Combine trace and plot.
+        const data = [trace3D];
         const layout = {
           width: 1000,
           height: 700,
