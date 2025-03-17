@@ -527,14 +527,21 @@
         });
       }
     
-      replaceOrAppendLine(linesArr, searchKey, lineGenerator) {
-        const idx = linesArr.findIndex(l => l.includes(searchKey));
-        if (idx >= 0) {
-          linesArr[idx] = lineGenerator(linesArr[idx]);
+    replaceOrAppendLine(linesArr, searchKey, lineGenerator) {
+      const idx = linesArr.findIndex(l => l.includes(searchKey));
+      if (idx >= 0) {
+        linesArr[idx] = lineGenerator(linesArr[idx]);
+      } else {
+        // Insert the new header line before the "Atoms:" line if it exists
+        const atomsIdx = linesArr.findIndex(l => l.includes("Atoms:"));
+        if (atomsIdx >= 0) {
+          linesArr.splice(atomsIdx, 0, lineGenerator(""));
         } else {
+          // Otherwise, append it at the end as a fallback.
           linesArr.push(lineGenerator(""));
         }
       }
+    }
     
       generateFileContent(cutHeaderLines, subRows, cutVectors) {
         const atomCounts = {};
