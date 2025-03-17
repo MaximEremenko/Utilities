@@ -4,16 +4,17 @@
  * Compute weighted mean for a d x n data array.
  * @param {number[][]} data - Array of arrays with shape [d][n].
  * @param {number[]} weights - Array of length n.
- * @returns {number[]} mean vector of length d.
+ * @returns {number[]} Mean vector of length d.
  */
 function weightedMean(data, weights) {
   const d = data.length;
   const n = data[0].length;
-  const mean = new Array(d).fill(0);
+  const mean = new Array(d);
   for (let i = 0; i < d; i++) {
     let sum = 0;
+    const row = data[i];
     for (let j = 0; j < n; j++) {
-      sum += data[i][j] * weights[j];
+      sum += row[j] * weights[j];
     }
     mean[i] = sum;
   }
@@ -31,15 +32,19 @@ function weightedCovariance(data, weights) {
   const d = data.length;
   const n = data[0].length;
   const mean = weightedMean(data, weights);
-  const sumW2 = weights.reduce((acc, w) => acc + w * w, 0);
-  const cov = Array(d)
-    .fill(0)
-    .map(() => Array(d).fill(0));
+  let sumW2 = 0;
+  for (let j = 0; j < n; j++) {
+    sumW2 += weights[j] * weights[j];
+  }
+  const cov = new Array(d);
   for (let i = 0; i < d; i++) {
+    cov[i] = new Array(d).fill(0);
+    const rowi = data[i];
     for (let j = 0; j < d; j++) {
+      const rowj = data[j];
       let s = 0;
       for (let k = 0; k < n; k++) {
-        s += weights[k] * (data[i][k] - mean[i]) * (data[j][k] - mean[j]);
+        s += weights[k] * (rowi[k] - mean[i]) * (rowj[k] - mean[j]);
       }
       cov[i][j] = s / (1 - sumW2);
     }
@@ -55,10 +60,9 @@ function weightedCovariance(data, weights) {
  */
 function choleskyDecomposition(matrix) {
   const n = matrix.length;
-  const L = Array(n)
-    .fill(0)
-    .map(() => Array(n).fill(0));
+  const L = new Array(n);
   for (let i = 0; i < n; i++) {
+    L[i] = new Array(n).fill(0);
     for (let j = 0; j <= i; j++) {
       let sum = 0;
       for (let k = 0; k < j; k++) {
@@ -86,7 +90,7 @@ function choleskyDecomposition(matrix) {
  */
 function solveLower(L, b) {
   const n = L.length;
-  const y = new Array(n).fill(0);
+  const y = new Array(n);
   for (let i = 0; i < n; i++) {
     let sum = 0;
     for (let j = 0; j < i; j++) {
@@ -104,7 +108,11 @@ function solveLower(L, b) {
  * @returns {number} Determinant.
  */
 function determinantFromCholesky(L) {
-  const prod = L.reduce((acc, row, i) => acc * row[i], 1);
+  let prod = 1;
+  const n = L.length;
+  for (let i = 0; i < n; i++) {
+    prod *= L[i][i];
+  }
   return prod * prod;
 }
 
@@ -114,8 +122,15 @@ function determinantFromCholesky(L) {
  * @returns {number}
  */
 function logSumExp(arr) {
-  const maxVal = Math.max(...arr);
-  const sumExp = arr.reduce((acc, x) => acc + Math.exp(x - maxVal), 0);
+  let maxVal = -Infinity;
+  const len = arr.length;
+  for (let i = 0; i < len; i++) {
+    if (arr[i] > maxVal) maxVal = arr[i];
+  }
+  let sumExp = 0;
+  for (let i = 0; i < len; i++) {
+    sumExp += Math.exp(arr[i] - maxVal);
+  }
   return maxVal + Math.log(sumExp);
 }
 
@@ -128,18 +143,16 @@ function logSumExp(arr) {
 function erf(x) {
   const sign = x >= 0 ? 1 : -1;
   x = Math.abs(x);
-  const a1 = 0.254829592;
-  const a2 = -0.284496736;
-  const a3 = 1.421413741;
-  const a4 = -1.453152027;
-  const a5 = 1.061405429;
-  const p = 0.3275911;
+  const a1 = 0.254829592,
+    a2 = -0.284496736,
+    a3 = 1.421413741,
+    a4 = -1.453152027,
+    a5 = 1.061405429,
+    p = 0.3275911;
   const t = 1 / (1 + p * x);
   const y =
     1 -
-    ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) *
-      t *
-      Math.exp(-x * x);
+    (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
   return sign * y;
 }
 
@@ -153,8 +166,7 @@ function normalCDF(x) {
 }
 
 /**
- * Generate a standard normally distributed random number
- * using the Box-Muller transform.
+ * Generate a standard normally distributed random number using the Box-Muller transform.
  * @returns {number}
  */
 function gaussianRandom() {
@@ -163,6 +175,26 @@ function gaussianRandom() {
   while (u === 0) u = Math.random(); // Convert [0,1) to (0,1)
   while (v === 0) v = Math.random();
   return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+/**
+ * Binary search for sampling an index given cumulative weights.
+ * @param {number[]} cumWeights - Sorted cumulative weights.
+ * @param {number} r - Random number between 0 and 1.
+ * @returns {number} Chosen index.
+ */
+function sampleIndex(cumWeights, r) {
+  let lo = 0,
+    hi = cumWeights.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (r > cumWeights[mid]) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
 }
 
 // Main class for Gaussian Kernel Density Estimation
@@ -176,7 +208,11 @@ class GaussianKDE {
    * @param {number[]} [weights=null] - Optional weights (length n). If not provided, uniform weights are used.
    */
   constructor(dataset, bw_method = "scott", weights = null) {
-    if (!Array.isArray(dataset) || dataset.length === 0 || !Array.isArray(dataset[0])) {
+    if (
+      !Array.isArray(dataset) ||
+      dataset.length === 0 ||
+      !Array.isArray(dataset[0])
+    ) {
       throw new Error("Dataset must be a 2D array with shape [d][n].");
     }
     this.dataset = dataset;
@@ -190,13 +226,20 @@ class GaussianKDE {
       if (weights.length !== this.n) {
         throw new Error("Weights array length must equal the number of samples.");
       }
-      const sumWeights = weights.reduce((a, b) => a + b, 0);
+      let sumWeights = 0;
+      for (let i = 0; i < weights.length; i++) {
+        sumWeights += weights[i];
+      }
       this._weights = weights.map((w) => w / sumWeights);
     } else {
-      this._weights = Array(this.n).fill(1 / this.n);
+      this._weights = new Array(this.n).fill(1 / this.n);
     }
     // Effective number of samples
-    this._neff = 1 / this._weights.reduce((acc, w) => acc + w * w, 0);
+    let sumW2 = 0;
+    for (let i = 0; i < this._weights.length; i++) {
+      sumW2 += this._weights[i] * this._weights[i];
+    }
+    this._neff = 1 / sumW2;
     if (this.d > this.n) {
       throw new Error(
         "Number of dimensions is greater than number of samples. Consider transposing the input data."
@@ -276,33 +319,32 @@ class GaussianKDE {
    * @returns {number[]} Density estimates (array of length m).
    */
   evaluate(points) {
-    let pts;
-    if (!Array.isArray(points[0])) {
-      pts = points.map((x) => [x]);
-    } else {
-      pts = points;
-    }
+    let pts = Array.isArray(points[0]) ? points : points.map((x) => [x]);
     const m = pts[0].length;
     if (pts.length !== this.d) {
       throw new Error(`Points have dimension ${pts.length}, but data has dimension ${this.d}`);
     }
-    const results = new Array(m).fill(0);
-    // Cache local variables for speed.
-    const cho = this.choCov;
-    const d = this.d, n = this.n;
+    const results = new Array(m);
+    // Cache local variables
+    const L = this.choCov;
+    const d = this.d,
+      n = this.n;
     const weights = this._weights;
     const normConst = this._normConst;
     const whitenedData = this.whitenedData;
 
+    const qWhite = new Array(d);
     // For each evaluation point:
-    const query = new Array(d);
     for (let j = 0; j < m; j++) {
-      for (let k = 0; k < d; k++) {
-        query[k] = pts[k][j];
+      // Inlined version of solveLower for the query point
+      for (let i = 0; i < d; i++) {
+        let sum = 0;
+        for (let k = 0; k < i; k++) {
+          sum += L[i][k] * qWhite[k];
+        }
+        qWhite[i] = (pts[i][j] - sum) / L[i][i];
       }
-      // Compute the whitened query point: L^{-1}(query)
-      const qWhite = solveLower(cho, query);
-      let sum = 0;
+      let sumDensity = 0;
       // Compute squared distance in whitened space to each sample.
       for (let i = 0; i < n; i++) {
         let quad = 0;
@@ -311,9 +353,9 @@ class GaussianKDE {
           const diff = qWhite[k] - sampleWhite[k];
           quad += diff * diff;
         }
-        sum += weights[i] * Math.exp(-0.5 * quad);
+        sumDensity += weights[i] * Math.exp(-0.5 * quad);
       }
-      results[j] = sum / normConst;
+      results[j] = sumDensity / normConst;
     }
     return results;
   }
@@ -325,29 +367,28 @@ class GaussianKDE {
    * @returns {number[]} Log-density estimates.
    */
   logpdf(points) {
-    let pts;
-    if (!Array.isArray(points[0])) {
-      pts = points.map((x) => [x]);
-    } else {
-      pts = points;
-    }
+    let pts = Array.isArray(points[0]) ? points : points.map((x) => [x]);
     const m = pts[0].length;
     if (pts.length !== this.d) {
       throw new Error(`Points have dimension ${pts.length}, but data has dimension ${this.d}`);
     }
-    const logResults = new Array(m).fill(0);
-    const cho = this.choCov;
-    const d = this.d, n = this.n;
+    const logResults = new Array(m);
+    const L = this.choCov;
+    const d = this.d,
+      n = this.n;
     const weights = this._weights;
     const normLog = Math.log(this._normConst);
     const whitenedData = this.whitenedData;
 
-    const query = new Array(d);
+    const qWhite = new Array(d);
     for (let j = 0; j < m; j++) {
-      for (let k = 0; k < d; k++) {
-        query[k] = pts[k][j];
+      for (let i = 0; i < d; i++) {
+        let sum = 0;
+        for (let k = 0; k < i; k++) {
+          sum += L[i][k] * qWhite[k];
+        }
+        qWhite[i] = (pts[i][j] - sum) / L[i][i];
       }
-      const qWhite = solveLower(cho, query);
       const logKernels = new Array(n);
       for (let i = 0; i < n; i++) {
         let quad = 0;
@@ -369,40 +410,40 @@ class GaussianKDE {
    * @returns {number[][]} New dataset samples (shape [d][size]).
    */
   resample(size = Math.round(this.neff)) {
-    const samples = Array(this.d)
-      .fill(0)
-      .map(() => Array(size).fill(0));
+    const d = this.d,
+      n = this.n;
+    const samples = new Array(d);
+    for (let i = 0; i < d; i++) {
+      samples[i] = new Array(size);
+    }
     // Precompute cumulative weights for sampling.
-    const cumWeights = [];
-    this._weights.reduce((acc, w) => {
-      acc += w;
-      cumWeights.push(acc);
-      return acc;
-    }, 0);
-    const sampleOne = () => {
-      // Choose an index based on weights.
-      const r = Math.random();
-      let idx = 0;
-      while (r > cumWeights[idx] && idx < cumWeights.length - 1) {
-        idx++;
-      }
-      // Add noise to the chosen sample.
-      const point = new Array(this.d).fill(0);
-      const z = new Array(this.d).fill(0).map(() => gaussianRandom());
-      for (let i = 0; i < this.d; i++) {
-        let noise = 0;
-        for (let j = 0; j <= i; j++) {
-          noise += this.choCov[i][j] * z[j];
-        }
-        point[i] = this.dataset[i][idx] + noise;
-      }
-      return point;
-    };
-
+    const cumWeights = new Array(n);
+    let acc = 0;
+    for (let i = 0; i < n; i++) {
+      acc += this._weights[i];
+      cumWeights[i] = acc;
+    }
+    const L = this.choCov;
+    // Draw samples
     for (let i = 0; i < size; i++) {
-      const pt = sampleOne();
-      for (let d = 0; d < this.d; d++) {
-        samples[d][i] = pt[d];
+      // Binary search sampling:
+      const r = Math.random();
+      const idx = sampleIndex(cumWeights, r);
+      const point = new Array(d);
+      // Generate noise via the Box-Muller transform, using L to introduce covariance.
+      const z = new Array(d);
+      for (let j = 0; j < d; j++) {
+        z[j] = gaussianRandom();
+      }
+      for (let j = 0; j < d; j++) {
+        let noise = 0;
+        for (let k = 0; k <= j; k++) {
+          noise += L[j][k] * z[k];
+        }
+        point[j] = this.dataset[j][idx] + noise;
+      }
+      for (let j = 0; j < d; j++) {
+        samples[j][i] = point[j];
       }
     }
     return samples;
@@ -416,13 +457,17 @@ class GaussianKDE {
    * @returns {number} The value of the integral.
    */
   integrateGaussian(mean, cov) {
-    if (mean.length !== this.d || cov.length !== this.d || cov[0].length !== this.d) {
+    if (
+      mean.length !== this.d ||
+      cov.length !== this.d ||
+      cov[0].length !== this.d
+    ) {
       throw new Error("Mean and covariance dimensions must match the KDE.");
     }
     // Compute cov_sum = cov + this.covariance.
-    const covSum = [];
+    const covSum = new Array(this.d);
     for (let i = 0; i < this.d; i++) {
-      covSum[i] = [];
+      covSum[i] = new Array(this.d);
       for (let j = 0; j < this.d; j++) {
         covSum[i][j] = cov[i][j] + this.covariance[i][j];
       }
@@ -437,7 +482,10 @@ class GaussianKDE {
         diff[k] = mean[k] - this.dataset[k][i];
       }
       const y = solveLower(Lsum, diff);
-      const quad = y.reduce((acc, val) => acc + val * val, 0);
+      let quad = 0;
+      for (let k = 0; k < this.d; k++) {
+        quad += y[k] * y[k];
+      }
       result += this._weights[i] * Math.exp(-0.5 * quad);
     }
     return result / normConst;
@@ -461,9 +509,9 @@ class GaussianKDE {
       large = other;
     }
     // Compute cov_sum = small.covariance + large.covariance.
-    const covSum = [];
+    const covSum = new Array(this.d);
     for (let i = 0; i < this.d; i++) {
-      covSum[i] = [];
+      covSum[i] = new Array(this.d);
       for (let j = 0; j < this.d; j++) {
         covSum[i][j] = small.covariance[i][j] + large.covariance[i][j];
       }
@@ -484,7 +532,10 @@ class GaussianKDE {
           diff[k] = large.dataset[k][j] - sample_i[k];
         }
         const y = solveLower(Lsum, diff);
-        const quad = y.reduce((acc, val) => acc + val * val, 0);
+        let quad = 0;
+        for (let k = 0; k < this.d; k++) {
+          quad += y[k] * y[k];
+        }
         innerSum += large._weights[j] * Math.exp(-0.5 * quad);
       }
       result += small._weights[i] * innerSum;
@@ -498,12 +549,7 @@ class GaussianKDE {
    * @returns {GaussianKDE} New GaussianKDE instance with the marginal distribution.
    */
   marginal(dimensions) {
-    let dims;
-    if (typeof dimensions === "number") {
-      dims = [dimensions];
-    } else {
-      dims = dimensions.slice();
-    }
+    let dims = typeof dimensions === "number" ? [dimensions] : dimensions.slice();
     dims = dims.map((d) => (d < 0 ? this.d + d : d));
     if (new Set(dims).size !== dims.length) {
       throw new Error("Dimensions must be unique.");
@@ -529,7 +575,7 @@ class GaussianKDE {
 }
 
 // ----- Example usage -----
-// Uncomment the code below to test:
+// Uncomment below to test:
 
 // const nSamples = 200;
 // const data1 = [], data2 = [];
