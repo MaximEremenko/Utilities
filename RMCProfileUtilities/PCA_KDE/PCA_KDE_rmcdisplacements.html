@@ -578,12 +578,15 @@
         pcaResultsDiv.style.display = "block";
         
         // Define grid limits for 3D density based on standard deviations.
-        const xMin = -1.5 * stats.stdDev[0],
-              xMax =  1.5 * stats.stdDev[0],
-              yMin = -1.5 * stats.stdDev[1],
-              yMax =  1.5 * stats.stdDev[1],
-              zMin = -1.5 * stats.stdDev[2],
-              zMax =  1.5 * stats.stdDev[2];
+        const maxStd = Math.max(
+          Math.abs(stats.stdDev[0]),
+          Math.abs(stats.stdDev[1]),
+          Math.abs(stats.stdDev[2])
+        );
+        const scale = 1.5 * maxStd;
+        const xMin = -scale, xMax = scale;
+        const yMin = -scale, yMax = scale;
+        const zMin = -scale, zMax = scale;
         
         // 3D Density Estimation using KDE.
         // Construct dataset as a 2D array with shape [3][n]
@@ -595,7 +598,6 @@
         const kde = new GaussianKDE(dataset3D, "scott");
         
         // --- Determine the maximum available grid dimension using a binary search ---
-        // We'll search between a minimum (e.g. 20) and a high upper bound (e.g. 500).
         function findMaxGridDim(minDim, maxDim) {
           let bestDim = minDim;
           while (minDim <= maxDim) {
@@ -614,14 +616,11 @@
                   }
                 }
               }
-              // Attempt to evaluate density using the current grid.
               const gridPoints = [xArr, yArr, zArr];
-              const density = kde.evaluate(gridPoints);
-              // If no error, we can try a larger grid.
+              const densityTest = kde.evaluate(gridPoints);
               bestDim = mid;
               minDim = mid + 1;
             } catch (e) {
-              // If an error occurs (e.g., due to memory limitations), reduce the upper bound.
               maxDim = mid - 1;
             }
           }
@@ -629,7 +628,7 @@
         }
         
         const minGridDim = 20;
-        const upperBoundGridDim = 50; // Adjust if necessary.
+        const upperBoundGridDim = 50; 
         const optimalGridDim = findMaxGridDim(minGridDim, upperBoundGridDim);
         console.log("Using grid dimension: " + optimalGridDim);
         
@@ -656,26 +655,61 @@
           return;
         }
         
-        const minDensity = Math.min(...density);
-        const maxDensity = Math.max(...density);
-        const initialIso = minDensity + (maxDensity - minDensity) * 0.5;
+        // --- Build probability-based slider ---
+        // Compute the grid cell volume
+        const cellVolume = dxGrid * dyGrid * dzGrid;
+        // Compute total probability mass over the grid
+        const totalMass = density.reduce((acc, d) => acc + d, 0) * cellVolume;
+        // Sort the density values in descending order (to associate higher density with lower mass)
+        const sortedDensity = density.slice().sort((a, b) => b - a);
+        // Compute cumulative mass for the sorted densities
+        const cumMass = [];
+        cumMass[0] = sortedDensity[0] * cellVolume;
+        for (let i = 1; i < sortedDensity.length; i++) {
+          cumMass[i] = cumMass[i - 1] + sortedDensity[i] * cellVolume;
+        }
+        // Build lookup: for each percentage 0% to 100%, find the density threshold where cumulative mass >= target
+        const percThreshold = [];
+        for (let p = 0; p <= 100; p++) {
+          const targetMass = (p / 100) * totalMass;
+          let lo = 0, hi = sortedDensity.length - 1, idx = sortedDensity.length - 1;
+          while (lo <= hi) {
+            const mid = Math.floor((lo + hi) / 2);
+            if (cumMass[mid] >= targetMass) {
+              idx = mid;
+              hi = mid - 1;
+            } else {
+              lo = mid + 1;
+            }
+          }
+          percThreshold[p] = sortedDensity[idx];
+        }
+        
+        // Build slider steps using probability percentages.
+        const sliderSteps = Array.from({ length: 101 }, (_, p) => {
+          return {
+            method: 'restyle',
+            args: [{ isomin: percThreshold[p], isomax: percThreshold[p] }],
+            label: p + '%'
+          };
+        });
+        
         const trace3D = {
           type: 'isosurface',
           x: xArr,
           y: yArr,
           z: zArr,
           value: density,
-          isomin: initialIso,
-          isomax: initialIso,
+          isomin: percThreshold[50],
+          isomax: percThreshold[50],
           caps: { x: { show: true }, y: { show: true }, z: { show: true } },
-          surface: {show: true, count: 4, fill: 1},
+          surface: { show: true, count: 4, fill: 1 },
           colorscale: 'Viridis',
           opacity: 0.5,
-          cmin: minDensity,
-          cmax: maxDensity
+          cmin: Math.min(...density),
+          cmax: Math.max(...density)
         };
         
-        // Combine trace and plot.
         const data = [trace3D];
         const layout = {
           width: 1000,
@@ -684,15 +718,8 @@
           scene: { aspectratio: { x: 1, y: 1, z: 1 } },
           sliders: [{
             pad: { l: 130, t: 55 },
-            currentvalue: { prefix: 'Iso Level: ', visible: true, xanchor: 'right' },
-            steps: Array.from({length: 101}, (_, s) => {
-              const iso = minDensity + s * (maxDensity - minDensity) / 100;
-              return {
-                method: 'restyle',
-                args: [{ isomin: iso, isomax: iso }],
-                label: iso.toFixed(2)
-              };
-            })
+            currentvalue: { prefix: 'Probability: ', visible: true, xanchor: 'right' },
+            steps: sliderSteps
           }]
         };
         Plotly.newPlot('plot', data, layout);

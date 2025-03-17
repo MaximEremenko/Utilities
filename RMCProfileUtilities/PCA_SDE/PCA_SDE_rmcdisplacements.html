@@ -590,12 +590,15 @@
         pcaResultsDiv.style.display = "block";
         
         // Define the limits for both 3D and 2D grids based on standard deviations.
-        const xMin = -1.5 * stats.stdDev[0],
-              xMax =  1.5 * stats.stdDev[0],
-              yMin = -1.5 * stats.stdDev[1],
-              yMax =  1.5 * stats.stdDev[1],
-              zMin = -1.5 * stats.stdDev[2],
-              zMax =  1.5 * stats.stdDev[2];
+        const maxStd = Math.max(
+          Math.abs(stats.stdDev[0]),
+          Math.abs(stats.stdDev[1]),
+          Math.abs(stats.stdDev[2])
+        );
+        const scale = 1.5 * maxStd;
+        const xMin = -scale, xMax = scale;
+        const yMin = -scale, yMax = scale;
+        const zMin = -scale, zMax = scale;
         
         // 3D Density Estimation using sde (with dynamic grid sizing)
         const n = rmc6f.dataRows.length;
