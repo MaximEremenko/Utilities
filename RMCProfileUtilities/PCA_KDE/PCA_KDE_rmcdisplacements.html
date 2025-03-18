@@ -655,22 +655,28 @@
           return;
         }
         
-        // --- Build probability-based slider ---
-        // Compute the grid cell volume
+        // --- Normalize density so that the maximum is 1 ---
+        const maxD = Math.max(...density);
+        density = density.map(d => d / maxD);
+        
+        // --- Build a cumulative sum starting from the most dense areas ---
+        // Each grid cell has volume:
         const cellVolume = dxGrid * dyGrid * dzGrid;
-        // Compute total probability mass over the grid
-        const totalMass = density.reduce((acc, d) => acc + d, 0) * cellVolume;
-        // Sort the density values in descending order (to associate higher density with lower mass)
+        // Total mass:
+        let totalMass = density.reduce((acc, d) => acc + d, 0) * cellVolume;
+        
+        // Sort densities in descending order:
         const sortedDensity = density.slice().sort((a, b) => b - a);
-        // Compute cumulative mass for the sorted densities
+        // Compute cumulative mass from highest density downward:
         const cumMass = [];
         cumMass[0] = sortedDensity[0] * cellVolume;
         for (let i = 1; i < sortedDensity.length; i++) {
-          cumMass[i] = cumMass[i - 1] + sortedDensity[i] * cellVolume;
+          cumMass[i] = cumMass[i-1] + sortedDensity[i] * cellVolume;
         }
-        // Build lookup: for each percentage 0% to 100%, find the density threshold where cumulative mass >= target
-        const percThreshold = [];
-        for (let p = 0; p <= 100; p++) {
+        
+        // Build slider steps so that slider value p (0% to 100%) means:
+        // p% of the total mass is contained in grid cells with density ≥ threshold.
+        const sliderSteps = Array.from({ length: 101 }, (_, p) => {
           const targetMass = (p / 100) * totalMass;
           let lo = 0, hi = sortedDensity.length - 1, idx = sortedDensity.length - 1;
           while (lo <= hi) {
@@ -682,17 +688,16 @@
               lo = mid + 1;
             }
           }
-          percThreshold[p] = sortedDensity[idx];
-        }
-        
-        // Build slider steps using probability percentages.
-        const sliderSteps = Array.from({ length: 101 }, (_, p) => {
+          const threshold = sortedDensity[idx];
           return {
             method: 'restyle',
-            args: [{ isomin: percThreshold[p], isomax: percThreshold[p] }],
+            args: [{ isomin: threshold, isomax: threshold }],
             label: p + '%'
           };
         });
+        
+        // Set initial isosurface threshold corresponding to 50% cumulative mass.
+        const initialThreshold = sliderSteps[50].args[0].isomin;
         
         const trace3D = {
           type: 'isosurface',
@@ -700,8 +705,8 @@
           y: yArr,
           z: zArr,
           value: density,
-          isomin: percThreshold[50],
-          isomax: percThreshold[50],
+          isomin: initialThreshold,
+          isomax: initialThreshold,
           caps: { x: { show: true }, y: { show: true }, z: { show: true } },
           surface: { show: true, count: 4, fill: 1 },
           colorscale: 'Viridis',
@@ -718,7 +723,7 @@
           scene: { aspectratio: { x: 1, y: 1, z: 1 } },
           sliders: [{
             pad: { l: 130, t: 55 },
-            currentvalue: { prefix: 'Probability: ', visible: true, xanchor: 'right' },
+            currentvalue: { prefix: 'Cumulative mass from dense areas: ', visible: true, xanchor: 'right' },
             steps: sliderSteps
           }]
         };
