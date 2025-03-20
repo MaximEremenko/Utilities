@@ -141,19 +141,20 @@
   <script src="https://cdn.plot.ly/plotly-2.16.1.min.js"></script>
   <!-- Numeric.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
-  <!-- KDE.js -->
-  <script src="KDE.js"></script>
+  <!-- GPU.js (loaded via CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/gpu.js@2.11.0/dist/gpu-browser.min.js"></script>
+  <!-- KDE.js Code and Helper Functions -->
+<script src="KDE.js"></script>
+
 </head>
 <body>
   <div class="container">
     <h1>RMC6f Analysis, PCA Stats & 3D KDE Isosurface</h1>
-    
     <!-- File Drag & Drop Zone -->
     <div id="dropZone" class="file-drop-zone" style="border:2px dashed #3498db; background:#ecf0f1; padding:20px; text-align:center; cursor:pointer; border-radius:8px;">
       <p>Drag & Drop your RMC6f file here or click to select.</p>
       <input type="file" id="fileInput" accept=".rmc6f" style="display:none;">
     </div>
-    
     <div class="main-content">
       <!-- Left Panels -->
       <div class="left-panels">
@@ -172,7 +173,6 @@
         <div id="pcaResults" class="panel pca-results" style="display:none;"></div>
         <div id="messages"></div>
       </div>
-      
       <!-- Right Panel: Plot -->
       <div class="right-panel">
         <div id="plotContainer" style="display:none;">
@@ -183,67 +183,7 @@
   </div>
   
   <script>
-    // Helper: 2D Gaussian KDE with optional limits.
-    function compute2DKDE(data, key1, key2, limits) {
-      const xs = data.map(d => d[key1]);
-      const ys = data.map(d => d[key2]);
-      const n = xs.length;
-      
-      const minX = limits && limits.minX !== undefined ? limits.minX : Math.min(...xs);
-      const maxX = limits && limits.maxX !== undefined ? limits.maxX : Math.max(...xs);
-      const minY = limits && limits.minY !== undefined ? limits.minY : Math.min(...ys);
-      const maxY = limits && limits.maxY !== undefined ? limits.maxY : Math.max(...ys);
-      
-      const marginX = limits ? 0 : (maxX - minX) * 0.1;
-      const marginY = limits ? 0 : (maxY - minY) * 0.1;
-      
-      const gridDim = 50;
-      const gridX = [];
-      const gridY = [];
-      const stepX = (maxX - minX + 2 * marginX) / (gridDim - 1);
-      const stepY = (maxY - minY + 2 * marginY) / (gridDim - 1);
-      for (let i = 0; i < gridDim; i++) {
-        gridX.push(minX - marginX + i * stepX);
-        gridY.push(minY - marginY + i * stepY);
-      }
-      
-      const density = [];
-      const factor = 1 / (2 * Math.PI * stepX * stepY * n);
-      for (let i = 0; i < gridDim; i++) {
-        density[i] = [];
-        for (let j = 0; j < gridDim; j++) {
-          let sum = 0;
-          const xVal = gridX[j];
-          const yVal = gridY[i];
-          for (let k = 0; k < n; k++) {
-            const u = (xs[k] - xVal) / stepX;
-            const v = (ys[k] - yVal) / stepY;
-            sum += Math.exp(-0.5 * (u * u + v * v));
-          }
-          density[i][j] = factor * sum;
-        }
-      }
-      return { x: gridX, y: gridY, z: density };
-    }
-
-    // Helper: Create a meshgrid from two 1D arrays.
-    function meshgrid(x, y) {
-      const X = [];
-      const Y = [];
-      for (let i = 0; i < y.length; i++) {
-        const rowX = [];
-        const rowY = [];
-        for (let j = 0; j < x.length; j++) {
-          rowX.push(x[j]);
-          rowY.push(y[i]);
-        }
-        X.push(rowX);
-        Y.push(rowY);
-      }
-      return { X, Y };
-    }
-
-    // RMC6fReaderJS class and file handling
+    // --- File Handling, PCA, and Plotting Code ---
     document.addEventListener("DOMContentLoaded", function() {
       class RMC6fReaderJS {
         constructor() {
@@ -568,7 +508,6 @@
         const pcaResult = performPCA(subset);
         const stats = computeStatistics(subset);
         
-        // Build PCA results HTML
         let html = '<h2>PCA & Statistics Results</h2>';
         html += `<p><strong>Variance:</strong> [${stats.variance.map(v => v.toFixed(4)).join(', ')}]</p>`;
         html += `<p><strong>Standard Deviation:</strong> [${stats.stdDev.map(v => v.toFixed(4)).join(', ')}]</p>`;
@@ -577,19 +516,16 @@
         pcaResultsDiv.innerHTML = html;
         pcaResultsDiv.style.display = "block";
         
-        // Define grid limits for 3D density based on standard deviations.
         const maxStd = Math.max(
           Math.abs(stats.stdDev[0]),
           Math.abs(stats.stdDev[1]),
           Math.abs(stats.stdDev[2])
         );
-        const scale = 1.5 * maxStd;
+        const scale = 0.5;
         const xMin = -scale, xMax = scale;
         const yMin = -scale, yMax = scale;
         const zMin = -scale, zMax = scale;
         
-        // 3D Density Estimation using KDE.
-        // Construct dataset as a 2D array with shape [3][n]
         const dataset3D = [
           subset.map(p => p.dx),
           subset.map(p => p.dy),
@@ -597,7 +533,6 @@
         ];
         const kde = new GaussianKDE(dataset3D, "scott");
         
-        // --- Determine the maximum available grid dimension using a binary search ---
         function findMaxGridDim(minDim, maxDim) {
           let bestDim = minDim;
           while (minDim <= maxDim) {
@@ -628,11 +563,10 @@
         }
         
         const minGridDim = 20;
-        const upperBoundGridDim = 50; 
+        const upperBoundGridDim = 40; 
         const optimalGridDim = findMaxGridDim(minGridDim, upperBoundGridDim);
         console.log("Using grid dimension: " + optimalGridDim);
         
-        // Generate the grid using the found optimal dimension.
         const xArr = [], yArr = [], zArr = [];
         const dxGrid = (xMax - xMin) / (optimalGridDim - 1);
         const dyGrid = (yMax - yMin) / (optimalGridDim - 1);
@@ -655,27 +589,19 @@
           return;
         }
         
-        // --- Normalize density so that the maximum is 1 ---
         const maxD = Math.max(...density);
         density = density.map(d => d / maxD);
         
-        // --- Build a cumulative sum starting from the most dense areas ---
-        // Each grid cell has volume:
         const cellVolume = dxGrid * dyGrid * dzGrid;
-        // Total mass:
         let totalMass = density.reduce((acc, d) => acc + d, 0) * cellVolume;
         
-        // Sort densities in descending order:
         const sortedDensity = density.slice().sort((a, b) => b - a);
-        // Compute cumulative mass from highest density downward:
         const cumMass = [];
         cumMass[0] = sortedDensity[0] * cellVolume;
         for (let i = 1; i < sortedDensity.length; i++) {
           cumMass[i] = cumMass[i-1] + sortedDensity[i] * cellVolume;
         }
         
-        // Build slider steps so that slider value p (0% to 100%) means:
-        // p% of the total mass is contained in grid cells with density ≥ threshold.
         const sliderSteps = Array.from({ length: 101 }, (_, p) => {
           const targetMass = (p / 100) * totalMass;
           let lo = 0, hi = sortedDensity.length - 1, idx = sortedDensity.length - 1;
@@ -696,7 +622,6 @@
           };
         });
         
-        // Set initial isosurface threshold corresponding to 50% cumulative mass.
         const initialThreshold = sliderSteps[50].args[0].isomin;
         
         const trace3D = {
