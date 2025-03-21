@@ -484,7 +484,7 @@
     
       updateCutHeader(cutHeaderLines, newSupercell, cutVectors) {
         this.replaceOrAppendLine(cutHeaderLines, "Supercell", () => {
-          return `Supercell                              ${newSupercell.join(" ")}`;
+          return `Supercell dimensions:                  ${newSupercell.join(" ")}`;
         });
     
         const [a, b, c, alpha, beta, gamma] = this.cellParam;
