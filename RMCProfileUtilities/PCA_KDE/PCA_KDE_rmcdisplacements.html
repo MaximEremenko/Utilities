@@ -521,7 +521,7 @@
           Math.abs(stats.stdDev[1]),
           Math.abs(stats.stdDev[2])
         );
-        const scale = 2*maxStd;
+        const scale = 3*maxStd;
         const xMin = -scale, xMax = scale;
         const yMin = -scale, yMax = scale;
         const zMin = -scale, zMax = scale;
@@ -630,30 +630,189 @@
           y: yArr,
           z: zArr,
           value: density,
-          isomin: Math.min(...density),
+          isomin: initialThreshold,
           isomax: Math.max(...density),
           caps: { x: { show: true }, y: { show: true }, z: { show: true } },
           surface: { show: true, count: 10, fill: 1 },
           colorscale: 'Viridis',
-          opacity: 0.25,
+          opacity: 0.8,
           cmin: Math.min(...density),
           cmax: Math.max(...density)
         };
         
-        const data = [trace3D];
-        const layout = {
-          width: 1000,
-          height: 700,
-          title: '3D Density Isosurface with 2D KDE Projections',
-          scene: { aspectratio: { x: 1, y: 1, z: 1 } },
-          sliders: [{
-            pad: { l: 130, t: 55 },
-            currentvalue: { prefix: 'Cumulative mass from dense areas: ', visible: true, xanchor: 'right' },
-            steps: sliderSteps
-          }]
-        };
-        Plotly.newPlot('plot', data, layout);
-        plotContainer.style.display = "block";
+        // --- Helper function: Reshape flat array into 2D array ---
+    function reshape(arr, rows, cols) {
+      const reshaped = [];
+      for (let i = 0; i < rows; i++) {
+        reshaped.push(arr.slice(i * cols, (i + 1) * cols));
+      }
+      return reshaped;
+    }
+
+    // --- Set grid resolution for 2D projections ---
+    const gridRes2D = optimalGridDim; // you can change this resolution if desired
+
+    // --- XY Projection (density on XY plane) ---
+    const kdeXY = new GaussianKDE([subset.map(p => p.dx), subset.map(p => p.dy)], "scott");
+    const dxXY = (xMax - xMin) / (gridRes2D - 1);
+    const dyXY = (yMax - yMin) / (gridRes2D - 1);
+    let xArrXY = [], yArrXY = [];
+    for (let i = 0; i < gridRes2D; i++) {
+      for (let j = 0; j < gridRes2D; j++) {
+        xArrXY.push(xMin + j * dxXY);
+        yArrXY.push(yMin + i * dyXY);
+      }
+    }
+    const flatDensityXY = kdeXY.evaluate([xArrXY, yArrXY]);
+    const densityXY = reshape(flatDensityXY, gridRes2D, gridRes2D);
+
+    // Create 2D grid arrays for the surface trace
+    let xyX = [], xyY = [];
+    for (let i = 0; i < gridRes2D; i++) {
+      const rowX = [];
+      const rowY = [];
+      for (let j = 0; j < gridRes2D; j++) {
+        rowX.push(xMin + j * dxXY);
+        rowY.push(yMin + i * dyXY);
+      }
+      xyX.push(rowX);
+      xyY.push(rowY);
+    }
+    // Offset the XY projection slightly in z so it does not overlap the 3D isosurface.
+    const offset = 0.1 * scale;
+    const xyZ = numeric.rep([gridRes2D, gridRes2D], zMin - offset);
+
+    const traceXY = {
+      type: 'surface',
+      x: xyX,
+      y: xyY,
+      z: xyZ,
+      surfacecolor: densityXY,
+      colorscale: 'Viridis',
+      opacity: 1.0,
+      showscale: false,
+      name: 'XY Projection',
+      contours: {
+        z: {
+          show: true,
+          usecolormap: true,
+          highlightcolor: "#42f462",
+          project: { z: true }
+        }
+      }
+    };
+
+    // --- XZ Projection (density on XZ plane) ---
+    const kdeXZ = new GaussianKDE([subset.map(p => p.dx), subset.map(p => p.dz)], "scott");
+    const dxXZ = (xMax - xMin) / (gridRes2D - 1);
+    const dzXZ = (zMax - zMin) / (gridRes2D - 1);
+    let xArrXZ = [], zArrXZ = [];
+    for (let i = 0; i < gridRes2D; i++) {
+      for (let j = 0; j < gridRes2D; j++) {
+        xArrXZ.push(xMin + j * dxXZ);
+        zArrXZ.push(zMin + i * dzXZ);
+      }
+    }
+    const flatDensityXZ = kdeXZ.evaluate([xArrXZ, zArrXZ]);
+    const densityXZ = reshape(flatDensityXZ, gridRes2D, gridRes2D);
+
+    let xzX = [], xzZ = [];
+    for (let i = 0; i < gridRes2D; i++) {
+      const rowX = [];
+      const rowZ = [];
+      for (let j = 0; j < gridRes2D; j++) {
+        rowX.push(xMin + j * dxXZ);
+        rowZ.push(zMin + i * dzXZ);
+      }
+      xzX.push(rowX);
+      xzZ.push(rowZ);
+    }
+    // For XZ, fix y at yMin minus an offset.
+    const xzY = numeric.rep([gridRes2D, gridRes2D], yMin - offset);
+
+    const traceXZ = {
+      type: 'surface',
+      x: xzX,
+      y: xzY,
+      z: xzZ,
+      surfacecolor: densityXZ,
+      colorscale: 'Viridis',
+      opacity: 1.0,
+      showscale: false,
+      name: 'XZ Projection',
+      contours: {
+        y: {
+          show: true,
+          usecolormap: true,
+          highlightcolor: "#42f462",
+          project: { y: true }
+        }
+      }
+    };
+
+    // --- YZ Projection (density on YZ plane) ---
+    const kdeYZ = new GaussianKDE([subset.map(p => p.dy), subset.map(p => p.dz)], "scott");
+    const dyYZ = (yMax - yMin) / (gridRes2D - 1);
+    const dzYZ = (zMax - zMin) / (gridRes2D - 1);
+    let yArrYZ = [], zArrYZ = [];
+    for (let i = 0; i < gridRes2D; i++) {
+      for (let j = 0; j < gridRes2D; j++) {
+        yArrYZ.push(yMin + j * dyYZ);
+        zArrYZ.push(zMin + i * dzYZ);
+      }
+    }
+    const flatDensityYZ = kdeYZ.evaluate([yArrYZ, zArrYZ]);
+    const densityYZ = reshape(flatDensityYZ, gridRes2D, gridRes2D);
+
+    let yzY = [], yzZ = [];
+    for (let i = 0; i < gridRes2D; i++) {
+      const rowY = [];
+      const rowZ = [];
+      for (let j = 0; j < gridRes2D; j++) {
+        rowY.push(yMin + j * dyYZ);
+        rowZ.push(zMin + i * dzYZ);
+      }
+      yzY.push(rowY);
+      yzZ.push(rowZ);
+    }
+    // For YZ, fix x at xMin minus an offset.
+    const yzX = numeric.rep([gridRes2D, gridRes2D], xMin - offset);
+
+    const traceYZ = {
+      type: 'surface',
+      x: yzX,
+      y: yzY,
+      z: yzZ,
+      surfacecolor: densityYZ,
+      colorscale: 'Viridis',
+      opacity: 1.0,
+      showscale: false,
+      name: 'YZ Projection',
+      contours: {
+        x: {
+          show: true,
+          usecolormap: true,
+          highlightcolor: "#42f462",
+          project: { x: true }
+        }
+      }
+    };
+
+    // --- Combine all traces and update the layout ---
+    const data = [trace3D, traceXY, traceXZ, traceYZ];
+    const layout = {
+      width: 1000,
+      height: 700,
+      title: '3D Density Isosurface with 2D KDE Projections',
+      scene: { aspectratio: { x: 1, y: 1, z: 1 } },
+      sliders: [{
+        pad: { l: 130, t: 55 },
+        currentvalue: { prefix: 'Cumulative mass from dense areas: ', visible: true, xanchor: 'right' },
+        steps: sliderSteps
+      }]
+    };
+    Plotly.newPlot('plot', data, layout);
+    plotContainer.style.display = "block";
       });
       
     });
