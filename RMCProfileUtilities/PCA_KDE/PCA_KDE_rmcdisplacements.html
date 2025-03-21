@@ -521,7 +521,7 @@
           Math.abs(stats.stdDev[1]),
           Math.abs(stats.stdDev[2])
         );
-        const scale = 0.5;
+        const scale = 2*maxStd;
         const xMin = -scale, xMax = scale;
         const yMin = -scale, yMax = scale;
         const zMin = -scale, zMax = scale;
@@ -630,12 +630,12 @@
           y: yArr,
           z: zArr,
           value: density,
-          isomin: initialThreshold,
-          isomax: initialThreshold,
+          isomin: Math.min(...density),
+          isomax: Math.max(...density),
           caps: { x: { show: true }, y: { show: true }, z: { show: true } },
-          surface: { show: true, count: 4, fill: 1 },
+          surface: { show: true, count: 10, fill: 1 },
           colorscale: 'Viridis',
-          opacity: 0.5,
+          opacity: 0.15,
           cmin: Math.min(...density),
           cmax: Math.max(...density)
         };
