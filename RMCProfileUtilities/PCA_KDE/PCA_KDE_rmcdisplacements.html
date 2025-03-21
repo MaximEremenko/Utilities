@@ -62,12 +62,21 @@
     }
     .file-info p { margin: 5px 0; line-height: 1.2; }
     .ref-selector { 
-      height: 60px; 
       display: flex; 
       align-items: center; 
       gap: 10px; 
     }
     .ref-selector label { white-space: nowrap; }
+    /* Slider Type: Using radio buttons */
+    .slider-type-selector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .slider-type-selector span {
+      font-weight: bold;
+      white-space: nowrap;
+    }
     .pca-results { 
       height: 350px; 
       overflow-y: auto; 
@@ -144,8 +153,7 @@
   <!-- GPU.js (loaded via CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/gpu.js@2.11.0/dist/gpu-browser.min.js"></script>
   <!-- KDE.js Code and Helper Functions -->
-<script src="KDE.js"></script>
-
+  <script src="KDE.js"></script>
 </head>
 <body>
   <div class="container">
@@ -170,6 +178,12 @@
           <select id="refDropdown"></select>
           <button id="analyzeBtn">Analyze</button>
         </div>
+        <!-- Slider Type Selector (radio buttons) -->
+        <div id="sliderTypeSelector" class="panel slider-type-selector" style="display:none;">
+          <span>Select Slider Type:</span>
+          <label><input type="radio" name="sliderType" value="usual" checked> Density </label>
+          <label><input type="radio" name="sliderType" value="cumulative"> Cumulative Density</label>
+        </div>
         <div id="pcaResults" class="panel pca-results" style="display:none;"></div>
         <div id="messages"></div>
       </div>
@@ -183,7 +197,6 @@
   </div>
   
   <script>
-    // --- File Handling, PCA, and Plotting Code ---
     document.addEventListener("DOMContentLoaded", function() {
       class RMC6fReaderJS {
         constructor() {
@@ -352,7 +365,7 @@
         });
       }
       
-      // Populate Reference Dropdown
+      // Populate Reference Dropdown.
       function populateRefDropdown() {
         const refMap = new Map();
         rmc6f.dataRows.forEach(row => {
@@ -368,9 +381,11 @@
           refDropdown.appendChild(option);
         });
         refSelectorDiv.style.display = "block";
+        // Show the slider type radio buttons.
+        document.getElementById("sliderTypeSelector").style.display = "block";
       }
       
-      // Compute delta displacements and center them
+      // Compute delta displacements and center them.
       function computeDeltaDisplacements(dataRows, ncells) {
         const deltas = dataRows.map(row => {
           let dx = row.x - (row.cellRefNumX / ncells[0]);
@@ -457,32 +472,13 @@
         return { mean, components: sortedComponents, explainedVariance: sortedExplainedVariance };
       }
       
-      // Helper functions for HTML tables.
-      function buildMatrixHTML(matrix) {
-        let html = '<table class="matrix">';
-        matrix.forEach(row => {
-          html += '<tr>';
-          row.forEach(val => {
-            html += `<td>${val.toFixed(4)}</td>`;
-          });
-          html += '</tr>';
-        });
-        html += '</table>';
-        return html;
-      }
-      
-      function buildPCAComponentsHTML(components, eigenvalues) {
-        let html = '<table class="matrix">';
-        html += '<tr><th>Component</th><th>Vector</th><th>Eigenvalue</th></tr>';
-        components.forEach((comp, idx) => {
-          html += `<tr>
-                    <td>${idx+1}</td>
-                    <td>[${comp.map(v => v.toFixed(4)).join(', ')}]</td>
-                    <td>${eigenvalues[idx].toExponential(2)}</td>
-                  </tr>`;
-        });
-        html += '</table>';
-        return html;
+      // Helper function: Reshape flat array into 2D array for 2D projections.
+      function reshape(arr, rows, cols) {
+        const reshaped = [];
+        for (let i = 0; i < rows; i++) {
+          reshaped.push(arr.slice(i * cols, (i + 1) * cols));
+        }
+        return reshaped;
       }
       
       analyzeBtn.addEventListener("click", () => {
@@ -505,27 +501,37 @@
           showNotification("No data points found for refNumber " + selectedRef, "error");
           return;
         }
+        // Perform PCA and compute statistics.
         const pcaResult = performPCA(subset);
         const stats = computeStatistics(subset);
         
         let html = '<h2>PCA & Statistics Results</h2>';
         html += `<p><strong>Variance:</strong> [${stats.variance.map(v => v.toFixed(4)).join(', ')}]</p>`;
         html += `<p><strong>Standard Deviation:</strong> [${stats.stdDev.map(v => v.toFixed(4)).join(', ')}]</p>`;
-        html += '<h3>Covariance Matrix:</h3>' + buildMatrixHTML(stats.covariance);
-        html += '<h3>PCA Components:</h3>' + buildPCAComponentsHTML(pcaResult.components, pcaResult.explainedVariance);
+        html += '<h3>Covariance Matrix:</h3>' + `<table class="matrix">${stats.covariance.map(row => `<tr>${row.map(val => `<td>${val.toFixed(4)}</td>`).join('')}</tr>`).join('')}</table>`;
+        html += '<h3>PCA Components:</h3>' + `<table class="matrix">
+          <tr><th>Component</th><th>Vector</th><th>Eigenvalue</th></tr>
+          ${pcaResult.components.map((comp, idx) => `<tr>
+            <td>${idx+1}</td>
+            <td>[${comp.map(v => v.toFixed(4)).join(', ')}]</td>
+            <td>${pcaResult.explainedVariance[idx].toExponential(2)}</td>
+          </tr>`).join('')}
+        </table>`;
         pcaResultsDiv.innerHTML = html;
         pcaResultsDiv.style.display = "block";
         
+        // Define plotting grid dimensions and range.
         const maxStd = Math.max(
           Math.abs(stats.stdDev[0]),
           Math.abs(stats.stdDev[1]),
           Math.abs(stats.stdDev[2])
         );
-        const scale = 3*maxStd;
+        const scale = 2 * maxStd;
         const xMin = -scale, xMax = scale;
         const yMin = -scale, yMax = scale;
         const zMin = -scale, zMax = scale;
         
+        // Build grid for 3D KDE.
         const dataset3D = [
           subset.map(p => p.dx),
           subset.map(p => p.dy),
@@ -533,6 +539,7 @@
         ];
         const kde = new GaussianKDE(dataset3D, "scott");
         
+        // Determine optimal grid dimension.
         function findMaxGridDim(minDim, maxDim) {
           let bestDim = minDim;
           while (minDim <= maxDim) {
@@ -552,7 +559,7 @@
                 }
               }
               const gridPoints = [xArr, yArr, zArr];
-              const densityTest = kde.evaluate(gridPoints);
+              kde.evaluate(gridPoints);
               bestDim = mid;
               minDim = mid + 1;
             } catch (e) {
@@ -602,25 +609,41 @@
           cumMass[i] = cumMass[i-1] + sortedDensity[i] * cellVolume;
         }
         
-        const sliderSteps = Array.from({ length: 101 }, (_, p) => {
-          const targetMass = (p / 100) * totalMass;
-          let lo = 0, hi = sortedDensity.length - 1, idx = sortedDensity.length - 1;
-          while (lo <= hi) {
-            const mid = Math.floor((lo + hi) / 2);
-            if (cumMass[mid] >= targetMass) {
-              idx = mid;
-              hi = mid - 1;
-            } else {
-              lo = mid + 1;
+        // Retrieve the slider type from radio buttons.
+        let sliderSteps;
+        const sliderType = document.querySelector('input[name="sliderType"]:checked').value;
+        if (sliderType === "cumulative") {
+          sliderSteps = Array.from({ length: 101 }, (_, p) => {
+            const targetMass = (p / 100) * totalMass;
+            let lo = 0, hi = sortedDensity.length - 1, idx = sortedDensity.length - 1;
+            while (lo <= hi) {
+              const mid = Math.floor((lo + hi) / 2);
+              if (cumMass[mid] >= targetMass) {
+                idx = mid;
+                hi = mid - 1;
+              } else {
+                lo = mid + 1;
+              }
             }
-          }
-          const threshold = sortedDensity[idx];
-          return {
-            method: 'restyle',
-            args: [{ isomin: threshold, isomax: threshold }],
-            label: p + '%'
-          };
-        });
+            const threshold = sortedDensity[idx];
+            return {
+              method: 'restyle',
+              args: [{ isomin: threshold, isomax: threshold }],
+              label: p + '%'
+            };
+          });
+        } else if (sliderType === "usual") {
+          const minDensity = Math.min(...density);
+          const maxDensity = Math.max(...density);
+          sliderSteps = Array.from({ length: 101 }, (_, p) => {
+            const threshold = minDensity + (p / 100) * (maxDensity - minDensity);
+            return {
+              method: 'restyle',
+              args: [{ isomin: threshold, isomax: threshold }],
+              label: p + '%'
+            };
+          });
+        }
         
         const initialThreshold = sliderSteps[50].args[0].isomin;
         
@@ -635,184 +658,167 @@
           caps: { x: { show: true }, y: { show: true }, z: { show: true } },
           surface: { show: true, count: 10, fill: 1 },
           colorscale: 'Viridis',
-          opacity: 0.8,
+          opacity: 0.6,
           cmin: Math.min(...density),
           cmax: Math.max(...density)
         };
         
-        // --- Helper function: Reshape flat array into 2D array ---
-    function reshape(arr, rows, cols) {
-      const reshaped = [];
-      for (let i = 0; i < rows; i++) {
-        reshaped.push(arr.slice(i * cols, (i + 1) * cols));
-      }
-      return reshaped;
-    }
-
-    // --- Set grid resolution for 2D projections ---
-    const gridRes2D = optimalGridDim; // you can change this resolution if desired
-
-    // --- XY Projection (density on XY plane) ---
-    const kdeXY = new GaussianKDE([subset.map(p => p.dx), subset.map(p => p.dy)], "scott");
-    const dxXY = (xMax - xMin) / (gridRes2D - 1);
-    const dyXY = (yMax - yMin) / (gridRes2D - 1);
-    let xArrXY = [], yArrXY = [];
-    for (let i = 0; i < gridRes2D; i++) {
-      for (let j = 0; j < gridRes2D; j++) {
-        xArrXY.push(xMin + j * dxXY);
-        yArrXY.push(yMin + i * dyXY);
-      }
-    }
-    const flatDensityXY = kdeXY.evaluate([xArrXY, yArrXY]);
-    const densityXY = reshape(flatDensityXY, gridRes2D, gridRes2D);
-
-    // Create 2D grid arrays for the surface trace
-    let xyX = [], xyY = [];
-    for (let i = 0; i < gridRes2D; i++) {
-      const rowX = [];
-      const rowY = [];
-      for (let j = 0; j < gridRes2D; j++) {
-        rowX.push(xMin + j * dxXY);
-        rowY.push(yMin + i * dyXY);
-      }
-      xyX.push(rowX);
-      xyY.push(rowY);
-    }
-    // Offset the XY projection slightly in z so it does not overlap the 3D isosurface.
-    const offset = 0.1 * scale;
-    const xyZ = numeric.rep([gridRes2D, gridRes2D], zMin - offset);
-
-    const traceXY = {
-      type: 'surface',
-      x: xyX,
-      y: xyY,
-      z: xyZ,
-      surfacecolor: densityXY,
-      colorscale: 'Viridis',
-      opacity: 1.0,
-      showscale: false,
-      name: 'XY Projection',
-      contours: {
-        z: {
-          show: true,
-          usecolormap: true,
-          highlightcolor: "#42f462",
-          project: { z: true }
+        // --- 2D Projections ---
+        // Set grid resolution for 2D projections.
+        const gridRes2D = optimalGridDim;
+        // Offset for projections.
+        const offset = 0.1 * scale;
+        
+        // XY Projection.
+        const kdeXY = new GaussianKDE([subset.map(p => p.dx), subset.map(p => p.dy)], "scott");
+        const dxXY = (xMax - xMin) / (gridRes2D - 1);
+        const dyXY = (yMax - yMin) / (gridRes2D - 1);
+        let xArrXY = [], yArrXY = [];
+        for (let i = 0; i < gridRes2D; i++) {
+          for (let j = 0; j < gridRes2D; j++) {
+            xArrXY.push(xMin + j * dxXY);
+            yArrXY.push(yMin + i * dyXY);
+          }
         }
-      }
-    };
-
-    // --- XZ Projection (density on XZ plane) ---
-    const kdeXZ = new GaussianKDE([subset.map(p => p.dx), subset.map(p => p.dz)], "scott");
-    const dxXZ = (xMax - xMin) / (gridRes2D - 1);
-    const dzXZ = (zMax - zMin) / (gridRes2D - 1);
-    let xArrXZ = [], zArrXZ = [];
-    for (let i = 0; i < gridRes2D; i++) {
-      for (let j = 0; j < gridRes2D; j++) {
-        xArrXZ.push(xMin + j * dxXZ);
-        zArrXZ.push(zMin + i * dzXZ);
-      }
-    }
-    const flatDensityXZ = kdeXZ.evaluate([xArrXZ, zArrXZ]);
-    const densityXZ = reshape(flatDensityXZ, gridRes2D, gridRes2D);
-
-    let xzX = [], xzZ = [];
-    for (let i = 0; i < gridRes2D; i++) {
-      const rowX = [];
-      const rowZ = [];
-      for (let j = 0; j < gridRes2D; j++) {
-        rowX.push(xMin + j * dxXZ);
-        rowZ.push(zMin + i * dzXZ);
-      }
-      xzX.push(rowX);
-      xzZ.push(rowZ);
-    }
-    // For XZ, fix y at yMin minus an offset.
-    const xzY = numeric.rep([gridRes2D, gridRes2D], yMin - offset);
-
-    const traceXZ = {
-      type: 'surface',
-      x: xzX,
-      y: xzY,
-      z: xzZ,
-      surfacecolor: densityXZ,
-      colorscale: 'Viridis',
-      opacity: 1.0,
-      showscale: false,
-      name: 'XZ Projection',
-      contours: {
-        y: {
-          show: true,
-          usecolormap: true,
-          highlightcolor: "#42f462",
-          project: { y: true }
+        const flatDensityXY = kdeXY.evaluate([xArrXY, yArrXY]);
+        const densityXY = reshape(flatDensityXY, gridRes2D, gridRes2D);
+        let xyX = [], xyY = [];
+        for (let i = 0; i < gridRes2D; i++) {
+          const rowX = [];
+          const rowY = [];
+          for (let j = 0; j < gridRes2D; j++) {
+            rowX.push(xMin + j * dxXY);
+            rowY.push(yMin + i * dyXY);
+          }
+          xyX.push(rowX);
+          xyY.push(rowY);
         }
-      }
-    };
-
-    // --- YZ Projection (density on YZ plane) ---
-    const kdeYZ = new GaussianKDE([subset.map(p => p.dy), subset.map(p => p.dz)], "scott");
-    const dyYZ = (yMax - yMin) / (gridRes2D - 1);
-    const dzYZ = (zMax - zMin) / (gridRes2D - 1);
-    let yArrYZ = [], zArrYZ = [];
-    for (let i = 0; i < gridRes2D; i++) {
-      for (let j = 0; j < gridRes2D; j++) {
-        yArrYZ.push(yMin + j * dyYZ);
-        zArrYZ.push(zMin + i * dzYZ);
-      }
-    }
-    const flatDensityYZ = kdeYZ.evaluate([yArrYZ, zArrYZ]);
-    const densityYZ = reshape(flatDensityYZ, gridRes2D, gridRes2D);
-
-    let yzY = [], yzZ = [];
-    for (let i = 0; i < gridRes2D; i++) {
-      const rowY = [];
-      const rowZ = [];
-      for (let j = 0; j < gridRes2D; j++) {
-        rowY.push(yMin + j * dyYZ);
-        rowZ.push(zMin + i * dzYZ);
-      }
-      yzY.push(rowY);
-      yzZ.push(rowZ);
-    }
-    // For YZ, fix x at xMin minus an offset.
-    const yzX = numeric.rep([gridRes2D, gridRes2D], xMin - offset);
-
-    const traceYZ = {
-      type: 'surface',
-      x: yzX,
-      y: yzY,
-      z: yzZ,
-      surfacecolor: densityYZ,
-      colorscale: 'Viridis',
-      opacity: 1.0,
-      showscale: false,
-      name: 'YZ Projection',
-      contours: {
-        x: {
-          show: true,
-          usecolormap: true,
-          highlightcolor: "#42f462",
-          project: { x: true }
+        const xyZ = numeric.rep([gridRes2D, gridRes2D], zMin - offset);
+        const traceXY = {
+          type: 'surface',
+          x: xyX,
+          y: xyY,
+          z: xyZ,
+          surfacecolor: densityXY,
+          colorscale: 'Viridis',
+          opacity: 1.0,
+          showscale: false,
+          name: 'XY Projection',
+          contours: {
+            z: {
+              show: true,
+              usecolormap: true,
+              highlightcolor: "#42f462",
+              project: { z: true }
+            }
+          }
+        };
+        
+        // XZ Projection.
+        const kdeXZ = new GaussianKDE([subset.map(p => p.dx), subset.map(p => p.dz)], "scott");
+        const dxXZ = (xMax - xMin) / (gridRes2D - 1);
+        const dzXZ = (zMax - zMin) / (gridRes2D - 1);
+        let xArrXZ = [], zArrXZ = [];
+        for (let i = 0; i < gridRes2D; i++) {
+          for (let j = 0; j < gridRes2D; j++) {
+            xArrXZ.push(xMin + j * dxXZ);
+            zArrXZ.push(zMin + i * dzXZ);
+          }
         }
-      }
-    };
-
-    // --- Combine all traces and update the layout ---
-    const data = [trace3D, traceXY, traceXZ, traceYZ];
-    const layout = {
-      width: 1000,
-      height: 700,
-      title: '3D Density Isosurface with 2D KDE Projections',
-      scene: { aspectratio: { x: 1, y: 1, z: 1 } },
-      sliders: [{
-        pad: { l: 130, t: 55 },
-        currentvalue: { prefix: 'Cumulative mass from dense areas: ', visible: true, xanchor: 'right' },
-        steps: sliderSteps
-      }]
-    };
-    Plotly.newPlot('plot', data, layout);
-    plotContainer.style.display = "block";
+        const flatDensityXZ = kdeXZ.evaluate([xArrXZ, zArrXZ]);
+        const densityXZ = reshape(flatDensityXZ, gridRes2D, gridRes2D);
+        let xzX = [], xzZ = [];
+        for (let i = 0; i < gridRes2D; i++) {
+          const rowX = [];
+          const rowZ = [];
+          for (let j = 0; j < gridRes2D; j++) {
+            rowX.push(xMin + j * dxXZ);
+            rowZ.push(zMin + i * dzXZ);
+          }
+          xzX.push(rowX);
+          xzZ.push(rowZ);
+        }
+        const xzY = numeric.rep([gridRes2D, gridRes2D], yMin - offset);
+        const traceXZ = {
+          type: 'surface',
+          x: xzX,
+          y: xzY,
+          z: xzZ,
+          surfacecolor: densityXZ,
+          colorscale: 'Viridis',
+          opacity: 1.0,
+          showscale: false,
+          name: 'XZ Projection',
+          contours: {
+            y: {
+              show: true,
+              usecolormap: true,
+              highlightcolor: "#42f462",
+              project: { y: true }
+            }
+          }
+        };
+        
+        // YZ Projection.
+        const kdeYZ = new GaussianKDE([subset.map(p => p.dy), subset.map(p => p.dz)], "scott");
+        const dyYZ = (yMax - yMin) / (gridRes2D - 1);
+        const dzYZ = (zMax - zMin) / (gridRes2D - 1);
+        let yArrYZ = [], zArrYZ = [];
+        for (let i = 0; i < gridRes2D; i++) {
+          for (let j = 0; j < gridRes2D; j++) {
+            yArrYZ.push(yMin + j * dyYZ);
+            zArrYZ.push(zMin + i * dzYZ);
+          }
+        }
+        const flatDensityYZ = kdeYZ.evaluate([yArrYZ, zArrYZ]);
+        const densityYZ = reshape(flatDensityYZ, gridRes2D, gridRes2D);
+        let yzY = [], yzZ = [];
+        for (let i = 0; i < gridRes2D; i++) {
+          const rowY = [];
+          const rowZ = [];
+          for (let j = 0; j < gridRes2D; j++) {
+            rowY.push(yMin + j * dyYZ);
+            rowZ.push(zMin + i * dzYZ);
+          }
+          yzY.push(rowY);
+          yzZ.push(rowZ);
+        }
+        const yzX = numeric.rep([gridRes2D, gridRes2D], xMin - offset);
+        const traceYZ = {
+          type: 'surface',
+          x: yzX,
+          y: yzY,
+          z: yzZ,
+          surfacecolor: densityYZ,
+          colorscale: 'Viridis',
+          opacity: 1.0,
+          showscale: false,
+          name: 'YZ Projection',
+          contours: {
+            x: {
+              show: true,
+              usecolormap: true,
+              highlightcolor: "#42f462",
+              project: { x: true }
+            }
+          }
+        };
+        
+        // Combine all traces and update the layout.
+        const data = [trace3D, traceXY, traceXZ, traceYZ];
+        const layout = {
+          width: 1000,
+          height: 700,
+          title: '3D Density Isosurface with 2D KDE Projections',
+          scene: { aspectratio: { x: 1, y: 1, z: 1 } },
+          sliders: [{
+            pad: { l: 130, t: 55 },
+            currentvalue: { prefix: 'Density Threshold: ', visible: true, xanchor: 'right' },
+            steps: sliderSteps
+          }]
+        };
+        Plotly.newPlot('plot', data, layout);
+        plotContainer.style.display = "block";
       });
       
     });
