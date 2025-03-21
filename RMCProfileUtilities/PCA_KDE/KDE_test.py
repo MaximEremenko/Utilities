@@ -11,8 +11,8 @@ ctx.eval(js_code)
 
 # Generate 3-dimensional data (shape: [d][n])
 np.random.seed(42)
-data = np.random.normal(0, 1, size=(2, 100))
-points = np.random.normal(0, 1, size=(2, 10))
+data = np.random.normal(0, 1, size=(3, 100))
+points = np.random.normal(0, 1, size=(3, 10))
 
 # Reference SciPy KDE
 scipy_kde = gaussian_kde(data, bw_method='scott')
