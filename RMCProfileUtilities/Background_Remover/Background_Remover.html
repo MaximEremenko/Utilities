@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Background Remover</title> 
+  <!-- tiff.js FIRST, no async/defer -->
+  <script src="https://cdn.jsdelivr.net/gh/seikichi/tiff.js@master/tiff.min.js"></script>
+  <!-- opencv.js next -->
+  <script src="https://docs.opencv.org/4.10.0/opencv.js"></script>
+  <style>
+    body { background: #f7f7f7; font-family: 'Segoe UI', Arial, sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; }
+    h1 { margin-top: 40px; color: #27577e; }
+    #container { background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.07); border-radius: 18px; padding: 32px 48px 32px 48px; margin-top: 24px; min-width: 360px; display: flex; flex-direction: column; align-items: center; }
+    #inputImage { margin-bottom: 24px; }
+    #canvas { border: 1px solid #b9d4ec; margin-bottom: 16px; border-radius: 8px; background: #eaf3fa; max-width: 90vw; }
+    #downloadBtn { padding: 8px 20px; font-size: 1.1em; background: #3f8fd2; color: #fff; border: none; border-radius: 7px; cursor: pointer; transition: background 0.2s; }
+    #downloadBtn:hover { background: #27577e; }
+    #loading { color: #888; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <h1>White Background Remover</h1>
+  <div id="container">
+    <input type="file" id="inputImage" accept="image/png, image/jpeg, image/tiff" disabled>
+    <div id="loading">Loading OpenCV.js...</div>
+    <canvas id="canvas"></canvas>
+    <button id="downloadBtn" style="display:none;">Download PNG</button>
+  </div>
+  <script>
+  window.onload = function() {
+    // Wait until OpenCV is loaded
+    let opencvReady = false;
+
+    function checkOpenCVReady() {
+      if (typeof cv !== 'undefined' && cv.Mat) {
+        opencvReady = true;
+        document.getElementById('inputImage').disabled = false;
+        document.getElementById('loading').textContent = "";
+      } else {
+        setTimeout(checkOpenCVReady, 500);
+      }
+    }
+    checkOpenCVReady();
+
+    function removeBackgroundOpenCV(canvas, threshold=220) {
+      let mat = cv.imread(canvas);
+      cv.cvtColor(mat, mat, cv.COLOR_RGBA2RGB, 0);
+      let mask = new cv.Mat();
+      let low = new cv.Mat(mat.rows, mat.cols, mat.type(), [threshold, threshold, threshold, 0]);
+      let high = new cv.Mat(mat.rows, mat.cols, mat.type(), [255, 255, 255, 255]);
+      cv.inRange(mat, low, high, mask);
+
+      let maskFlood = new cv.Mat.zeros(mat.rows + 2, mat.cols + 2, cv.CV_8U);
+
+      // Flood fill from all edges for mask only
+      for (let x = 0; x < mat.cols; x++) {
+        if (mask.ucharPtr(0, x)[0] === 255)
+          cv.floodFill(mat, maskFlood, new cv.Point(x, 0), new cv.Scalar(255,255,255,255), new cv.Rect(), new cv.Scalar(0), new cv.Scalar(0), (255 << 8) | cv.FLOODFILL_MASK_ONLY);
+        if (mask.ucharPtr(mat.rows-1, x)[0] === 255)
+          cv.floodFill(mat, maskFlood, new cv.Point(x, mat.rows-1), new cv.Scalar(255,255,255,255), new cv.Rect(), new cv.Scalar(0), new cv.Scalar(0), (255 << 8) | cv.FLOODFILL_MASK_ONLY);
+      }
+      for (let y = 0; y < mat.rows; y++) {
+        if (mask.ucharPtr(y, 0)[0] === 255)
+          cv.floodFill(mat, maskFlood, new cv.Point(0, y), new cv.Scalar(255,255,255,255), new cv.Rect(), new cv.Scalar(0), new cv.Scalar(0), (255 << 8) | cv.FLOODFILL_MASK_ONLY);
+        if (mask.ucharPtr(y, mat.cols-1)[0] === 255)
+          cv.floodFill(mat, maskFlood, new cv.Point(mat.cols-1, y), new cv.Scalar(255,255,255,255), new cv.Rect(), new cv.Scalar(0), new cv.Scalar(0), (255 << 8) | cv.FLOODFILL_MASK_ONLY);
+      }
+
+      let matRGBA = new cv.Mat();
+      cv.cvtColor(mat, matRGBA, cv.COLOR_RGB2RGBA, 0);
+
+      for (let y = 0; y < mat.rows; y++) {
+        for (let x = 0; x < mat.cols; x++) {
+          if (maskFlood.ucharPtr(y+1, x+1)[0] === 255) {
+            matRGBA.ucharPtr(y, x)[3] = 0;
+          }
+        }
+      }
+
+      cv.imshow('canvas', matRGBA);
+
+      mat.delete(); mask.delete(); low.delete(); high.delete(); maskFlood.delete(); matRGBA.delete();
+    }
+
+    document.getElementById('inputImage').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!opencvReady) {
+        alert("OpenCV.js is still loading, please wait a moment.");
+        return;
+      }
+      const fname = file.name.toLowerCase();
+      if (fname.endsWith('.tif') || fname.endsWith('.tiff')) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          try {
+            const buffer = evt.target.result;
+            // Now Tiff is DEFINITELY defined here
+            const tiff = new Tiff({buffer: buffer});
+            const canvas = document.getElementById('canvas');
+            const tiffCanvas = tiff.toCanvas();
+            if (!tiffCanvas) throw "tiff.js could not decode this TIFF.";
+            canvas.width = tiffCanvas.width;
+            canvas.height = tiffCanvas.height;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(tiffCanvas, 0, 0);
+            removeBackgroundOpenCV(canvas, 220);
+            document.getElementById('downloadBtn').style.display = 'inline-block';
+          } catch (err) {
+            alert("Could not decode TIFF: " + err);
+            console.error(err);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        // PNG, JPEG, etc.
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.getElementById('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          removeBackgroundOpenCV(canvas, 220);
+          document.getElementById('downloadBtn').style.display = 'inline-block';
+        };
+        img.onerror = function() {
+          alert('Could not load this image format. Try PNG, JPEG, or TIFF.');
+        };
+        img.src = URL.createObjectURL(file);
+      }
+    });
+
+    document.getElementById('downloadBtn').onclick = function() {
+      const canvas = document.getElementById('canvas');
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'nobackground.png';
+      a.click();
+    };
+  }
+  </script>
+</body>
+</html>
