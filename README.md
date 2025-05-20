@@ -13,7 +13,7 @@ Access live demos via GitHub Pages:
 - **PCA SDE Tool:** [PCA SDE Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/PCA_SDE/PCA_SDE_rmcdisplacements.html)  
   *(Tool for performing Surface Density Estimation as part of the RMC analysis)*
 - **Slice Diffuse 3D RMCProfile Tool:** [RMC Diffuse 3DSlice Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/RMCDiffuse3DSlice/SliceDiffuse3DRMC.html)
-- **Background Remover:** [Background Remover Tool](https://maximeremenko.github.io/UtilitiesRMCProfileUtilities/Background_Remover/Background_Remover.html)  
+- **Background Remover:** [Background Remover Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/Background_Remover/Background_Remover.html)  
   *(Interactive tool to remove white or near-white backgrounds from PNG, JPEG, and TIFF images. Useful for preprocessing images in RMC analysis and visualization workflows.)*
 
 ## Repository Structure
