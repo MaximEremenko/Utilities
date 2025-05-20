@@ -12,7 +12,7 @@ Access live demos via GitHub Pages:
   *(Tool for performing Kernel Density Estimation as part of the RMC analysis)*
 - **PCA SDE Tool:** [PCA SDE Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/PCA_SDE/PCA_SDE_rmcdisplacements.html)  
   *(Tool for performing Surface Density Estimation as part of the RMC analysis)*
-
+- **Slice Diffuse 3D RMCProfile Tool:** [RMC Diffuse 3DSlice Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/RMCDiffuse3DSlice/SliceDiffuse3DRMC.html)
 ## Repository Structure
 
 - **Utilities/**  
@@ -28,7 +28,8 @@ Access live demos via GitHub Pages:
 
 - **PCA_SDE/**  
   Contains the PCA SDE analysis tools for RMC6f files.
-
+- **Slice Diffuse 3D RMCProfile Tool/**  
+  Contains the Tool to make slices of RMCProfile Diffuse 3D dat files.
 - **index.html**  
   The landing page for GitHub Pages that links to live demos.
 
@@ -41,10 +42,10 @@ This repository includes several utilities designed to help analyze RMC6f files:
 
 - **PCA KDE Tool:**  
   Utilizes Kernel Density Estimation (KDE) as part of the RMC analysis.
-
 - **PCA SDE Tool:**  
   Utilizes Surface Density Estimation (SDE) as part of the RMC analysis.
-
+- **Slice Diffuse 3D RMCProfile Tool:**
+  Tool to make slices of RMCProfile Diffuse 3D dat files
 ## How to Contribute
 
 Feel free to open issues or submit pull requests if you have improvements or bug fixes.
