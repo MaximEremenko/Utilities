@@ -13,6 +13,9 @@ Access live demos via GitHub Pages:
 - **PCA SDE Tool:** [PCA SDE Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/PCA_SDE/PCA_SDE_rmcdisplacements.html)  
   *(Tool for performing Surface Density Estimation as part of the RMC analysis)*
 - **Slice Diffuse 3D RMCProfile Tool:** [RMC Diffuse 3DSlice Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/RMCDiffuse3DSlice/SliceDiffuse3DRMC.html)
+- **Background Remover:** [Background Remover Tool](https://maximeremenko.github.io/UtilitiesRMCProfileUtilities/Background_Remover/Background_Remover.html)  
+  *(Interactive tool to remove white or near-white backgrounds from PNG, JPEG, and TIFF images. Useful for preprocessing images in RMC analysis and visualization workflows.)*
+
 ## Repository Structure
 
 - **Utilities/**  
@@ -42,10 +45,16 @@ This repository includes several utilities designed to help analyze RMC6f files:
 
 - **PCA KDE Tool:**  
   Utilizes Kernel Density Estimation (KDE) as part of the RMC analysis.
+
 - **PCA SDE Tool:**  
   Utilizes Surface Density Estimation (SDE) as part of the RMC analysis.
-- **Slice Diffuse 3D RMCProfile Tool:**
-  Tool to make slices of RMCProfile Diffuse 3D dat files
+
+- **Slice Diffuse 3D RMCProfile Tool:**  
+  Tool to make slices of RMCProfile Diffuse 3D dat files.
+
+- **Background Remover:**  
+  Interactive app for removing white or near-white backgrounds from images. Supports PNG, JPEG, and TIFF formats. Useful for preparing images for presentations or further analysis.
+
 ## How to Contribute
 
 Feel free to open issues or submit pull requests if you have improvements or bug fixes.
@@ -53,4 +62,3 @@ Feel free to open issues or submit pull requests if you have improvements or bug
 ---
 
 For any questions or support, please contact Maxim Eremenko.
-
