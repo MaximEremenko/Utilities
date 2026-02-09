@@ -1,0 +1,766 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>RMC6f Diffuse Scattering</title>
+<style>
+:root{--bg:#eaf0f8;--card:#fff;--ink:#10223a;--muted:#5f6f86;--line:#ced9e8;--brand:#0e5f88;--brand2:#134a6b;--panel:#f5f9ff;--ok:#166534;--warn:#92400e;--err:#991b1b}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",Tahoma,sans-serif;background:radial-gradient(circle at top,#f8fbff,#e5edf7 60%,#dde7f3);color:var(--ink);padding:14px}
+.app{max-width:1480px;margin:0 auto;display:grid;gap:12px}
+.hero{background:linear-gradient(125deg,#0b172a,#1a2f45);color:#dbeafe;border-radius:12px;padding:14px 16px}
+.hero h1{margin:0 0 6px;font-size:1.2rem}.hero p{margin:0;color:#bfdbfe;font-size:.92rem}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 10px 24px rgba(20,35,60,.08)}
+h2{margin:0 0 10px;font-size:1rem}
+h3{margin:0 0 8px;font-size:.95rem}
+.drop{border:2px dashed #6ba8c2;background:#edf7fb;padding:14px;border-radius:10px;text-align:center;cursor:pointer;margin-bottom:10px}
+.drop.drag{border-color:var(--brand);background:#e3f2f8}
+.meta{display:grid;grid-template-columns:170px 1fr;gap:6px 10px;font-size:.9rem}.meta .k{color:var(--muted)}
+.row{display:grid;grid-template-columns:repeat(6,minmax(90px,1fr));gap:8px;margin:0 0 8px}
+.row4{display:grid;grid-template-columns:repeat(4,minmax(110px,1fr));gap:8px;margin:0 0 8px}
+label{display:grid;gap:4px;font-size:.82rem;color:var(--muted)}
+input,select,button{font:inherit}
+input[type=number],input[type=text],select{padding:6px 8px;border:1px solid #b8c8dc;border-radius:8px;width:100%;background:#fff}
+input[readonly]{background:#f3f7fd;color:#223a58}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+button{border:0;border-radius:8px;padding:8px 12px;background:var(--brand);color:#fff;cursor:pointer;font-weight:600}
+button:hover{background:var(--brand2)}
+button.alt{background:#3b4a63}button.alt:hover{background:#27354d}
+button:disabled{opacity:.45;cursor:not-allowed}
+#status{padding:8px;border-radius:8px;background:#edf2f9;min-height:36px;font-family:Consolas,monospace;font-size:.88rem}
+#status.ok{background:#e9f8ef;color:var(--ok)}#status.warn{background:#fff6e8;color:var(--warn)}#status.err{background:#fbeaea;color:var(--err)}
+
+.workspace{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:12px;align-items:start}
+.sidePanel{display:grid;gap:10px}
+.viewerMain{display:grid;gap:10px}
+.toolBox{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel)}
+.planeHeader{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) 120px;gap:8px;align-items:end;margin-bottom:8px}
+.vec3{display:grid;grid-template-columns:repeat(3,minmax(70px,1fr));gap:8px;margin-bottom:8px}
+.planeMetaRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.axisRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
+.colorRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
+.colorRow2{display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:end;margin-top:8px}
+#planeMoveVal{font-family:Consolas,monospace;font-size:.84rem;color:var(--muted);margin-top:6px}
+#sliceVal{font-family:Consolas,monospace;font-size:.88rem;color:var(--muted);margin-top:8px}
+.canvasWrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0b1321}
+#heatmap{display:block;width:100%;height:auto;background:#0b1321}
+#sliceStats{margin-top:8px;font-family:Consolas,monospace;font-size:.88rem;color:#334155}
+.viewer3dCtl{display:grid;grid-template-columns:repeat(7,minmax(120px,1fr));gap:8px;align-items:end;margin-bottom:8px}
+.plotSplit{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.plot3dWrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#070b12}
+#plot3dIso,#plot3dPlane{width:100%;height:520px}
+.mono{font-family:Consolas,monospace}
+.fine{margin-top:6px;font-size:.82rem;color:var(--muted)}
+.hidden{display:none !important}
+@media (max-width:1180px){.grid{grid-template-columns:1fr}.workspace{grid-template-columns:1fr}.sidePanel{grid-template-columns:1fr 1fr}}
+@media (max-width:760px){.row{grid-template-columns:repeat(2,minmax(120px,1fr))}.row4{grid-template-columns:repeat(2,minmax(120px,1fr))}.meta{grid-template-columns:1fr}.sidePanel{grid-template-columns:1fr}.planeHeader,.axisRow,.colorRow,.colorRow2,.vec3,.planeMetaRow{grid-template-columns:1fr}.viewer3dCtl{grid-template-columns:repeat(2,minmax(120px,1fr))}.plotSplit{grid-template-columns:1fr}#plot3dIso,#plot3dPlane{height:380px}}
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="hero">
+    <h1>Diffuse Scattering From RMC6f (Client-side)</h1>
+    <p>Load <code>.rmc6f</code>, compute <code>I(h,k,l)=|A-Aavg|²</code> with Type-3 NUFFT JS, inspect slices, save <code>.dat</code>/<code>.json</code>.</p>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>1) Input</h2>
+      <div id="drop" class="drop" tabindex="0">Drop .rmc6f here or click<input id="file" type="file" accept=".rmc6f" hidden /></div>
+      <div class="meta">
+        <div class="k">File</div><div id="mFile">-</div>
+        <div class="k">Atoms</div><div id="mAtoms">-</div>
+        <div class="k">Supercell</div><div id="mSuper">-</div>
+        <div class="k">Cell (a,b,c; α,β,γ)</div><div id="mCell">-</div>
+        <div class="k">Elements</div><div id="mElem">-</div>
+      </div>
+      <div class="fine">Unknown elements use fallback scattering length <code>10.0</code>.</div>
+    </div>
+
+    <div class="card">
+      <h2>2) Compute</h2>
+      <div class="row">
+        <label>H min<input id="hMin" type="number" value="0" step="0.01"></label>
+        <label>H max<input id="hMax" type="number" value="4" step="0.01"></label>
+        <label>H step<input id="hStep" type="number" value="0.1" step="0.001"></label>
+        <label>K min<input id="kMin" type="number" value="0" step="0.01"></label>
+        <label>K max<input id="kMax" type="number" value="4" step="0.01"></label>
+        <label>K step<input id="kStep" type="number" value="0.1" step="0.001"></label>
+      </div>
+      <div class="row">
+        <label>L min<input id="lMin" type="number" value="0" step="0.01"></label>
+        <label>L max<input id="lMax" type="number" value="4" step="0.01"></label>
+        <label>L step<input id="lStep" type="number" value="0.1" step="0.001"></label>
+        <label>Backend<select id="backend"><option value="webgpu_fft">Type-3 + webgpufft (WebGPU)</option><option value="fft">type3NufftCpu (CPU FFT)</option><option value="direct">type3NufftCpuDirect</option></select></label>
+        <label>Tolerance<input id="tol" type="number" value="1e-9" step="1e-10"></label>
+        <label>Upsampling<input id="upsamp" type="number" value="2.0" step="0.1"></label>
+      </div>
+      <div class="row4">
+        <label>Subtract average<select id="subAvg"><option value="1">ON</option><option value="0">OFF</option></select></label>
+        <label>Default viewer scale<select id="defScale"><option value="log">log10</option><option value="linear">linear</option></select></label>
+        <label>Grid safety limit<input id="gridLimit" type="number" value="120000" step="1"></label>
+        <label>Base name<input id="baseName" type="text" value="diffuse_result"></label>
+      </div>
+      <div class="row4">
+        <label>Smooth 3D<select id="smooth3d"><option value="0">OFF</option><option value="1" selected>ON</option></select></label>
+        <label>Filter<select id="smoothType"><option value="lanczos">Lanczos</option><option value="chebyshev" selected>Chebyshev</option></select></label>
+        <label>Chebyshev dB<input id="chebDb" type="number" value="100" step="1" min="20" max="200"></label>
+        <label>Smooth scale<input id="smoothScale" type="number" value="1" step="1" min="1"></label>
+      </div>
+      <div class="btns">
+        <button id="run">Compute Diffuse</button>
+        <button id="saveDat" class="alt" disabled>Save .dat</button>
+        <button id="saveJson" class="alt" disabled>Save .json</button>
+      </div>
+      <div id="status">Waiting for input file.</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3) Slice + 3D Workspace</h2>
+    <div class="workspace">
+      <aside class="sidePanel">
+        <div class="toolBox" id="modeToolBox">
+          <h3>Slice Mode + Plane Tool</h3>
+          <div class="planeHeader">
+            <label>Slice mode<select id="sliceMode" disabled><option value="axis">Axis</option><option value="plane" selected>Normal plane</option></select></label>
+            <label>Scale<select id="scale" disabled><option value="log">log10</option><option value="linear">linear</option></select></label>
+            <button id="planeApply" class="alt" disabled>Set Plane</button>
+          </div>
+          <div id="planeControls">
+            <div class="vec3">
+              <label>nX<input id="pNX" type="number" value="1" step="0.1" disabled></label>
+              <label>nY<input id="pNY" type="number" value="0" step="0.1" disabled></label>
+              <label>nZ<input id="pNZ" type="number" value="0" step="0.1" disabled></label>
+            </div>
+            <div class="vec3">
+              <label>oX<input id="pOX" type="number" value="0" step="0.01" disabled></label>
+              <label>oY<input id="pOY" type="number" value="0" step="0.01" disabled></label>
+              <label>oZ<input id="pOZ" type="number" value="0" step="0.01" disabled></label>
+            </div>
+            <div class="vec3">
+              <label>cX<input id="pCX" type="number" value="0" step="0.001" readonly disabled></label>
+              <label>cY<input id="pCY" type="number" value="0" step="0.001" readonly disabled></label>
+              <label>cZ<input id="pCZ" type="number" value="0" step="0.001" readonly disabled></label>
+            </div>
+            <label>Move Along Normal<input id="planeMove" type="range" min="0" max="100" step="1" value="50" disabled></label>
+            <div id="planeMoveVal">Plane center: -</div>
+            <div class="planeMetaRow">
+              <label>Plane res<input id="pRes" type="number" value="200" min="32" max="600" step="1" disabled></label>
+              <label>Plane scale<input id="pScale" type="number" value="1.75" min="0.2" max="8" step="0.05" disabled></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="toolBox" id="axisToolBox">
+          <h3>Axis Slice Tool</h3>
+          <div class="axisRow">
+            <label>Axis<select id="axis" disabled><option value="l" selected>Fix L, show H×K</option><option value="h">Fix H, show K×L</option><option value="k">Fix K, show H×L</option></select></label>
+            <label>Slice index<input id="idx" type="range" min="0" max="0" value="0" disabled></label>
+          </div>
+          <div id="sliceVal">Slice: -</div>
+        </div>
+
+        <div class="toolBox">
+          <h3>Color Levels</h3>
+          <div class="colorRow">
+            <label>Color map<select id="colorMap" disabled><option value="turbo">Turbo</option><option value="viridis" selected>Viridis</option><option value="inferno">Inferno</option><option value="plasma">Plasma</option><option value="magma">Magma</option><option value="gray">Gray</option></select></label>
+            <label>Color-bar click<select id="levelMode" disabled><option value="both" selected>Set min+max</option><option value="min">Set min</option><option value="max">Set max</option></select></label>
+          </div>
+          <div class="colorRow2">
+            <label>Window % (both)<input id="levelWindowPct" type="number" value="35" min="1" max="100" step="1" disabled></label>
+            <button id="resetLevels" class="alt" disabled>Reset</button>
+          </div>
+          <div id="levelInfo" class="mono">Display levels: auto</div>
+        </div>
+
+        <div class="toolBox">
+          <h3>Slice Window</h3>
+          <div class="btns">
+            <button id="openSliceWin" class="alt" disabled>Open Slice Window</button>
+            <button id="closeSliceWin" class="alt" disabled>Close Slice Window</button>
+          </div>
+          <div class="fine">Saved <code>.dat</code> can be used by <code>RMCDiffuse3DSlice</code> utility.</div>
+        </div>
+      </aside>
+
+      <div class="viewerMain">
+        <div class="toolBox">
+          <h3>3D Slice Plane + Isosurface</h3>
+          <div class="viewer3dCtl">
+            <label>Iso percentile<input id="isoPct" type="number" value="95" min="50" max="99.99" step="0.1"></label>
+            <label>Surface count<input id="isoCount" type="number" value="4" min="1" max="12" step="1"></label>
+            <label>3D voxel cap<input id="voxelCap" type="number" value="220000" min="5000" step="1000"></label>
+            <label>Show isosurface<select id="showIso3d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+            <label>Show slice plane<select id="showPlane3d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+            <label>2D map<select id="show2d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+            <label>Auto refresh<select id="auto3d"><option value="0">OFF</option><option value="1" selected>ON</option></select></label>
+            <button id="render3d" class="alt" disabled>Render 3D</button>
+          </div>
+          <div id="plot3dStatus" class="fine mono">3D view is idle.</div>
+          <div class="plotSplit">
+            <div class="plot3dWrap"><div id="plot3dPlane"></div></div>
+            <div class="plot3dWrap"><div id="plot3dIso"></div></div>
+          </div>
+        </div>
+
+        <div class="toolBox" id="slice2dPanel">
+          <h3>2D Slice Map</h3>
+          <div class="canvasWrap"><canvas id="heatmap" width="980" height="560"></canvas></div>
+          <div id="sliceStats">No result yet.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/gh/MaximEremenko/WebGPU-NUFFT@main/lib/type3_cpu_like.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/MaximEremenko/WebGPU-NUFFT@main/lib/type3_webgpu_gpufft.js"></script>
+<script>
+"use strict";
+const $=id=>document.getElementById(id), PI2=2*Math.PI, EPS=1e-15;
+const WEBGPU_NUFFT_CDN_BASE="https://cdn.jsdelivr.net/gh/MaximEremenko/WebGPU-NUFFT@main";
+const WEBGPU_WGSL_BASE=WEBGPU_NUFFT_CDN_BASE;
+const WEBGPUFFT_CDN_BASE="https://cdn.jsdelivr.net/gh/MaximEremenko/WebGPU-FFT@main";
+const WEBGPUFFT_WEB_API_MODULES=[`${WEBGPUFFT_CDN_BASE}/web/lib_api.js`];
+const WEBGPUFFT_SRC_INDEX_MODULES=[`${WEBGPUFFT_CDN_BASE}/src/index.js`];
+const WEBGPUFFT_NOMODULE_SCRIPTS=[`${WEBGPUFFT_CDN_BASE}/web/lib_api_nomodule.js`];
+const PLOTLY_CDN="https://cdn.plot.ly/plotly-2.35.2.min.js";
+const BACKEND_PRESETS={webgpu_fft:{tol:"1e-7",upsamp:"1.5",gridLimit:"8000000"},fft:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"},direct:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"}};
+const WEBGPU_STAGE_ORDER=["spread_setup","spread_dispatch","amplify_dispatch","fft_dispatch","interp_dispatch","postmul_dispatch","smooth_axis0_dispatch","smooth_axis1_dispatch","smooth_axis2_dispatch","done","smooth_done"];
+const WEBGPU_STAGE_LABEL={spread_setup:"setup",spread_dispatch:"spread",amplify_dispatch:"amplify",fft_dispatch:"fft",interp_dispatch:"interp",postmul_dispatch:"postmul",smooth_axis0_dispatch:"smooth-h",smooth_axis1_dispatch:"smooth-k",smooth_axis2_dispatch:"smooth-l",done:"done",smooth_done:"smooth-done"};
+const state={rmc:null,res:null,sliceWin:null,volCache:null,render3dTimer:null,last3dStamp:0,sliceLevels:null,lastBar:null,plane:null,planeSliceCache:null,offscreen:null,planeMoveRaf:0,planeTraceReqId:0,planeTraceBusy:false,planeTraceQueued:null,planeMoving:false,render3dEpoch:0,sceneCamera:{iso:null,plane:null}};
+const COLOR_PRESETS={
+turbo:{plotly:"Turbo",stops:[[0,[48,18,59]],[.2,[32,78,168]],[.45,[44,165,197]],[.7,[109,206,111]],[.9,[246,220,80]],[1,[232,79,53]]]},
+viridis:{plotly:"Viridis",stops:[[0,[68,1,84]],[.25,[59,82,139]],[.5,[33,145,140]],[.75,[94,201,98]],[1,[253,231,37]]]},
+inferno:{plotly:"Inferno",stops:[[0,[0,0,4]],[.25,[87,15,109]],[.5,[187,55,84]],[.75,[249,142,8]],[1,[252,255,164]]]},
+plasma:{plotly:"Plasma",stops:[[0,[13,8,135]],[.25,[126,3,168]],[.5,[203,71,119]],[.75,[248,149,64]],[1,[240,249,33]]]},
+magma:{plotly:"Magma",stops:[[0,[0,0,3]],[.25,[79,18,123]],[.5,[182,55,121]],[.75,[251,140,60]],[1,[252,253,191]]]},
+gray:{plotly:"Greys",stops:[[0,[0,0,0]],[1,[255,255,255]]]}
+};
+const NEUTRON={"va":0,"h":-0.3739,"d":0.6671,"he":0.326,"li":-0.19,"7l":-0.222,"be":0.779,"b":0.53,"c":0.6646,"n":0.936,"o":0.5803,"f":0.5654,"ne":0.4566,"na":0.363,"mg":0.5375,"al":0.3449,"si":0.41491,"p":0.513,"s":0.2847,"cl":0.9577,"ar":0.1909,"k":0.367,"ca":0.47,"sc":1.229,"ti":-0.3438,"v":-0.03824,"cr":0.3635,"mn":-0.373,"fe":0.945,"co":0.249,"ni":1.03,"cu":0.7718,"zn":0.568,"ga":0.7288,"ge":0.8185,"as":0.658,"se":0.797,"br":0.6795,"kr":0.781,"rb":0.709,"sr":0.702,"y":0.775,"zr":0.716,"nb":0.7054,"mo":0.6715,"tc":0.68,"ru":0.703,"rh":0.588,"pd":0.591,"ag":0.5922,"cd":0.487,"in":0.4065,"sn":0.6225,"sb":0.557,"te":0.58,"i":0.528,"xe":0.492,"cs":0.542,"ba":0.507,"la":0.824,"ce":0.484,"pr":0.458,"nd":0.769,"pm":1.26,"sm":0.08,"eu":0.722,"gd":0.65,"tb":0.738,"dy":1.69,"ho":0.801,"er":0.779,"tm":0.707,"yb":1.243,"lu":0.721,"hf":0.777,"ta":0.691,"w":0.486,"re":0.92,"os":1.07,"ir":1.06,"pt":0.96,"au":0.763,"hg":1.2692,"tl":0.8776,"pb":0.9405,"bi":0.8532,"po":0,"at":0,"rn":0,"fr":0,"ra":1,"ac":0,"th":1.031,"pa":0.91,"u":0.8417,"np":1.055,"pu":0,"am":0.83,"cm":0};
+
+function status(msg,kind=""){const e=$("status");e.textContent=msg;e.className=kind?kind:"";}
+function fmtMs(ms){if(!Number.isFinite(ms)||ms<0)return"0 ms";if(ms>=1000)return`${(ms/1000).toFixed(2)} s`;return`${ms.toFixed(0)} ms`;}
+function hasWebgpuFftApi(){return typeof window.webgpufft==="object"&&(typeof window.webgpufft.createPlan==="function"||typeof window.webgpufft.createFftPlan==="function");}
+function invalidatePlaneSliceCache(){state.planeSliceCache=null;}
+function fastPlaneRes(){const full=Math.max(32,Math.min(600,Math.floor(Number($("pRes").value)||200)));return Math.max(56,Math.min(160,Math.floor(full*0.7)));}
+const SCRIPT_LOADS={};
+function loadScriptOnce(src){if(SCRIPT_LOADS[src])return SCRIPT_LOADS[src];SCRIPT_LOADS[src]=new Promise((resolve,reject)=>{const s=document.createElement("script");s.src=src;s.async=true;s.onload=()=>resolve();s.onerror=()=>reject(new Error(`Failed to load script ${src}`));document.head.appendChild(s);});return SCRIPT_LOADS[src];}
+async function ensureWebgpuFftApi(){
+if(hasWebgpuFftApi())return window.webgpufft;
+if(window.webgpufftReady&&typeof window.webgpufftReady.then==="function"){
+try{await window.webgpufftReady;}catch(_){/* continue fallbacks */}
+if(hasWebgpuFftApi())return window.webgpufft;
+}
+const errs=[];
+if(location.protocol==="file:"){
+for(const src of WEBGPUFFT_NOMODULE_SCRIPTS){
+try{await loadScriptOnce(src);}catch(e){errs.push(`${src}: ${e&&e.message?e.message:String(e)}`);}
+if(hasWebgpuFftApi())return window.webgpufft;
+}
+}
+for(const modSrc of WEBGPUFFT_WEB_API_MODULES){
+try{await import(modSrc);}catch(e){errs.push(`${modSrc}: ${e&&e.message?e.message:String(e)}`);}
+if(hasWebgpuFftApi())return window.webgpufft;
+}
+for(const modSrc of WEBGPUFFT_SRC_INDEX_MODULES){
+try{
+const mod=await import(modSrc),api={createFftPlan:mod.createFftPlan,createPlan:mod.createPlan,exportPipelineCacheSnapshot:mod.exportPipelineCacheSnapshot,importPipelineCacheSnapshot:mod.importPipelineCacheSnapshot,BufferView:mod.BufferView,uploadComplex:mod.uploadComplex,downloadComplex:mod.downloadComplex};
+if(typeof api.createPlan==="function"||typeof api.createFftPlan==="function"){window.webgpufft=api;window.webgpufftReady=Promise.resolve(api);return api;}
+errs.push(`${modSrc}: missing createPlan/createFftPlan export`);
+}catch(e){errs.push(`${modSrc}: ${e&&e.message?e.message:String(e)}`);}
+}
+if(location.protocol==="file:"){
+for(const src of WEBGPUFFT_NOMODULE_SCRIPTS){
+try{await loadScriptOnce(src);}catch(e){errs.push(`${src}: ${e&&e.message?e.message:String(e)}`);}
+if(hasWebgpuFftApi())return window.webgpufft;
+}
+}
+const serveHint=location.protocol==="file:"?" If browser blocks module loading under file://, use a local HTTP server (or load with internet so CDN URLs can be fetched).":"";
+throw new Error(`webgpufft API missing.${serveHint} ${errs.join(" | ")}`.trim());
+}
+async function ensurePlotly(){if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;const errs=[];try{await loadScriptOnce(PLOTLY_CDN);}catch(e){errs.push(e&&e.message?e.message:String(e));}if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;throw new Error(`Plotly is unavailable${errs.length?`: ${errs.join(" | ")}`:""}.`);}
+function applyBackendDefaults(backend,announce=false){const p=BACKEND_PRESETS[backend];if(!p)return;let changed=false;if($("tol").value!==p.tol){$("tol").value=p.tol;changed=true;}if($("upsamp").value!==p.upsamp){$("upsamp").value=p.upsamp;changed=true;}if($("gridLimit").value!==p.gridLimit){$("gridLimit").value=p.gridLimit;changed=true;}if(announce&&changed){const n=backend==="webgpu_fft"?"WebGPU":"CPU";status(`Applied ${n} preset: tol=${p.tol}, upsamp=${p.upsamp}, grid limit=${p.gridLimit}.`,"ok");}}
+function formatWebgpuStageTotals(stages){const parts=[];for(const k of WEBGPU_STAGE_ORDER){const v=stages[k]||0;if(v>0)parts.push(`${WEBGPU_STAGE_LABEL[k]||k}=${fmtMs(v)}`);}return parts.join(", ");}
+function syncResultControls(){const has=!!state.res,planeMode=$("sliceMode").value==="plane";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("axis").disabled=!has||planeMode;$("idx").disabled=!has||planeMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("levelMode").disabled=!has;$("levelWindowPct").disabled=!has||$("levelMode").value!=="both";$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale","planeApply"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
+function clamp01(v){return v<0?0:(v>1?1:v);}function lerp(a,b,t){return a+(b-a)*t;}
+function getColorPreset(){const key=$("colorMap")&&$("colorMap").value?$("colorMap").value:"viridis";return COLOR_PRESETS[key]||COLOR_PRESETS.viridis;}
+function rgbFromStops(stops,t){const u=clamp01(t);for(let i=0;i<stops.length-1;i++){const a=stops[i],b=stops[i+1];if(u>=a[0]&&u<=b[0]){const tt=(u-a[0])/((b[0]-a[0])||1);return[Math.round(lerp(a[1][0],b[1][0],tt)),Math.round(lerp(a[1][1],b[1][1],tt)),Math.round(lerp(a[1][2],b[1][2],tt))];}}return stops[stops.length-1][1];}
+function getSliceMode(){return $("sliceMode")&&$("sliceMode").value==="plane"?"plane":"axis";}
+function norm3(v){const n=Math.hypot(v[0],v[1],v[2]);if(!(n>1e-12))return[1,0,0];return[v[0]/n,v[1]/n,v[2]/n];}
+function getPlaneUnit(p){if(!p)return[1,0,0];if(Array.isArray(p.normalUnit)&&p.normalUnit.length===3)return p.normalUnit;const u=norm3(Array.isArray(p.normal)?p.normal:[1,0,0]);p.normalUnit=u;return u;}
+function add3(a,b){return[a[0]+b[0],a[1]+b[1],a[2]+b[2]];}
+function scale3(v,s){return[v[0]*s,v[1]*s,v[2]*s];}
+function boundsRes(res){return{min:[res.h[0],res.k[0],res.l[0]],max:[res.h[res.h.length-1],res.k[res.k.length-1],res.l[res.l.length-1]]};}
+function stepRes(arr){return arr.length>1?(arr[arr.length-1]-arr[0])/(arr.length-1):1;}
+function planeSig(res){return`${res.shape.join("x")}|${res.h[0]}|${res.h[res.h.length-1]}|${res.k[0]}|${res.k[res.k.length-1]}|${res.l[0]}|${res.l[res.l.length-1]}`;}
+function updatePlaneMoveLabel(){if(!state.res||!state.plane){$("planeMoveVal").textContent="Plane center: -";for(const id of["pCX","pCY","pCZ"]){const e=$(id);if(e)e.value="";}return;}const p=state.plane,t=p.sliderPositions[p.sliderIndex]||0,c=p.center;$("planeMoveVal").textContent=`Plane center: (${c[0].toFixed(5)}, ${c[1].toFixed(5)}, ${c[2].toFixed(5)}) | t=${t.toFixed(5)} | n=(${p.normal[0].toFixed(3)}, ${p.normal[1].toFixed(3)}, ${p.normal[2].toFixed(3)})`;if($("pCX"))$("pCX").value=c[0].toFixed(6);if($("pCY"))$("pCY").value=c[1].toFixed(6);if($("pCZ"))$("pCZ").value=c[2].toFixed(6);}
+function setPlaneUiFromState(){if(!state.res||!state.plane)return;const p=state.plane;$("pNX").value=p.normal[0].toFixed(6);$("pNY").value=p.normal[1].toFixed(6);$("pNZ").value=p.normal[2].toFixed(6);$("pOX").value=p.origin[0].toFixed(6);$("pOY").value=p.origin[1].toFixed(6);$("pOZ").value=p.origin[2].toFixed(6);const s=$("planeMove");s.min="0";s.max=String(Math.max(0,p.sliderPositions.length-1));s.value=String(Math.max(0,Math.min(p.sliderIndex,p.sliderPositions.length-1)));updatePlaneMoveLabel();}
+function movePlaneToSlider(idx){if(!state.plane)return;const p=state.plane;if(!p.sliderPositions.length){p.sliderPositions=[0];}const i=Math.max(0,Math.min(Math.floor(idx),p.sliderPositions.length-1));p.sliderIndex=i;const t=p.sliderPositions[i]||0,u=getPlaneUnit(p);p.center=add3(p.origin,scale3(u,t));invalidatePlaneSliceCache();setPlaneUiFromState();}
+function rebuildPlaneSlider(){if(!state.res||!state.plane)return;const p=state.plane,b=boundsRes(state.res),n=getPlaneUnit(p),tv=[];for(let i=0;i<3;i++){const ni=n[i];if(Math.abs(ni)>1e-9){tv.push((b.min[i]-p.origin[i])/ni,(b.max[i]-p.origin[i])/ni);}}if(tv.length===0)tv.push(-1,1);tv.sort((a,bv)=>a-bv);const t0=tv[0],t1=tv[tv.length-1],count=401;p.sliderPositions=Array.from({length:count},(_,i)=>t0+(t1-t0)*i/Math.max(1,count-1));let best=0,bestAbs=Infinity;for(let i=0;i<p.sliderPositions.length;i++){const av=Math.abs(p.sliderPositions[i]);if(av<bestAbs){bestAbs=av;best=i;}}movePlaneToSlider(best);}
+function ensurePlaneState(res){const sig=planeSig(res);if(state.plane&&state.plane.signature===sig)return state.plane;const b=boundsRes(res),mid=[0.5*(b.min[0]+b.max[0]),0.5*(b.min[1]+b.max[1]),0.5*(b.min[2]+b.max[2])];state.plane={signature:sig,normal:[1,0,0],normalUnit:[1,0,0],origin:mid.slice(),center:mid.slice(),sliderPositions:[0],sliderIndex:0};invalidatePlaneSliceCache();rebuildPlaneSlider();return state.plane;}
+function applyPlaneFromInputs(){if(!state.res)return;ensurePlaneState(state.res);const nx=Number($("pNX").value),ny=Number($("pNY").value),nz=Number($("pNZ").value),ox=Number($("pOX").value),oy=Number($("pOY").value),oz=Number($("pOZ").value),rawCandidate=[Number.isFinite(nx)?nx:1,Number.isFinite(ny)?ny:0,Number.isFinite(nz)?nz:0],raw=Math.hypot(rawCandidate[0],rawCandidate[1],rawCandidate[2])>1e-12?rawCandidate:[1,0,0];state.plane.normal=raw;state.plane.normalUnit=norm3(raw);state.plane.origin=[Number.isFinite(ox)?ox:0,Number.isFinite(oy)?oy:0,Number.isFinite(oz)?oz:0];invalidatePlaneSliceCache();rebuildPlaneSlider();}
+function sampleTrilinearPartialRenorm(vol,shape,fx,fy,fz){let i0=Math.floor(fx),j0=Math.floor(fy),k0=Math.floor(fz),rx=fx-i0,ry=fy-j0,rz=fz-k0,val=0,wSum=0;for(let dz=0;dz<=1;dz++)for(let dy=0;dy<=1;dy++)for(let dx=0;dx<=1;dx++){const ii=i0+dx,jj=j0+dy,kk=k0+dz;if(ii<0||jj<0||kk<0||ii>=shape[0]||jj>=shape[1]||kk>=shape[2])continue;const w=(dx?rx:1-rx)*(dy?ry:1-ry)*(dz?rz:1-rz),idxv=(ii*shape[1]+jj)*shape[2]+kk,valv=vol[idxv];if(!Number.isFinite(valv))continue;val+=valv*w;wSum+=w;}return wSum>0?val/wSum:NaN;}
+function buildNormalPlaneSlice(res,mode,wantMesh=false,resOverride){ensurePlaneState(res);const p=state.plane,n=getPlaneUnit(p),ref=Math.abs(n[0])>0.9?[0,1,0]:[1,0,0],u=norm3(cross(ref,n)),v=norm3(cross(n,u)),range=[res.h[res.h.length-1]-res.h[0],res.k[res.k.length-1]-res.k[0],res.l[res.l.length-1]-res.l[0]],planeScale=Math.max(0.2,Number($("pScale").value)||1.75),planeSize=Math.max(1e-6,Math.max(range[0],range[1],range[2])*planeScale),nRes=Math.max(32,Math.min(600,Math.floor(Number.isFinite(resOverride)?resOverride:(Number($("pRes").value)||200)))),c0=p.center,half=0.5*planeSize,step=nRes>1?planeSize/(nRes-1):0,key=`${planeSig(res)}|${mode}|${wantMesh?1:0}|${nRes}|${planeSize.toFixed(6)}|${n[0].toFixed(7)},${n[1].toFixed(7)},${n[2].toFixed(7)}|${c0[0].toFixed(7)},${c0[1].toFixed(7)},${c0[2].toFixed(7)}`;if(state.planeSliceCache&&state.planeSliceCache.key===key)return state.planeSliceCache.value;const h0=res.h[0],k0=res.k[0],l0=res.l[0],dh=stepRes(res.h),dk=stepRes(res.k),dl=stepRes(res.l),invDh=1/(Math.abs(dh)>1e-30?dh:1),invDk=1/(Math.abs(dk)>1e-30?dk:1),invDl=1/(Math.abs(dl)>1e-30?dl:1),rows=nRes,cols=nRes,data=new Float64Array(rows*cols),cx=c0[0],cy=c0[1],cz=c0[2],ux=u[0],uy=u[1],uz=u[2],vx=v[0],vy=v[1],vz=v[2],stepUx=ux*step,stepUy=uy*step,stepUz=uz*step;let valid=0;const X=wantMesh?new Array(rows):null,Y=wantMesh?new Array(rows):null,Z=wantMesh?new Array(rows):null,C=wantMesh?new Array(rows):null;for(let r=0;r<rows;r++){const rv=-half+r*step,base= r*cols;let px=cx+vx*rv-ux*half,py=cy+vy*rv-uy*half,pz=cz+vz*rv-uz*half;const rowX=wantMesh?new Array(cols):null,rowY=wantMesh?new Array(cols):null,rowZ=wantMesh?new Array(cols):null,rowC=wantMesh?new Array(cols):null;for(let c=0;c<cols;c++){const fx=(px-h0)*invDh,fy=(py-k0)*invDk,fz=(pz-l0)*invDl,val=sampleTrilinearPartialRenorm(res.I,res.shape,fx,fy,fz),vv=Number.isFinite(val)?scaledVal(val,mode):NaN;data[base+c]=vv;if(Number.isFinite(vv))valid++;if(wantMesh){if(Number.isFinite(vv)){rowX[c]=px;rowY[c]=py;rowZ[c]=pz;rowC[c]=vv;}else{rowX[c]=NaN;rowY[c]=NaN;rowZ[c]=NaN;rowC[c]=NaN;}}px+=stepUx;py+=stepUy;pz+=stepUz;}if(wantMesh){X[r]=rowX;Y[r]=rowY;Z[r]=rowZ;C[r]=rowC;}}const qU=mul(u,res.Bq),qV=mul(v,res.Bq),xScaleQ=Math.max(1e-12,normVec(qU)),yScaleQ=Math.max(1e-12,normVec(qV)),nr=p.normal||n,result={rows,cols,d:data,plane:`Plane n=(${nr[0].toFixed(3)},${nr[1].toFixed(3)},${nr[2].toFixed(3)}) c=(${c0[0].toFixed(4)},${c0[1].toFixed(4)},${c0[2].toFixed(4)})`,x:`u span ${(-half).toFixed(3)}..${half.toFixed(3)}`,y:`v span ${(-half).toFixed(3)}..${half.toFixed(3)}`,xLabel:"u",yLabel:"v",xMin:-half,xMax:half,yMin:-half,yMax:half,xScaleQ,yScaleQ,xQVec:qU,yQVec:qV,validCount:valid,x3:X,y3:Y,z3:Z,c3:C};state.planeSliceCache={key,value:result};return result;}
+
+class RMC{
+  constructor(){this.header=[];this.rows=[];this.super=[1,1,1];this.cellDeg=[NaN,NaN,NaN,NaN,NaN,NaN];this.cellRad=[NaN,NaN,NaN,NaN,NaN,NaN];this.cols=0;this.names=[];}
+  parse(txt){const lines=txt.split(/\r?\n/).map(l=>l.replace(/\x00/g,""));const s=this.findHeader(lines);this.header=lines.slice(0,s);this.rows=this.parseRows(lines.slice(s));this.getSuper();this.getCell();}
+  findHeader(lines){for(let i=0;i<Math.min(lines.length,151);i++) if(lines[i].includes("Atoms:")) return i+1; return 0;}
+  parseRows(lines){const out=[];for(const raw of lines){const line=raw.trim();if(!line) continue;const p=line.split(/\s+/);if(!this.cols){this.cols=p.length;if(this.cols===10)this.names=["atomNumber","element","id","x","y","z","refNumber","cellRefNumX","cellRefNumY","cellRefNumZ"];else if(this.cols===9)this.names=["atomNumber","element","x","y","z","refNumber","cellRefNumX","cellRefNumY","cellRefNumZ"];else throw new Error(`Unsupported RMC6f: ${this.cols} columns`);}const r={};for(let i=0;i<this.cols;i++){const n=this.names[i]||`c${i}`;r[n]=["atomNumber","x","y","z","refNumber","cellRefNumX","cellRefNumY","cellRefNumZ"].includes(n)?Number(p[i]):p[i];}out.push(r);}return out;}
+  getSuper(){const line=this.header.find(l=>l.includes("Supercell"));if(!line){this.super=[1,1,1];return;}const n=line.split(/\s+/).map(v=>parseInt(v,10)).filter(Number.isInteger);this.super=n.length>=3?n.slice(0,3):[1,1,1];}
+  getCell(){const line=this.header.find(l=>l.includes("Cell (Ang/deg)"))||this.header.find(l=>/^\s*Cell\b/i.test(l));if(!line)return;const v=line.split(/\s+/).map(Number).filter(Number.isFinite);if(v.length>=6){this.cellDeg=v.slice(0,6);this.cellRad=[v[0],v[1],v[2],v[3]*Math.PI/180,v[4]*Math.PI/180,v[5]*Math.PI/180];}}
+}
+
+function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+function col3(m,j){return[m[0][j],m[1][j],m[2][j]];}
+function inv3(m){const a=m[0][0],b=m[0][1],c=m[0][2],d=m[1][0],e=m[1][1],f=m[1][2],g=m[2][0],h=m[2][1],i=m[2][2];const A=e*i-f*h,B=-(d*i-f*g),C=d*h-e*g,D=-(b*i-c*h),E=a*i-c*g,F=-(a*h-b*g),G=b*f-c*e,H=-(a*f-c*d),I=a*e-b*d;const det=a*A+b*B+c*C;if(!Number.isFinite(det)||Math.abs(det)<1e-20)throw new Error("Singular matrix");const s=1/det;return[[A*s,D*s,G*s],[B*s,E*s,H*s],[C*s,F*s,I*s]];}
+function mul(v,m){return[v[0]*m[0][0]+v[1]*m[1][0]+v[2]*m[2][0],v[0]*m[0][1]+v[1]*m[1][1]+v[2]*m[2][1],v[0]*m[0][2]+v[1]*m[1][2]+v[2]*m[2][2]];}
+function scaleCols(m,s){return[[m[0][0]*s[0],m[0][1]*s[1],m[0][2]*s[2]],[m[1][0]*s[0],m[1][1]*s[1],m[1][2]*s[2]],[m[2][0]*s[0],m[2][1]*s[1],m[2][2]*s[2]]];}
+function scaleMat(m,s){return[[m[0][0]*s,m[0][1]*s,m[0][2]*s],[m[1][0]*s,m[1][1]*s,m[1][2]*s],[m[2][0]*s,m[2][1]*s,m[2][2]*s]];}
+function normVec(v){return Math.hypot(v[0],v[1],v[2]);}
+function fmtTick(v){if(!Number.isFinite(v))return "";const a=Math.abs(v);if(a>=1000||a===0||a<1e-3)return v.toExponential(2);if(a>=100)return v.toFixed(0);if(a>=10)return v.toFixed(1);return v.toFixed(3);}
+function chooseTickValues(arr,maxTicks=7){if(!Array.isArray(arr)||!arr.length)return[];if(arr.length<=maxTicks)return arr.slice();const out=[];for(let i=0;i<maxTicks;i++){const j=Math.round(i*(arr.length-1)/Math.max(1,maxTicks-1));out.push(arr[j]);}const uniq=[];for(const v of out){if(!uniq.length||Math.abs(v-uniq[uniq.length-1])>1e-12)uniq.push(v);}return uniq;}
+function sanitizeAxisTicks(vals,txt,min,max){const rows=[];for(let i=0;i<vals.length;i++){const v=vals[i],t=txt[i];if(!Number.isFinite(v)||v<min-1e-9||v>max+1e-9)continue;rows.push({v,t:String(t)});}rows.sort((a,b)=>a.v-b.v);const outV=[],outT=[];for(const r of rows){if(outV.length&&Math.abs(r.v-outV[outV.length-1])<=1e-9)continue;outV.push(r.v);outT.push(r.t);}return{tickvals:outV,ticktext:outT};}
+function buildVirtualHklTicks(res,qxRange,qyRange,qzRange){
+if(!res||!Array.isArray(res.Bq))return null;
+const hRef=0.5*(res.h[0]+res.h[res.h.length-1]),kRef=0.5*(res.k[0]+res.k[res.k.length-1]),lRef=0.5*(res.l[0]+res.l[res.l.length-1]);
+const hTicks=chooseTickValues(res.h),kTicks=chooseTickValues(res.k),lTicks=chooseTickValues(res.l);
+const xVals=[],xTxt=[],yVals=[],yTxt=[],zVals=[],zTxt=[];
+for(const h of hTicks){const q=mul([h,kRef,lRef],res.Bq);xVals.push(q[0]);xTxt.push(fmtTick(h));}
+for(const k of kTicks){const q=mul([hRef,k,lRef],res.Bq);yVals.push(q[1]);yTxt.push(fmtTick(k));}
+for(const l of lTicks){const q=mul([hRef,kRef,l],res.Bq);zVals.push(q[2]);zTxt.push(fmtTick(l));}
+return{x:sanitizeAxisTicks(xVals,xTxt,qxRange[0],qxRange[1]),y:sanitizeAxisTicks(yVals,yTxt,qyRange[0],qyRange[1]),z:sanitizeAxisTicks(zVals,zTxt,qzRange[0],qzRange[1])};
+}
+function chooseHklTickStep(arr,targetTicks=7){
+const n=Array.isArray(arr)?arr.length:0,t=Number.isFinite(targetTicks)?targetTicks:7;
+if(n<1||t<2)return 1;
+const lo=Math.ceil(arr[0]-1e-9),hi=Math.floor(arr[n-1]+1e-9),count=Math.max(0,hi-lo+1);
+if(count<=1)return 1;
+return Math.max(1,Math.ceil(count/t));
+}
+function hklAxisTicks(min,max,step){
+const out=[];
+if(!(Number.isFinite(min)&&Number.isFinite(max)&&Number.isFinite(step)&&step>0))return out;
+const start=Math.ceil(min-1e-9),end=Math.floor(max+1e-9),inc=Math.max(1,Math.round(step));
+for(let t=start,guard=0;t<=end;t+=inc){
+out.push(t);
+if(++guard>20000)break;
+}
+return out;
+}
+function makeHklAxesOverlayTraces(res){
+if(!res||!Array.isArray(res.Bq))return[];
+const hMin=res.h[0],hMax=res.h[res.h.length-1],kMin=res.k[0],kMax=res.k[res.k.length-1],lMin=res.l[0],lMax=res.l[res.l.length-1];
+const ranges=[Math.max(1e-9,Math.abs(hMax-hMin)),Math.max(1e-9,Math.abs(kMax-kMin)),Math.max(1e-9,Math.abs(lMax-lMin))];
+const tickLen=0.035*Math.max(ranges[0],ranges[1],ranges[2]);
+const axisH=[],axisK=[],axisL=[],gridH=[],gridK=[],gridL=[],edgeH=[],edgeK=[],edgeL=[];
+function addSeg(dstH,dstK,dstL,a,b){
+const qa=mul(a,res.Bq),qb=mul(b,res.Bq);
+dstH.push(qa[0],qb[0],NaN);dstK.push(qa[1],qb[1],NaN);dstL.push(qa[2],qb[2],NaN);
+}
+// Main HKL axes in Cartesian-Q view (full HKL range)
+addSeg(axisH,axisK,axisL,[hMin,0,0],[hMax,0,0]);
+addSeg(axisH,axisK,axisL,[0,kMin,0],[0,kMax,0]);
+addSeg(axisH,axisK,axisL,[0,0,lMin],[0,0,lMax]);
+// Box edges and face grid lines (Dash-style overlay)
+const hs=[hMin,hMax],ks=[kMin,kMax],ls=[lMin,lMax],hStep=chooseHklTickStep(res.h,9),kStep=chooseHklTickStep(res.k,9),lStep=chooseHklTickStep(res.l,9),hTicks=hklAxisTicks(hMin,hMax,hStep),kTicks=hklAxisTicks(kMin,kMax,kStep),lTicks=hklAxisTicks(lMin,lMax,lStep);
+for(const h of hs){for(const k of kTicks)addSeg(gridH,gridK,gridL,[h,k,lMin],[h,k,lMax]);for(const l of lTicks)addSeg(gridH,gridK,gridL,[h,kMin,l],[h,kMax,l]);}
+for(const k of ks){for(const h of hTicks)addSeg(gridH,gridK,gridL,[h,k,lMin],[h,k,lMax]);for(const l of lTicks)addSeg(gridH,gridK,gridL,[hMin,k,l],[hMax,k,l]);}
+for(const l of ls){for(const h of hTicks)addSeg(gridH,gridK,gridL,[h,kMin,l],[h,kMax,l]);for(const k of kTicks)addSeg(gridH,gridK,gridL,[hMin,k,l],[hMax,k,l]);}
+const corners=[[hMin,kMin,lMin],[hMin,kMin,lMax],[hMin,kMax,lMin],[hMin,kMax,lMax],[hMax,kMin,lMin],[hMax,kMin,lMax],[hMax,kMax,lMin],[hMax,kMax,lMax]],edges=[[0,1],[0,2],[0,4],[7,6],[7,5],[7,3],[1,3],[1,5],[2,3],[2,6],[4,5],[4,6]];
+for(const e of edges){addSeg(edgeH,edgeK,edgeL,corners[e[0]],corners[e[1]]);}
+const txtX=[],txtY=[],txtZ=[],txt=[];
+function addTicks(axis,min,max,step){
+const ticks=hklAxisTicks(min,max,step),perp=(axis+1)%3;
+for(const t of ticks){
+const a=[0,0,0],b=[0,0,0],lab=[0,0,0];
+a[axis]=t;b[axis]=t;lab[axis]=t;
+a[perp]=-tickLen*0.5;b[perp]=tickLen*0.5;lab[perp]=tickLen*0.9;
+addSeg(axisH,axisK,axisL,a,b);
+const q=mul(lab,res.Bq);txtX.push(q[0]);txtY.push(q[1]);txtZ.push(q[2]);txt.push(String(Math.round(t)));
+}
+const name=[0,0,0],off=[0,0,0];
+name[axis]=max;off[perp]=tickLen*1.6;
+const qn=mul([name[0]+off[0],name[1]+off[1],name[2]+off[2]],res.Bq);
+txtX.push(qn[0]);txtY.push(qn[1]);txtZ.push(qn[2]);txt.push(axis===0?"H":axis===1?"K":"L");
+}
+addTicks(0,hMin,hMax,chooseHklTickStep(res.h,8));
+addTicks(1,kMin,kMax,chooseHklTickStep(res.k,8));
+addTicks(2,lMin,lMax,chooseHklTickStep(res.l,8));
+return[
+{type:"scatter3d",mode:"lines",x:gridH,y:gridK,z:gridL,hoverinfo:"skip",showlegend:false,line:{color:"#27415a",width:1}},
+{type:"scatter3d",mode:"lines",x:edgeH,y:edgeK,z:edgeL,hoverinfo:"skip",showlegend:false,line:{color:"#425f82",width:2}},
+{type:"scatter3d",mode:"lines",x:axisH,y:axisK,z:axisL,hoverinfo:"skip",showlegend:false,line:{color:"#9aa4b2",width:4}},
+{type:"scatter3d",mode:"text",x:txtX,y:txtY,z:txtZ,text:txt,hoverinfo:"skip",showlegend:false,textfont:{color:"#dbeafe",size:13}}
+];
+}
+function makeSurfaceHklCustom(H,K,L){
+const rows=H.length,out=new Array(rows);
+for(let r=0;r<rows;r++){
+const rowH=H[r],rowK=K[r],rowL=L[r],cols=rowH.length,row=new Array(cols);
+for(let c=0;c<cols;c++)row[c]=[rowH[c],rowK[c],rowL[c]];
+out[r]=row;
+}
+return out;
+}
+function qBoundsFromRes(res){
+if(!res||!Array.isArray(res.Bq))return{min:[res.h[0],res.k[0],res.l[0]],max:[res.h[res.h.length-1],res.k[res.k.length-1],res.l[res.l.length-1]]};
+const hs=[res.h[0],res.h[res.h.length-1]],ks=[res.k[0],res.k[res.k.length-1]],ls=[res.l[0],res.l[res.l.length-1]];
+const mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity];
+for(const h of hs)for(const k of ks)for(const l of ls){const q=mul([h,k,l],res.Bq);for(let i=0;i<3;i++){if(q[i]<mn[i])mn[i]=q[i];if(q[i]>mx[i])mx[i]=q[i];}}
+return{min:mn,max:mx};
+}
+function transformSurfaceHklToQ(H,K,L,Bq){
+if(!Array.isArray(Bq))return{x:H,y:K,z:L};
+const rows=H.length,QX=new Array(rows),QY=new Array(rows),QZ=new Array(rows);
+for(let r=0;r<rows;r++){
+const rowH=H[r],rowK=K[r],rowL=L[r],cols=rowH.length,rowX=new Array(cols),rowY=new Array(cols),rowZ=new Array(cols);
+for(let c=0;c<cols;c++){
+const h=rowH[c],k=rowK[c],l=rowL[c];
+if(!Number.isFinite(h)||!Number.isFinite(k)||!Number.isFinite(l)){rowX[c]=NaN;rowY[c]=NaN;rowZ[c]=NaN;continue;}
+const q=mul([h,k,l],Bq);rowX[c]=q[0];rowY[c]=q[1];rowZ[c]=q[2];
+}
+QX[r]=rowX;QY[r]=rowY;QZ[r]=rowZ;
+}
+return{x:QX,y:QY,z:QZ};
+}
+function cell2vec(a,b,c,al,be,ga){const v=[[0,0,0],[0,0,0],[0,0,0]];v[2][0]=a*Math.cos(be);v[1][1]=b*Math.sin(al);v[2][1]=b*Math.cos(al);v[2][2]=c;v[1][0]=(a*b*Math.cos(ga)-v[2][0]*v[2][1])/v[1][1];v[0][0]=Math.sqrt(Math.max(0,a*a-v[1][0]*v[1][0]-v[2][0]*v[2][0]));return[[v[0][0],v[1][0],v[2][0]],[v[0][1],v[1][1],v[2][1]],[v[0][2],v[1][2],v[2][2]]];}
+function vec2space(v){const av=col3(v,0),bv=col3(v,1),cv=col3(v,2),den=dot(av,cross(bv,cv));if(!Number.isFinite(den)||Math.abs(den)<1e-20)throw new Error("Invalid reciprocal basis");const ap=cross(bv,cv).map(x=>x/den),bp=cross(cv,av).map(x=>x/den),cp=cross(av,bv).map(x=>x/den),Bp=[ap,bp,cp];return{B:inv3(Bp),Bp};}
+function wrapDelta(x){if(x<-0.5)return x+1;if(x>0.5)return x-1;return x;}
+function axis(min,max,step){if(!Number.isFinite(min)||!Number.isFinite(max)||!Number.isFinite(step)||step<=0||max<min)throw new Error("Invalid axis limits/step");const out=[];let x=min,g=0;const eps=Math.abs(step)*1e-9;while(x<=max+eps){out.push(Number(x.toFixed(10)));x+=step;if(++g>2000000)throw new Error("Axis guard");}return out;}
+function inter3(x,y,z){const n=x.length,o=new Float64Array(n*3);for(let i=0;i<n;i++){o[i*3]=x[i];o[i*3+1]=y[i];o[i*3+2]=z[i];}return o;}
+function creal(a){const o=new Float64Array(a.length*2);for(let i=0;i<a.length;i++)o[i*2]=a[i];return o;}
+function needType3(fn){if(typeof fn!=="function")throw new Error(`Type-3 library not loaded. Check ${WEBGPU_NUFFT_CDN_BASE}/lib/type3_cpu_like.js`);}
+
+function parseRMC(name,text){const r=new RMC();r.parse(text);if(!r.rows.length)throw new Error("No atom rows found");if(!r.cellRad.every(Number.isFinite))throw new Error("Cell parameters missing");const [sx,sy,sz]=r.super,[a,b,c,al,be,ga]=r.cellRad;const vpc=cell2vec(a/sx,b/sy,c/sz,al,be,ga),sp=vec2space(vpc),Bscaled=scaleCols(sp.B,[sx,sy,sz]),Bq=scaleMat(sp.Bp,PI2);
+const n=r.rows.length,x=new Float64Array(n),y=new Float64Array(n),z=new Float64Array(n),xa=new Float64Array(n),ya=new Float64Array(n),za=new Float64Array(n),dx=new Float64Array(n),dy=new Float64Array(n),dz=new Float64Array(n),fca=new Float64Array(n),unknown=new Set(),present=new Set();
+for(let i=0;i<n;i++){const row=r.rows[i],fx=Number(row.cellRefNumX)/sx,fy=Number(row.cellRefNumY)/sy,fz=Number(row.cellRefNumZ)/sz,d0=wrapDelta(Number(row.x)-fx),d1=wrapDelta(Number(row.y)-fy),d2=wrapDelta(Number(row.z)-fz),pA=mul([fx,fy,fz],Bscaled),pD=mul([d0,d1,d2],Bscaled);xa[i]=pA[0];ya[i]=pA[1];za[i]=pA[2];dx[i]=pD[0];dy[i]=pD[1];dz[i]=pD[2];x[i]=pA[0]+pD[0];y[i]=pA[1]+pD[1];z[i]=pA[2]+pD[2];const e=String(row.element||"").trim(),k=e.toLowerCase();present.add(e);if(Object.prototype.hasOwnProperty.call(NEUTRON,k))fca[i]=NEUTRON[k];else{fca[i]=10;unknown.add(e);}}
+return{file:name,atoms:n,super:[sx,sy,sz],cellDeg:r.cellDeg.slice(0,6),Bp:sp.Bp,Bq,x,y,z,xa,ya,za,dx,dy,dz,fca,present:[...present].sort(),unknown:[...unknown].sort()};}
+
+function meta(r){$("mFile").textContent=r.file;$("mAtoms").textContent=String(r.atoms);$("mSuper").textContent=r.super.join(" × ");const c=r.cellDeg.map((v,i)=>i<3?v.toFixed(5):v.toFixed(3));$("mCell").textContent=`${c[0]}, ${c[1]}, ${c[2]} ; ${c[3]}, ${c[4]}, ${c[5]}`;$("mElem").textContent=r.present.join(", ");$("hStep").value=(1/r.super[0]).toFixed(6);$("kStep").value=(1/r.super[1]).toFixed(6);$("lStep").value=(1/r.super[2]).toFixed(6);}
+
+function targetsChunk(h,k,l,Bq,start,count){const nh=h.length,nk=k.length,nl=l.length,total=nh*nk*nl;if(start<0||count<0||start+count>total)throw new Error(`Target chunk out of range: start=${start}, count=${count}, total=${total}`);const t=new Float64Array(count*3),plane=nk*nl;for(let q=0;q<count;q++){const linear=start+q,ih=Math.floor(linear/plane),rem=linear-ih*plane,ik=Math.floor(rem/nl),il=rem-ik*nl,v=mul([h[ih],k[ik],l[il]],Bq);t[q*3]=v[0];t[q*3+1]=v[1];t[q*3+2]=v[2];}return t;}
+function targets(h,k,l,Bq){return targetsChunk(h,k,l,Bq,0,h.length*k.length*l.length);}
+function acosh1(x){if(x<1)x=1;return Math.log(x+Math.sqrt(Math.max(0,x*x-1)));}
+function dftComplex(reIn,imIn,inverse=false){const n=reIn.length,reOut=new Float64Array(n),imOut=new Float64Array(n),sgn=inverse?1:-1,scale=inverse?1/n:1;for(let k=0;k<n;k++){let ar=0,ai=0;for(let t=0;t<n;t++){const ang=sgn*2*Math.PI*k*t/n,c=Math.cos(ang),s=Math.sin(ang),r=reIn[t],im=imIn[t];ar+=r*c-im*s;ai+=r*s+im*c;}reOut[k]=ar*scale;imOut[k]=ai*scale;}return{re:reOut,im:imOut};}
+function fftMagShiftNorm(window,nfft){const re=new Float64Array(nfft),im=new Float64Array(nfft);for(let i=0;i<Math.min(window.length,nfft);i++)re[i]=window[i];const F=dftComplex(re,im,false),out=new Float64Array(nfft),tmp=new Float64Array(nfft);let mx=0,den=Math.max(1e-12,window.length/2);for(let i=0;i<nfft;i++){const m=Math.hypot(F.re[i]/den,F.im[i]/den);tmp[i]=m;if(m>mx)mx=m;}if(mx<=0)mx=1;const mid=Math.floor(nfft/2);for(let i=0;i<nfft;i++)out[i]=tmp[(i+mid)%nfft]/mx;return out;}
+function lanczosWindow(n){const w=new Float64Array(n);if(n<=1){if(n===1)w[0]=1;return w;}for(let i=0;i<n;i++){const x=(2*i)/(n-1)-1;if(Math.abs(x)<1e-12)w[i]=1;else{const p=Math.PI*x;w[i]=Math.sin(p)/p;}}return w;}
+function chebwinWindow(n,attenDb){const w=new Float64Array(n);if(n<=1){if(n===1)w[0]=1;return w;}const ord=n-1,tg=Math.pow(10,Math.max(20,attenDb)/20),beta=Math.cosh(acosh1(tg)/Math.max(1,ord)),pRe=new Float64Array(n),pIm=new Float64Array(n);for(let k=0;k<n;k++){const x=beta*Math.cos(Math.PI*k/n);let v=0;if(Math.abs(x)<=1)v=Math.cos(ord*Math.acos(x));else{const s=x>0?1:((ord&1)?-1:1);v=s*Math.cosh(ord*acosh1(Math.abs(x)));}pRe[k]=v;}if((n&1)===0){for(let k=0;k<n;k++){const a=Math.PI*k/n,c=Math.cos(a),s=Math.sin(a),r=pRe[k],im=pIm[k];pRe[k]=r*c-im*s;pIm[k]=r*s+im*c;}}const F=dftComplex(pRe,pIm,false),tmp=F.re;let idx=0;if(n&1){const m=(n+1)>>1;for(let i=m-1;i>=1;i--)w[idx++]=tmp[i];for(let i=0;i<m;i++)w[idx++]=tmp[i];}else{const m=(n>>1)+1;for(let i=m-1;i>=1;i--)w[idx++]=tmp[i];for(let i=1;i<m;i++)w[idx++]=tmp[i];}let mx=0;for(let i=0;i<n;i++){const a=Math.abs(w[i]);if(a>mx)mx=a;}if(mx<=0)mx=1;for(let i=0;i<n;i++)w[i]/=mx;return w;}
+function convAxis0Same(src,dst,shape,kernel){const nh=shape[0],nk=shape[1],nl=shape[2],c=Math.floor(kernel.length/2);for(let ih=0;ih<nh;ih++)for(let ik=0;ik<nk;ik++)for(let il=0;il<nl;il++){let acc=0;for(let j=0;j<kernel.length;j++){const sh=ih+j-c;if(sh<0||sh>=nh)continue;acc+=src[(sh*nk+ik)*nl+il]*kernel[j];}dst[(ih*nk+ik)*nl+il]=acc;}}
+function convAxis1Same(src,dst,shape,kernel){const nh=shape[0],nk=shape[1],nl=shape[2],c=Math.floor(kernel.length/2);for(let ih=0;ih<nh;ih++){const baseH=ih*nk*nl;for(let ik=0;ik<nk;ik++)for(let il=0;il<nl;il++){let acc=0;for(let j=0;j<kernel.length;j++){const sk=ik+j-c;if(sk<0||sk>=nk)continue;acc+=src[baseH+sk*nl+il]*kernel[j];}dst[baseH+ik*nl+il]=acc;}}}
+function convAxis2Same(src,dst,shape,kernel){const nh=shape[0],nk=shape[1],nl=shape[2],c=Math.floor(kernel.length/2);for(let ih=0;ih<nh;ih++)for(let ik=0;ik<nk;ik++){const row=(ih*nk+ik)*nl;for(let il=0;il<nl;il++){let acc=0;for(let j=0;j<kernel.length;j++){const sl=il+j-c;if(sl<0||sl>=nl)continue;acc+=src[row+sl]*kernel[j];}dst[row+il]=acc;}}}
+function minMaxArray(a){let mn=Infinity,mx=-Infinity;for(let i=0;i<a.length;i++){const v=a[i];if(v<mn)mn=v;if(v>mx)mx=v;}return{min:mn,max:mx};}
+function smoothIntensity3d(I,shape,superCell,cfg){const nh=shape[0],nk=shape[1],nl=shape[2],grid=nh*nk*nl,scale=Math.max(1,Math.floor(cfg.scale||1)),sx=Math.max(1,Math.floor((superCell&&superCell[0]||1)*scale)),sy=Math.max(1,Math.floor((superCell&&superCell[1]||1)*scale)),sz=Math.max(1,Math.floor((superCell&&superCell[2]||1)*scale)),kind=(cfg.type||"lanczos").toLowerCase(),chebDb=Number.isFinite(cfg.chebDb)?cfg.chebDb:100,w0=kind==="chebyshev"?chebwinWindow(sx,chebDb):lanczosWindow(sx),w1=kind==="chebyshev"?chebwinWindow(sy,chebDb):lanczosWindow(sy),w2=kind==="chebyshev"?chebwinWindow(sz,chebDb):lanczosWindow(sz),k0=fftMagShiftNorm(w0,sx),k1=fftMagShiftNorm(w1,sy),k2=fftMagShiftNorm(w2,sz),tmpA=new Float64Array(grid),tmpB=new Float64Array(grid);convAxis0Same(I,tmpA,[nh,nk,nl],k0);convAxis1Same(tmpA,tmpB,[nh,nk,nl],k1);convAxis2Same(tmpB,tmpA,[nh,nk,nl],k2);const mm=minMaxArray(tmpA);return{data:tmpA,min:mm.min,max:mm.max,meta:{type:kind,chebDb:chebDb,kernel:[sx,sy,sz],scale:scale}};}
+function idx(shape,ih,ik,il){return(ih*shape[1]+ik)*shape[2]+il;}
+function setPlot3dStatus(msg){const e=$("plot3dStatus");if(e)e.textContent=msg;}
+function cloneCamera(cam){if(!cam)return null;return JSON.parse(JSON.stringify(cam));}
+function readSceneCamera(plotId){const gd=$(plotId);if(!gd)return null;const scene=gd._fullLayout&&gd._fullLayout.scene?gd._fullLayout.scene:null;if(scene&&scene.camera)return cloneCamera(scene.camera);if(gd.layout&&gd.layout.scene&&gd.layout.scene.camera)return cloneCamera(gd.layout.scene.camera);if(scene){try{if(scene._scene&&typeof scene._scene.getCamera==="function"){const cam=scene._scene.getCamera();if(cam)return cloneCamera(cam);}}catch(_){/* no-op */}}return null;}
+function captureSceneCamera(plotId,key){const cam=readSceneCamera(plotId);if(cam)state.sceneCamera[key]=cam;}
+function capture3dCameras(){captureSceneCamera("plot3dIso","iso");captureSceneCamera("plot3dPlane","plane");}
+function wireCameraTracking(plotId,key){const gd=$(plotId);if(!gd||gd.__cameraTrackKey===key)return;gd.__cameraTrackKey=key;if(typeof gd.on==="function"){const onCam=(ev)=>{if(ev&&ev["scene.camera"])state.sceneCamera[key]=cloneCamera(ev["scene.camera"]);setTimeout(()=>captureSceneCamera(plotId,key),0);};gd.on("plotly_relayout",onCam);gd.on("plotly_relayouting",onCam);gd.on("plotly_doubleclick",()=>setTimeout(()=>captureSceneCamera(plotId,key),0));}}
+function scaledVal(v,mode){return mode==="log"?Math.log10(Math.max(0,v)+EPS):v;}
+function downsampleIndices(n,step){const out=[];for(let i=0;i<n;i+=step)out.push(i);if(out.length===0||out[out.length-1]!==n-1)out.push(n-1);return out;}
+function chooseStrides(shape,maxVox){const nh=shape[0],nk=shape[1],nl=shape[2],limit=Math.max(5000,Math.floor(maxVox||220000));let sh=1,sk=1,sl=1;while(Math.ceil(nh/sh)*Math.ceil(nk/sk)*Math.ceil(nl/sl)>limit){const ah=Math.ceil(nh/sh),ak=Math.ceil(nk/sk),al=Math.ceil(nl/sl);if(ah>=ak&&ah>=al)sh++;else if(ak>=ah&&ak>=al)sk++;else sl++;}return[sh,sk,sl];}
+function percentileSorted(sorted,pct){if(!sorted.length)return 0;const p=Math.max(0,Math.min(100,pct)),q=(p/100)*(sorted.length-1),i0=Math.floor(q),i1=Math.ceil(q),t=q-i0;return sorted[i0]*(1-t)+sorted[i1]*t;}
+function buildVolumeSample(res,maxVox,mode){const [sh,sk,sl]=chooseStrides(res.shape,maxVox),hs=downsampleIndices(res.shape[0],sh),ks=downsampleIndices(res.shape[1],sk),ls=downsampleIndices(res.shape[2],sl),total=hs.length*ks.length*ls.length,x=new Float32Array(total),y=new Float32Array(total),z=new Float32Array(total),hklH=new Float32Array(total),hklK=new Float32Array(total),hklL=new Float32Array(total),v=new Float32Array(total),hasQ=Array.isArray(res.Bq);let p=0,mn=Infinity,mx=-Infinity;for(const ih of hs)for(const ik of ks)for(const il of ls){const h=res.h[ih],k=res.k[ik],l=res.l[il],q=hasQ?mul([h,k,l],res.Bq):[h,k,l],sv=scaledVal(res.I[idx(res.shape,ih,ik,il)],mode);x[p]=q[0];y[p]=q[1];z[p]=q[2];hklH[p]=h;hklK[p]=k;hklL[p]=l;v[p]=Number.isFinite(sv)?sv:0;if(v[p]<mn)mn=v[p];if(v[p]>mx)mx=v[p];p++;}if(!Number.isFinite(mn)||!Number.isFinite(mx)){mn=0;mx=1;}return{x,y,z,hklH,hklK,hklL,v,min:mn,max:mx,count:total,strides:[sh,sk,sl]};}
+function getVolumeSample(res,maxVox,mode){const key=[res.shape.join("x"),res.min,res.max,maxVox,mode].join("|");if(state.volCache&&state.volCache.key===key)return state.volCache;const sampled=buildVolumeSample(res,maxVox,mode);sampled.sorted=Array.from(sampled.v).sort((a,b)=>a-b);state.volCache={key,...sampled};return state.volCache;}
+function isNonOrthBq(Bq){if(!Array.isArray(Bq))return false;const a=mul([1,0,0],Bq),b=mul([0,1,0],Bq),c=mul([0,0,1],Bq),na=normVec(a),nb=normVec(b),nc=normVec(c);if(!(na>1e-12&&nb>1e-12&&nc>1e-12))return false;const ab=Math.abs(dot(a,b)/(na*nb)),ac=Math.abs(dot(a,c)/(na*nc)),bc=Math.abs(dot(b,c)/(nb*nc));return ab>1e-3||ac>1e-3||bc>1e-3;}
+function sampleHklCustom(sample){const cd=new Array(sample.count);for(let i=0;i<sample.count;i++)cd[i]=[sample.hklH[i],sample.hklK[i],sample.hklL[i]];return cd;}
+function makeIsoFallbackTrace(sample,isoMin){const keep=[];for(let i=0;i<sample.count;i++)if(sample.v[i]>=isoMin)keep.push(i);if(!keep.length)return null;const maxPts=120000,stride=Math.max(1,Math.ceil(keep.length/maxPts)),n=Math.max(1,Math.ceil(keep.length/stride)),x=new Float32Array(n),y=new Float32Array(n),z=new Float32Array(n),val=new Float32Array(n),cd=new Array(n);let p=0;for(let i=0;i<keep.length;i+=stride){const j=keep[i];x[p]=sample.x[j];y[p]=sample.y[j];z[p]=sample.z[j];val[p]=sample.v[j];cd[p]=[sample.hklH[j],sample.hklK[j],sample.hklL[j]];p++;if(p>=n)break;}return{type:"scatter3d",mode:"markers",x,y,z,customdata:cd,marker:{size:2.2,opacity:0.26,color:val,colorscale:getColorPreset().plotly,cmin:sample.min,cmax:sample.max},name:"Iso fallback cloud",hovertemplate:"H=%{customdata[0]:.5g}<br>K=%{customdata[1]:.5g}<br>L=%{customdata[2]:.5g}<br>Qx=%{x:.5g}<br>Qy=%{y:.5g}<br>Qz=%{z:.5g}<br>V=%{marker.color:.5g}<extra></extra>"};}
+function makePlaneTrace(res,axis,fix,mode){let H=[],K=[],L=[],c=[];if(axis==="l"){for(let ih=0;ih<res.shape[0];ih++){const hr=[],kr=[],lr=[],cr=[];for(let ik=0;ik<res.shape[1];ik++){const h=res.h[ih],k=res.k[ik],l=res.l[fix];hr.push(h);kr.push(k);lr.push(l);cr.push(scaledVal(res.I[idx(res.shape,ih,ik,fix)],mode));}H.push(hr);K.push(kr);L.push(lr);c.push(cr);}}else if(axis==="h"){for(let ik=0;ik<res.shape[1];ik++){const hr=[],kr=[],lr=[],cr=[];for(let il=0;il<res.shape[2];il++){const h=res.h[fix],k=res.k[ik],l=res.l[il];hr.push(h);kr.push(k);lr.push(l);cr.push(scaledVal(res.I[idx(res.shape,fix,ik,il)],mode));}H.push(hr);K.push(kr);L.push(lr);c.push(cr);}}else{for(let ih=0;ih<res.shape[0];ih++){const hr=[],kr=[],lr=[],cr=[];for(let il=0;il<res.shape[2];il++){const h=res.h[ih],k=res.k[fix],l=res.l[il];hr.push(h);kr.push(k);lr.push(l);cr.push(scaledVal(res.I[idx(res.shape,ih,fix,il)],mode));}H.push(hr);K.push(kr);L.push(lr);c.push(cr);}}const q=transformSurfaceHklToQ(H,K,L,res.Bq),custom=makeSurfaceHklCustom(H,K,L);return{type:"surface",x:q.x,y:q.y,z:q.z,customdata:custom,surfacecolor:c,showscale:false,opacity:0.86,colorscale:getColorPreset().plotly,name:`Slice plane ${axis.toUpperCase()}=${fix}`,hovertemplate:"H=%{customdata[0]:.5g}<br>K=%{customdata[1]:.5g}<br>L=%{customdata[2]:.5g}<br>Qx=%{x:.5g}<br>Qy=%{y:.5g}<br>Qz=%{z:.5g}<br>V=%{surfacecolor:.5g}<extra></extra>"};}
+function makeNormalPlaneTrace(res,mode,resOverride){const planeRes=Math.max(40,Math.min(180,Math.floor(Number.isFinite(resOverride)?resOverride:Math.floor((Number($("pRes").value)||200)*0.55)))),plane=buildNormalPlaneSlice(res,mode,true,planeRes),q=transformSurfaceHklToQ(plane.x3,plane.y3,plane.z3,res.Bq),custom=makeSurfaceHklCustom(plane.x3,plane.y3,plane.z3);return{type:"surface",x:q.x,y:q.y,z:q.z,customdata:custom,surfacecolor:plane.c3,showscale:false,opacity:0.86,colorscale:getColorPreset().plotly,name:"Normal plane slice",hovertemplate:"H=%{customdata[0]:.5g}<br>K=%{customdata[1]:.5g}<br>L=%{customdata[2]:.5g}<br>Qx=%{x:.5g}<br>Qy=%{y:.5g}<br>Qz=%{z:.5g}<br>V=%{surfacecolor:.5g}<extra></extra>"};}
+async function updatePlaneTraceFast(resHint){
+if(!state.res||$("showPlane3d").value!=="1"||getSliceMode()!=="plane")return;
+state.planeTraceReqId++;
+state.planeTraceQueued=Number.isFinite(resHint)?Math.max(40,Math.min(260,Math.floor(resHint))):null;
+if(state.planeTraceBusy)return;
+state.planeTraceBusy=true;
+try{
+const plotly=await ensurePlotly();
+while(true){
+if(!state.res||$("showPlane3d").value!=="1"||getSliceMode()!=="plane")break;
+const gd=$("plot3dPlane");
+if(!gd||!Array.isArray(gd.data)||gd.data.length<1)break;
+const queued=state.planeTraceQueued;
+state.planeTraceQueued=null;
+const planeRes=Number.isFinite(queued)?queued:Math.max(48,Math.min(140,fastPlaneRes()));
+const tr=makeNormalPlaneTrace(state.res,$("scale").value,planeRes);
+await plotly.restyle(gd,{x:[tr.x],y:[tr.y],z:[tr.z],customdata:[tr.customdata],surfacecolor:[tr.surfacecolor],colorscale:[tr.colorscale],opacity:[tr.opacity],hovertemplate:[tr.hovertemplate]},0);
+captureSceneCamera("plot3dPlane","plane");
+if(state.planeTraceQueued===null)break;
+}
+}finally{
+state.planeTraceBusy=false;
+}
+}
+async function render3d(force=false){
+if(!state.res)return;
+if(!force&&state.planeMoving&&getSliceMode()==="plane")return;
+const renderEpoch=state.render3dEpoch;
+const auto=$("auto3d").value==="1";
+if(!force&&!auto)return;
+setPlot3dStatus("Rendering 3D view ...");
+const plotly=await ensurePlotly(),res=state.res,mode=$("scale").value,maxVox=Math.max(5000,Math.floor(Number($("voxelCap").value)||220000)),isoPct=Math.max(50,Math.min(99.99,Number($("isoPct").value)||95)),isoCount=Math.max(1,Math.min(12,Math.floor(Number($("isoCount").value)||4))),showIso=$("showIso3d").value==="1",showPlane=$("showPlane3d").value==="1";
+const isoTraces=[];
+let isoMsg="iso=off";
+if(showIso){
+setPlot3dStatus("Rendering 3D isosurface ...");
+const sample=getVolumeSample(res,maxVox,mode);
+let isoMin=percentileSorted(sample.sorted,isoPct),isoMax=sample.max;
+if(!(isoMax>isoMin)){isoMin=sample.min;isoMax=sample.max+(sample.max-sample.min||1)*1e-6;}
+if(isNonOrthBq(res.Bq)){
+const fb=makeIsoFallbackTrace(sample,isoMin);
+if(fb){isoTraces.push(fb);isoMsg=`iso=fallback-cloud (P${isoPct.toFixed(2)}, sampled=${sample.count}, strides=${sample.strides.join("x")})`;}
+else{isoMsg=`iso=empty (P${isoPct.toFixed(2)})`;}
+}else{
+isoTraces.push({type:"isosurface",x:sample.x,y:sample.y,z:sample.z,customdata:sampleHklCustom(sample),value:sample.v,isomin:isoMin,isomax:isoMax,cmin:sample.min,cmax:sample.max,opacity:0.24,surface:{show:true,count:isoCount,fill:0.92},caps:{x:{show:false},y:{show:false},z:{show:false}},colorscale:getColorPreset().plotly,name:"Volume isosurface",hovertemplate:"H=%{customdata[0]:.5g}<br>K=%{customdata[1]:.5g}<br>L=%{customdata[2]:.5g}<br>Qx=%{x:.5g}<br>Qy=%{y:.5g}<br>Qz=%{z:.5g}<br>V=%{value:.5g}<extra></extra>"});
+isoMsg=`iso=on (P${isoPct.toFixed(2)}, sampled=${sample.count}, strides=${sample.strides.join("x")})`;
+}
+}
+const planeTraces=[];
+if(showPlane){
+if(getSliceMode()==="plane"){planeTraces.push(makeNormalPlaneTrace(res,mode));}
+else{const a=$("axis").value,fix=Math.max(0,Math.min(Number($("idx").value)||0,(a==="h"?res.shape[0]-1:a==="k"?res.shape[1]-1:res.shape[2]-1)));planeTraces.push(makePlaneTrace(res,a,fix,mode));}
+}
+const axisOverlay=makeHklAxesOverlayTraces(res),qb=qBoundsFromRes(res),qxRange=[qb.min[0],qb.max[0]],qyRange=[qb.min[1],qb.max[1]],qzRange=[qb.min[2],qb.max[2]],spanQx=Math.max(1e-9,Math.abs(qxRange[1]-qxRange[0])),spanQy=Math.max(1e-9,Math.abs(qyRange[1]-qyRange[0])),spanQz=Math.max(1e-9,Math.abs(qzRange[1]-qzRange[0])),spanMax=Math.max(spanQx,spanQy,spanQz,1e-9),sceneRev=`${res.file||"res"}|${res.shape.join("x")}`;
+if(renderEpoch!==state.render3dEpoch||(!force&&state.planeMoving&&getSliceMode()==="plane"))return;
+const sceneBase={aspectmode:"manual",aspectratio:{x:spanQx/spanMax,y:spanQy/spanMax,z:spanQz/spanMax},uirevision:sceneRev,xaxis:{visible:false,range:qxRange,autorange:false,backgroundcolor:"#0f172a",gridcolor:"#2b3647",zerolinecolor:"#44526b",color:"#dbeafe"},yaxis:{visible:false,range:qyRange,autorange:false,backgroundcolor:"#0f172a",gridcolor:"#2b3647",zerolinecolor:"#44526b",color:"#dbeafe"},zaxis:{visible:false,range:qzRange,autorange:false,backgroundcolor:"#0f172a",gridcolor:"#2b3647",zerolinecolor:"#44526b",color:"#dbeafe"}};
+const sceneIso={...sceneBase,xaxis:{...sceneBase.xaxis},yaxis:{...sceneBase.yaxis},zaxis:{...sceneBase.zaxis}},scenePlane={...sceneBase,xaxis:{...sceneBase.xaxis},yaxis:{...sceneBase.yaxis},zaxis:{...sceneBase.zaxis}};
+const keepIsoCam=readSceneCamera("plot3dIso")||(state.sceneCamera.iso?cloneCamera(state.sceneCamera.iso):null),keepPlaneCam=readSceneCamera("plot3dPlane")||(state.sceneCamera.plane?cloneCamera(state.sceneCamera.plane):null);
+if(keepIsoCam)sceneIso.camera=keepIsoCam;
+if(keepPlaneCam)scenePlane.camera=keepPlaneCam;
+const layoutIso={paper_bgcolor:"#070b12",plot_bgcolor:"#070b12",font:{color:"#dbeafe"},margin:{l:0,r:0,b:0,t:34},uirevision:sceneRev,title:{text:`Diffuse 3D Isosurface (${mode})${showIso?"":" [OFF]"}`,font:{size:14}},scene:sceneIso};
+const layoutPlane={paper_bgcolor:"#070b12",plot_bgcolor:"#070b12",font:{color:"#dbeafe"},margin:{l:0,r:0,b:0,t:34},uirevision:sceneRev,title:{text:`Slice Plane (${getSliceMode()==="plane"?"Normal":"Axis"})${showPlane?"":" [OFF]"}`,font:{size:14}},scene:scenePlane};
+await Promise.all([
+plotly.react("plot3dIso",[...isoTraces,...axisOverlay],layoutIso,{responsive:true,displaylogo:false}),
+plotly.react("plot3dPlane",[...planeTraces,...axisOverlay],layoutPlane,{responsive:true,displaylogo:false})
+]);
+if(renderEpoch!==state.render3dEpoch||(!force&&state.planeMoving&&getSliceMode()==="plane"))return;
+capture3dCameras();
+if(!state.sceneCamera.iso&&keepIsoCam)state.sceneCamera.iso=cloneCamera(keepIsoCam);
+if(!state.sceneCamera.plane&&keepPlaneCam)state.sceneCamera.plane=cloneCamera(keepPlaneCam);
+wireCameraTracking("plot3dIso","iso");
+wireCameraTracking("plot3dPlane","plane");
+state.last3dStamp=performance.now();
+setPlot3dStatus(`3D ready. ${isoMsg}. plane=${planeTraces.length?"on":"off"}.`);
+}
+function schedule3dRender(force=false,delayMs=100){if(!state.res)return;if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}if(!force&&$("auto3d").value!=="1")return;if(!force&&state.planeMoving&&getSliceMode()==="plane")return;const delay=Math.max(0,Math.floor(Number.isFinite(delayMs)?delayMs:100));state.render3dTimer=setTimeout(()=>{state.render3dTimer=null;render3d(force).catch(e=>setPlot3dStatus(`3D render failed: ${e.message}`));},delay);}
+function ensureSliceWindow(){if(state.sliceWin&&!state.sliceWin.closed)return state.sliceWin;const w=window.open("","diffuse_slice_window","width=1180,height=860,resizable=yes,scrollbars=yes");if(!w)throw new Error("Popup blocked by browser.");w.document.open();w.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>Diffuse Slice View</title><style>body{margin:0;font-family:Segoe UI,Tahoma,sans-serif;background:#060b14;color:#dbeafe}header{padding:10px 12px;background:#0f172a;border-bottom:1px solid #273449}main{padding:10px}#im{width:100%;height:auto;border:1px solid #334155;border-radius:8px;background:#0b1321}#meta{margin-top:10px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap}</style></head><body><header><strong>Diffuse Slice Window</strong></header><main><img id="im" alt="slice"><div id="meta">No slice yet.</div></main><script>window.updateSlice=function(p){document.title='Diffuse Slice - '+(p.title||'-');document.getElementById('im').src=p.img||'';document.getElementById('meta').textContent=(p.title||'')+'\\n'+(p.stats||'');};<\/script></body></html>`);w.document.close();state.sliceWin=w;$("closeSliceWin").disabled=false;return w;}
+function pushSliceWindow(){const w=state.sliceWin;if(!w||w.closed){if(w&&w.closed){state.sliceWin=null;$("closeSliceWin").disabled=true;}return;}if(!state.res)return;const cv=$("heatmap"),payload={title:$("sliceVal").textContent||"",stats:$("sliceStats").textContent||"",img:cv&&cv.toDataURL?cv.toDataURL("image/png"):""};if(typeof w.updateSlice==="function")w.updateSlice(payload);}
+function openSliceWindow(){const w=ensureSliceWindow();pushSliceWindow();try{w.focus();}catch(_){/* no-op */}}
+function closeSliceWindow(){if(state.sliceWin&&!state.sliceWin.closed)state.sliceWin.close();state.sliceWin=null;$("closeSliceWin").disabled=true;}
+function webgpuStage(stage,details){if(stage==="spread_setup")return`WebGPU spread setup: tiles=${details.tiles||0}, entries=${details.entries||0}`;if(stage==="spread_dispatch")return`WebGPU spread dispatch: workgroups=${details.workgroups||0}`;if(stage==="amplify_dispatch")return`WebGPU amplify dispatch: workgroups=${details.workgroups||0}`;if(stage==="fft_dispatch"){const sh=(details.shape||[]).join("x");return`WebGPU FFT dispatch: shape=${sh||"?"}, direction=${details.direction||"?"}`;}if(stage==="interp_dispatch")return`WebGPU interpolate dispatch: workgroups=${details.workgroups||0}`;if(stage==="postmul_dispatch")return`WebGPU post-multiply dispatch: workgroups=${details.workgroups||0}`;if(stage==="smooth_axis0_dispatch")return`WebGPU smoothing(H): workgroups=${details.workgroups||0}`;if(stage==="smooth_axis1_dispatch")return`WebGPU smoothing(K): workgroups=${details.workgroups||0}`;if(stage==="smooth_axis2_dispatch")return`WebGPU smoothing(L): workgroups=${details.workgroups||0}`;if(stage==="done")return`WebGPU done: outputs=${details.outputs||0}`;if(stage==="smooth_done")return`WebGPU smoothing done: outputs=${details.outputs||0}`;return"";}
+async function runType3(spec,opts,backend,onStageTiming){if(backend==="webgpu_fft"){if(!navigator.gpu)throw new Error("navigator.gpu unavailable. Select a CPU backend.");await ensureWebgpuFftApi();if(typeof window.type3NufftWebgpuGpuFft!=="function")throw new Error(`WebGPU Type-3 bridge not loaded. Check ${WEBGPU_NUFFT_CDN_BASE}/lib/type3_webgpu_gpufft.js`);const o={...opts,wgslBasePath:WEBGPU_WGSL_BASE};const stageMs={};let prevStage=null,prevTs=performance.now();const onStage=(stage,details)=>{const now=performance.now();if(prevStage){const dt=now-prevTs;stageMs[prevStage]=(stageMs[prevStage]||0)+dt;if(typeof onStageTiming==="function")onStageTiming(prevStage,dt);}prevStage=stage;prevTs=now;const msg=webgpuStage(stage,details||{});if(msg)status(msg);};const out=await window.type3NufftWebgpuGpuFft(spec,o,onStage);const endTs=performance.now();if(prevStage){const dt=endTs-prevTs;stageMs[prevStage]=(stageMs[prevStage]||0)+dt;if(typeof onStageTiming==="function")onStageTiming(prevStage,dt);}return{out,stageMs};}if(backend==="direct"){needType3(window.type3NufftCpuDirect);return{out:type3NufftCpuDirect(spec,opts),stageMs:null};}needType3(window.type3NufftCpu);return{out:type3NufftCpu(spec,opts),stageMs:null};}
+
+async function compute(){
+if(!state.rmc){status("Load an .rmc6f file first.","warn");return;}
+state.planeMoving=false;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;
+const r=state.rmc,h=axis(Number($("hMin").value),Number($("hMax").value),Number($("hStep").value)),k=axis(Number($("kMin").value),Number($("kMax").value),Number($("kStep").value)),l=axis(Number($("lMin").value),Number($("lMax").value),Number($("lStep").value)),shape=[h.length,k.length,l.length],grid=shape[0]*shape[1]*shape[2],backend=$("backend").value,limit=Number($("gridLimit").value);
+if(!Number.isFinite(limit)||limit<1)throw new Error("Grid safety limit must be positive");
+const useWebgpuChunking=backend==="webgpu_fft"&&grid>limit;
+if(backend!=="webgpu_fft"&&grid>limit){const rec=Math.ceil(grid*1.1);throw new Error(`Grid ${grid} exceeds limit ${limit}. Set Grid safety limit >= ${rec} (or choose WebGPU preset).`);}
+$("run").disabled=true;$("saveDat").disabled=true;$("saveJson").disabled=true;$("axis").disabled=true;$("idx").disabled=true;$("scale").disabled=true;$("render3d").disabled=true;$("openSliceWin").disabled=true;$("sliceMode").disabled=true;$("planeMove").disabled=true;$("planeApply").disabled=true;
+const opts={tol:Number($("tol").value),upsampfac:Number($("upsamp").value)},sub=$("subAvg").value==="1",smoothEnabled=$("smooth3d").value==="1",smoothType=$("smoothType").value,chebDb=Number.isFinite(Number($("chebDb").value))?Number($("chebDb").value):100,smoothScale=Math.max(1,Math.floor(Number($("smoothScale").value)||1)),t0=performance.now(),timings={prepare:0,a:0,aavg:0,adelta:0,finalize:0,smooth:0,webgpu:{}};
+const onStageTiming=(stage,dt)=>{timings.webgpu[stage]=(timings.webgpu[stage]||0)+dt;};
+status(`Preparing grid ${shape[0]}×${shape[1]}×${shape[2]} (${grid}) ...`);await new Promise(r=>setTimeout(r,0));
+const tPrep=performance.now();const src=inter3(r.x,r.y,r.z),srcA=inter3(r.xa,r.ya,r.za),srcD=inter3(r.dx,r.dy,r.dz),cAtoms=creal(r.fca),cOnes=new Float64Array(r.atoms*2);for(let i=0;i<r.atoms;i++)cOnes[i*2]=1;timings.prepare=performance.now()-tPrep;
+const I=new Float64Array(grid),mInv=1/r.atoms;let min=Infinity,max=-Infinity;
+const chunkSize=useWebgpuChunking?Math.max(1,Math.floor(limit)):grid,totalChunks=Math.max(1,Math.ceil(grid/chunkSize));
+if(useWebgpuChunking){status(`Grid ${grid} exceeds safety limit ${limit}; running WebGPU chunked NUFFT in ${totalChunks} chunks ...`,"warn");await new Promise(r=>setTimeout(r,0));}
+for(let chunk=0,start=0;start<grid;chunk++,start+=chunkSize){
+const count=Math.min(chunkSize,grid-start),trg=targetsChunk(h,k,l,r.Bq,start,count),chunkTag=totalChunks>1?` (${chunk+1}/${totalChunks})`:"";
+status(`Computing A(hkl)${chunkTag} ...`);await new Promise(r=>setTimeout(r,0));
+const tA=performance.now();const qRes=await runType3({dim:3,isign:1,sourcesPacked:src,targetsPacked:trg,strengths:cAtoms},opts,backend,onStageTiming);timings.a+=performance.now()-tA;const q=qRes.out;
+let qa=null,qd=null;
+if(sub){
+status(`Computing Aavg(hkl)${chunkTag} ...`);await new Promise(r=>setTimeout(r,0));
+const tAa=performance.now();const qaRes=await runType3({dim:3,isign:1,sourcesPacked:srcA,targetsPacked:trg,strengths:cOnes},opts,backend,onStageTiming);timings.aavg+=performance.now()-tAa;qa=qaRes.out;
+status(`Computing Adelta(hkl)${chunkTag} ...`);await new Promise(r=>setTimeout(r,0));
+const tAd=performance.now();const qdRes=await runType3({dim:3,isign:1,sourcesPacked:srcD,targetsPacked:trg,strengths:cAtoms},opts,backend,onStageTiming);timings.adelta+=performance.now()-tAd;qd=qdRes.out;
+}
+status(`Finalizing intensity${chunkTag} ...`);await new Promise(r=>setTimeout(r,0));
+const tFin=performance.now();
+for(let i=0;i<count;i++){const ar=q[i*2],ai=q[i*2+1];let br=0,bi=0;if(sub){const avr=qa[i*2],avi=qa[i*2+1],dr=qd[i*2],di=qd[i*2+1];br=(avr*dr-avi*di)*mInv;bi=(avr*di+avi*dr)*mInv;}const rr=ar-br,ii=ai-bi,v=rr*rr+ii*ii;I[start+i]=v;if(v<min)min=v;if(v>max)max=v;}
+timings.finalize+=performance.now()-tFin;
+}
+let Iout=I,smoothMeta=null;
+if(smoothEnabled){
+status(`Applying ${smoothType} smoothing ...`);await new Promise(r=>setTimeout(r,0));
+const nh=shape[0],nk=shape[1],nl=shape[2],scale=Math.max(1,Math.floor(smoothScale||1)),sx=Math.max(1,Math.floor((r.super&&r.super[0]||1)*scale)),sy=Math.max(1,Math.floor((r.super&&r.super[1]||1)*scale)),sz=Math.max(1,Math.floor((r.super&&r.super[2]||1)*scale)),kind=(smoothType||"lanczos").toLowerCase(),w0=kind==="chebyshev"?chebwinWindow(sx,chebDb):lanczosWindow(sx),w1=kind==="chebyshev"?chebwinWindow(sy,chebDb):lanczosWindow(sy),w2=kind==="chebyshev"?chebwinWindow(sz,chebDb):lanczosWindow(sz),k0=fftMagShiftNorm(w0,sx),k1=fftMagShiftNorm(w1,sy),k2=fftMagShiftNorm(w2,sz),kernelMeta=[sx,sy,sz],tSm=performance.now();
+if(backend==="webgpu_fft"&&typeof window.type3Smooth3dWebgpu==="function"){
+try{
+const o={...opts,wgslBasePath:WEBGPU_WGSL_BASE};
+const stageMs={};let prevStage=null,prevTs=performance.now();
+const onSmoothStage=(stage,details)=>{const now=performance.now();if(prevStage){const dt=now-prevTs;stageMs[prevStage]=(stageMs[prevStage]||0)+dt;timings.webgpu[prevStage]=(timings.webgpu[prevStage]||0)+dt;}prevStage=stage;prevTs=now;const msg=webgpuStage(stage,details||{});if(msg)status(msg);};
+const smOut=await window.type3Smooth3dWebgpu(I,shape,[k0,k1,k2],o,onSmoothStage),endTs=performance.now();if(prevStage){const dt=endTs-prevTs;stageMs[prevStage]=(stageMs[prevStage]||0)+dt;timings.webgpu[prevStage]=(timings.webgpu[prevStage]||0)+dt;}
+Iout=smOut;const mm=minMaxArray(Iout);min=mm.min;max=mm.max;smoothMeta={type:kind,chebDb:chebDb,kernel:kernelMeta,scale:scale,engine:"webgpu"};
+}catch(e){
+status(`WebGPU smoothing failed (${e.message}); falling back to CPU smoothing ...`,"warn");await new Promise(r=>setTimeout(r,0));
+const sm=smoothIntensity3d(I,shape,r.super,{type:smoothType,chebDb:chebDb,scale:smoothScale});Iout=sm.data;min=sm.min;max=sm.max;smoothMeta={...sm.meta,engine:"cpu-fallback"};
+}
+}else{
+const sm=smoothIntensity3d(I,shape,r.super,{type:smoothType,chebDb:chebDb,scale:smoothScale});Iout=sm.data;min=sm.min;max=sm.max;smoothMeta={...sm.meta,engine:"cpu"};
+}
+timings.smooth=performance.now()-tSm;
+}
+state.res={file:r.file,shape,h,k,l,Bq:r.Bq,Bp:r.Bp,I:Iout,min,max,backend,opts:{...opts,subtractAverage:sub,targetChunkSize:chunkSize,targetChunks:totalChunks,smoothing:{enabled:smoothEnabled,type:smoothType,chebDb:chebDb,scale:smoothScale,kernel:smoothMeta?smoothMeta.kernel:null,engine:smoothMeta?smoothMeta.engine:null}},timings};
+state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};
+const dt=(performance.now()-t0)/1000,timingParts=[`prep=${fmtMs(timings.prepare)}`,`A=${fmtMs(timings.a)}`];if(sub){timingParts.push(`Aavg=${fmtMs(timings.aavg)}`);timingParts.push(`Adelta=${fmtMs(timings.adelta)}`);}timingParts.push(`final=${fmtMs(timings.finalize)}`);if(timings.smooth>0)timingParts.push(`smooth=${fmtMs(timings.smooth)}`);const gpuBreakdown=backend==="webgpu_fft"?formatWebgpuStageTotals(timings.webgpu):"",chunkMsg=totalChunks>1?` chunks=${totalChunks}`:"";const timingMsg=`Timing: ${timingParts.join(", ")}${gpuBreakdown?` | GPU ${gpuBreakdown}`:""}${chunkMsg}`;const smoothMsg=smoothMeta?` Smoothed (${smoothMeta.type}, kernel=${smoothMeta.kernel.join("x")}).`:"";const unknownMsg=r.unknown.length?` Unknown elements: ${r.unknown.join(", ")} -> fca=10.0.`:"";status(`Done in ${dt.toFixed(2)} s. I range [${min.toExponential(4)}, ${max.toExponential(4)}]. ${timingMsg}${smoothMsg}${unknownMsg}`,r.unknown.length?"warn":"ok");
+$("scale").value=$("defScale").value;syncResultControls();updateSliceUI();draw();schedule3dRender(true);$("run").disabled=false;
+}
+
+function slice(res,axisName,fix){const [nh,nk,nl]=res.shape,qH=mul([1,0,0],res.Bq),qK=mul([0,1,0],res.Bq),qL=mul([0,0,1],res.Bq);if(axisName==="h"){const rows=nk,cols=nl,d=new Float64Array(rows*cols);for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)d[r*cols+c]=res.I[idx(res.shape,fix,r,c)];return{rows,cols,d,plane:`H=${res.h[fix]}`,x:`L ${res.l[0]}..${res.l[nl-1]}`,y:`K ${res.k[0]}..${res.k[nk-1]}`,xLabel:"L",yLabel:"K",xMin:res.l[0],xMax:res.l[nl-1],yMin:res.k[0],yMax:res.k[nk-1],xScaleQ:Math.max(1e-12,normVec(qL)),yScaleQ:Math.max(1e-12,normVec(qK)),xQVec:qL,yQVec:qK};}
+if(axisName==="k"){const rows=nh,cols=nl,d=new Float64Array(rows*cols);for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)d[r*cols+c]=res.I[idx(res.shape,r,fix,c)];return{rows,cols,d,plane:`K=${res.k[fix]}`,x:`L ${res.l[0]}..${res.l[nl-1]}`,y:`H ${res.h[0]}..${res.h[nh-1]}`,xLabel:"L",yLabel:"H",xMin:res.l[0],xMax:res.l[nl-1],yMin:res.h[0],yMax:res.h[nh-1],xScaleQ:Math.max(1e-12,normVec(qL)),yScaleQ:Math.max(1e-12,normVec(qH)),xQVec:qL,yQVec:qH};}
+const rows=nh,cols=nk,d=new Float64Array(rows*cols);for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)d[r*cols+c]=res.I[idx(res.shape,r,c,fix)];return{rows,cols,d,plane:`L=${res.l[fix]}`,x:`K ${res.k[0]}..${res.k[nk-1]}`,y:`H ${res.h[0]}..${res.h[nh-1]}`,xLabel:"K",yLabel:"H",xMin:res.k[0],xMax:res.k[nk-1],yMin:res.h[0],yMax:res.h[nh-1],xScaleQ:Math.max(1e-12,normVec(qK)),yScaleQ:Math.max(1e-12,normVec(qH)),xQVec:qK,yQVec:qH};}
+function updateSliceModePanels(){const planeMode=getSliceMode()==="plane",axisBox=$("axisToolBox"),planeCtl=$("planeControls");if(axisBox)axisBox.classList.toggle("hidden",planeMode);if(planeCtl)planeCtl.classList.toggle("hidden",!planeMode);}
+function update2dVisibility(){const p=$("slice2dPanel"),show=!$("show2d")||$("show2d").value==="1";if(p)p.classList.toggle("hidden",!show);}
+function updateSliceUI(){updateSliceModePanels();if(!state.res){syncResultControls();$("sliceVal").textContent="Slice: -";$("planeMoveVal").textContent="Plane center: -";for(const id of["pCX","pCY","pCZ"]){if($(id))$(id).value="";}return;}if(getSliceMode()==="plane"){ensurePlaneState(state.res);setPlaneUiFromState();}else{const a=$("axis").value,[nh,nk,nl]=state.res.shape,max=a==="h"?nh-1:a==="k"?nk-1:nl-1;$("idx").max=String(Math.max(0,max));$("idx").value=String(Math.min(Number($("idx").value),max));}syncResultControls();updateSliceVal();}
+function updateSliceVal(){if(!state.res){$("sliceVal").textContent="Slice: -";return;}if(getSliceMode()==="plane"){ensurePlaneState(state.res);const c=state.plane.center,n=state.plane.normal;$("sliceVal").textContent=`Plane c=(${c[0].toFixed(4)}, ${c[1].toFixed(4)}, ${c[2].toFixed(4)}) n=(${n[0].toFixed(3)}, ${n[1].toFixed(3)}, ${n[2].toFixed(3)})`;return;}const a=$("axis").value,i=Number($("idx").value),v=a==="h"?state.res.h[i]:a==="k"?state.res.k[i]:state.res.l[i];$("sliceVal").textContent=`Slice ${a.toUpperCase()}[${i}] = ${v}`;}
+function resetDisplayLevels(){state.sliceLevels=null;state.lastBar=null;const info=$("levelInfo");if(info)info.textContent="Display levels: auto";}
+function onHeatmapClick(ev){
+if(!state.res||!state.lastBar)return;
+const cv=$("heatmap"),r=cv.getBoundingClientRect(),x=(ev.clientX-r.left)*(cv.width/r.width),y=(ev.clientY-r.top)*(cv.height/r.height),b=state.lastBar;
+if(x<b.x||x>b.x+b.w||y<b.y||y>b.y+b.h)return;
+const u=1-(y-b.y)/Math.max(1,b.h-1),picked=b.rawMin+clamp01(u)*(b.rawMax-b.rawMin),mode=$("levelMode").value;
+let nmin=b.dispMin,nmax=b.dispMax;
+if(mode==="min"){nmin=Math.min(picked,nmax-1e-12);}
+else if(mode==="max"){nmax=Math.max(picked,nmin+1e-12);}
+else{const pct=Math.max(1,Math.min(100,Number($("levelWindowPct").value)||35)),half=0.5*(pct/100)*(b.rawMax-b.rawMin);nmin=picked-half;nmax=picked+half;}
+nmin=Math.max(b.rawMin,Math.min(nmin,b.rawMax-1e-12));nmax=Math.min(b.rawMax,Math.max(nmax,b.rawMin+1e-12));
+if(!(nmax>nmin)){nmin=b.rawMin;nmax=b.rawMax;}
+state.sliceLevels={min:nmin,max:nmax};draw();
+}
+
+function draw(opts){
+const cv=$("heatmap"),ctx=cv.getContext("2d",{willReadFrequently:true});
+if(!ctx)return;
+if(!state.res){
+ctx.fillStyle="#0b1321";ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle="#cbd5e1";ctx.font="16px Consolas";ctx.fillText("No result yet.",20,36);$("sliceStats").textContent="No result yet.";state.lastBar=null;const info=$("levelInfo");if(info)info.textContent="Display levels: auto";return;
+}
+const o=opts||{},planeResOverride=Number.isFinite(o.planeResOverride)?Math.max(32,Math.min(600,Math.floor(o.planeResOverride))):null;
+updateSliceVal();
+const sm=getSliceMode(),mode=$("scale").value,sl=sm==="plane"?buildNormalPlaneSlice(state.res,mode,false,planeResOverride):slice(state.res,$("axis").value,Number($("idx").value)),stops=getColorPreset().stops,t=new Float64Array(sl.d.length);
+let mn=Infinity,mx=-Infinity;
+for(let i=0;i<sl.d.length;i++){const rv=sl.d[i],v=sm==="plane"?rv:scaledVal(rv,mode);t[i]=v;if(Number.isFinite(v)&&v<mn)mn=v;if(Number.isFinite(v)&&v>mx)mx=v;}
+if(!Number.isFinite(mn)||!Number.isFinite(mx)){mn=0;mx=1;}
+if(Math.abs(mx-mn)<1e-30)mx=mn+1;
+let dmin=mn,dmax=mx;
+if(state.sliceLevels&&Number.isFinite(state.sliceLevels.min)&&Number.isFinite(state.sliceLevels.max)){dmin=Math.max(mn,Math.min(state.sliceLevels.min,mx-1e-12));dmax=Math.min(mx,Math.max(state.sliceLevels.max,mn+1e-12));if(!(dmax>dmin)){dmin=mn;dmax=mx;state.sliceLevels=null;}}
+if(!state.offscreen)state.offscreen=document.createElement("canvas");
+const off=state.offscreen;
+if(off.width!==sl.cols)off.width=sl.cols;
+if(off.height!==sl.rows)off.height=sl.rows;
+const ox=off.getContext("2d",{willReadFrequently:true}),img=ox.createImageData(sl.cols,sl.rows),den=dmax-dmin||1;
+for(let r=0;r<sl.rows;r++)for(let c=0;c<sl.cols;c++){const i=r*sl.cols+c,vv=Number.isFinite(t[i])?t[i]:dmin,u=clamp01((vv-dmin)/den),rgb=rgbFromStops(stops,u),p=i*4;img.data[p]=rgb[0];img.data[p+1]=rgb[1];img.data[p+2]=rgb[2];img.data[p+3]=Number.isFinite(t[i])?255:0;}
+ox.putImageData(img,0,0);
+ctx.fillStyle="#0b1321";
+ctx.fillRect(0,0,cv.width,cv.height);
+ctx.imageSmoothingEnabled=false;
+const bw=18,bx=cv.width-38,by=20,bh=cv.height-40,plotMarginLeft=56,plotMarginTop=20,plotMarginBottom=74,mapX=plotMarginLeft,mapY=plotMarginTop,mapW=Math.max(1,bx-mapX-12),mapH=Math.max(1,cv.height-plotMarginTop-plotMarginBottom);
+let srcX=0,srcY=0,srcW=sl.cols,srcH=sl.rows;
+let visXMin=Number.isFinite(sl.xMin)?sl.xMin:0,visXMax=Number.isFinite(sl.xMax)?sl.xMax:Math.max(1,sl.cols-1),visYMin=Number.isFinite(sl.yMin)?sl.yMin:0,visYMax=Number.isFinite(sl.yMax)?sl.yMax:Math.max(1,sl.rows-1);
+if(sm==="plane"&&(sl.validCount||0)>0&&(sl.validCount||0)<sl.rows*sl.cols){
+let r0=sl.rows,r1=-1,c0=sl.cols,c1=-1;
+for(let r=0;r<sl.rows;r++)for(let c=0;c<sl.cols;c++){const i=r*sl.cols+c;if(Number.isFinite(t[i])){if(r<r0)r0=r;if(r>r1)r1=r;if(c<c0)c0=c;if(c>c1)c1=c;}}
+if(r1>=r0&&c1>=c0){
+srcX=c0;srcY=r0;srcW=c1-c0+1;srcH=r1-r0+1;
+if(Number.isFinite(sl.xMin)&&Number.isFinite(sl.xMax)&&sl.cols>1){const dx=(sl.xMax-sl.xMin)/(sl.cols-1);visXMin=sl.xMin+dx*srcX;visXMax=sl.xMin+dx*(srcX+srcW-1);}else{visXMin=0;visXMax=Math.max(1,srcW-1);}
+if(Number.isFinite(sl.yMin)&&Number.isFinite(sl.yMax)&&sl.rows>1){const dy=(sl.yMax-sl.yMin)/(sl.rows-1);visYMin=sl.yMin+dy*srcY;visYMax=sl.yMin+dy*(srcY+srcH-1);}else{visYMin=0;visYMax=Math.max(1,srcH-1);}
+}}
+const qxVec=(Array.isArray(sl.xQVec)&&sl.xQVec.length===3)?sl.xQVec:[1,0,0],qyVec=(Array.isArray(sl.yQVec)&&sl.yQVec.length===3)?sl.yQVec:[0,1,0],qxLen=normVec(qxVec),qyLen=normVec(qyVec);
+let drawX=mapX,drawY=mapY,drawW=mapW,drawH=mapH,mapXY=null;
+if(qxLen>1e-12&&qyLen>1e-12){
+const ex=[qxVec[0]/qxLen,qxVec[1]/qxLen,qxVec[2]/qxLen],xyDot=qyVec[0]*ex[0]+qyVec[1]*ex[1]+qyVec[2]*ex[2],qyPerp2=Math.max(0,qyLen*qyLen-xyDot*xyDot),qyPerp=Math.sqrt(qyPerp2);
+if(qyPerp>1e-12){
+const ax=qxLen,bx2=xyDot,by2=qyPerp,corners=[[visXMin,visYMin],[visXMax,visYMin],[visXMax,visYMax],[visXMin,visYMax]];
+let Xmin=Infinity,Xmax=-Infinity,Ymin=Infinity,Ymax=-Infinity;
+for(const c of corners){const Xm=ax*c[0]+bx2*c[1],Ym=by2*c[1];if(Xm<Xmin)Xmin=Xm;if(Xm>Xmax)Xmax=Xm;if(Ym<Ymin)Ymin=Ym;if(Ym>Ymax)Ymax=Ym;}
+const spanXm=Math.max(1e-12,Xmax-Xmin),spanYm=Math.max(1e-12,Ymax-Ymin),s=0.9*Math.min(mapW/spanXm,mapH/spanYm);
+drawW=Math.max(1,Math.floor(spanXm*s));drawH=Math.max(1,Math.floor(spanYm*s));drawX=mapX+Math.floor((mapW-drawW)/2);drawY=mapY+Math.floor((mapH-drawH)/2);
+const denU=Math.max(1,srcW-1),denV=Math.max(1,srcH-1),xA=(visXMax-visXMin)/denU,yA=-(visYMax-visYMin)/denV,x0=visXMin,y0=visYMax;
+const A=s*ax*xA,B=0,C=s*bx2*yA,D=-s*by2*yA,E=drawX-s*Xmin+s*(ax*x0+bx2*y0),F=drawY+s*Ymax-s*(by2*y0);
+ctx.save();ctx.transform(A,B,C,D,E,F);ctx.drawImage(off,srcX,srcY,srcW,srcH,0,0,srcW,srcH);ctx.restore();
+mapXY=(xv,yv)=>{const Xm=ax*xv+bx2*yv,Ym=by2*yv;return[drawX+s*(Xm-Xmin),drawY+s*(Ymax-Ym)];};
+ctx.strokeStyle="rgba(148,163,184,.55)";
+ctx.beginPath();const p0=mapXY(visXMin,visYMin),p1=mapXY(visXMax,visYMin),p2=mapXY(visXMax,visYMax),p3=mapXY(visXMin,visYMax);ctx.moveTo(p0[0],p0[1]);ctx.lineTo(p1[0],p1[1]);ctx.lineTo(p2[0],p2[1]);ctx.lineTo(p3[0],p3[1]);ctx.closePath();ctx.stroke();
+}}
+if(!mapXY){
+const spanX=Math.max(1e-12,Math.abs(visXMax-visXMin))*((Number.isFinite(sl.xScaleQ)&&sl.xScaleQ>0)?sl.xScaleQ:1),spanY=Math.max(1e-12,Math.abs(visYMax-visYMin))*((Number.isFinite(sl.yScaleQ)&&sl.yScaleQ>0)?sl.yScaleQ:1),physScale=0.9*Math.min(mapW/spanX,mapH/spanY);
+drawW=Math.max(1,Math.floor(spanX*physScale));drawH=Math.max(1,Math.floor(spanY*physScale));drawX=mapX+Math.floor((mapW-drawW)/2);drawY=mapY+Math.floor((mapH-drawH)/2);
+if(sm==="plane"){ctx.save();ctx.translate(drawX,drawY+drawH);ctx.scale(drawW/Math.max(1,srcW),-drawH/Math.max(1,srcH));ctx.drawImage(off,srcX,srcY,srcW,srcH,0,0,srcW,srcH);ctx.restore();}
+else{ctx.drawImage(off,srcX,srcY,srcW,srcH,drawX,drawY,drawW,drawH);}
+ctx.strokeStyle="rgba(148,163,184,.55)";ctx.strokeRect(drawX+0.5,drawY+0.5,drawW-1,drawH-1);
+const xDen=Math.abs(visXMax-visXMin)>1e-12?(visXMax-visXMin):1,yDen=Math.abs(visYMax-visYMin)>1e-12?(visYMax-visYMin):1;
+mapXY=(xv,yv)=>{const fx=(xv-visXMin)/xDen,fy=(yv-visYMin)/yDen,yy=sm==="plane"?(drawY+drawH*(1-fy)):(drawY+drawH*fy);return[drawX+fx*drawW,yy];};
+}
+const xCount=Math.max(0,Math.floor(visXMax+1e-9)-Math.ceil(visXMin-1e-9)+1),yCount=Math.max(0,Math.floor(visYMax+1e-9)-Math.ceil(visYMin-1e-9)+1),xStep=Math.max(1,Math.ceil(xCount/9)),yStep=Math.max(1,Math.ceil(yCount/9));
+const xTicks=hklAxisTicks(Math.min(visXMin,visXMax),Math.max(visXMin,visXMax),xStep),yTicks=hklAxisTicks(Math.min(visYMin,visYMax),Math.max(visYMin,visYMax),yStep);
+ctx.strokeStyle="rgba(148,163,184,.85)";ctx.fillStyle="#e2e8f0";ctx.font="11px Consolas";
+for(const tck of xTicks){const p=mapXY(tck,visYMin);ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(p[0],p[1]+5);ctx.stroke();ctx.fillText(String(Math.round(tck)),p[0]-8,p[1]+16);}
+for(const tck of yTicks){const p=mapXY(visXMin,tck);ctx.beginPath();ctx.moveTo(p[0]-5,p[1]);ctx.lineTo(p[0],p[1]);ctx.stroke();ctx.fillText(String(Math.round(tck)),p[0]-30,p[1]+4);}
+ctx.fillText(`${(sl.xLabel||"x")}`,drawX+Math.max(4,Math.floor(drawW*0.5)-10),Math.min(cv.height-8,drawY+drawH+30));
+ctx.save();ctx.translate(Math.max(12,drawX-44),drawY+Math.max(20,Math.floor(drawH*0.5)+18));ctx.rotate(-Math.PI/2);ctx.fillText(`${(sl.yLabel||"y")}`,0,0);ctx.restore();
+for(let i=0;i<bh;i++){const u=1-i/Math.max(1,bh-1),rgb=rgbFromStops(stops,u);ctx.fillStyle=`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;ctx.fillRect(bx,by+i,bw,1);}
+ctx.strokeStyle="#dbeafe";
+ctx.strokeRect(bx,by,bw,bh);
+ctx.fillStyle="#e2e8f0";
+ctx.font="12px Consolas";
+ctx.fillText(dmax.toExponential(2),bx-78,by+10);
+ctx.fillText(dmin.toExponential(2),bx-78,by+bh-2);
+state.lastBar={x:bx,y:by,w:bw,h:bh,rawMin:mn,rawMax:mx,dispMin:dmin,dispMax:dmax};
+const info=$("levelInfo");
+if(info)info.textContent=state.sliceLevels?`Display levels: [${dmin.toExponential(3)}, ${dmax.toExponential(3)}]`:`Display levels: auto [${mn.toExponential(3)}, ${mx.toExponential(3)}]`;
+const validMsg=sm==="plane"?` | valid=${sl.validCount||0}/${sl.rows*sl.cols}`:"";
+const uvMsg=sm==="plane"?" | uv: u->right, v->up":"";
+const mapMsg=(Array.isArray(sl.xQVec)&&Array.isArray(sl.yQVec))?" | map=Q-cart":"";
+$("sliceStats").textContent=`${sl.plane} | display=${mode} | slice min=${mn.toExponential(5)} | slice max=${mx.toExponential(5)} | shown [${dmin.toExponential(3)}, ${dmax.toExponential(3)}]${validMsg}${uvMsg}${mapMsg} | ${sl.x} | ${sl.y}`;
+pushSliceWindow();
+}
+
+function base(){const m=$("baseName").value.trim();if(m)return m;return state.rmc?state.rmc.file.replace(/\.rmc6f$/i,"")+"_diffuse":"diffuse_result";}
+function saveText(name,text,mime){const b=new Blob([text],{type:mime}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);} 
+function saveDat(){if(!state.res)return;const r=state.res,[nh,nk,nl]=r.shape,out=["# h k l intensity"];for(let i=0;i<nh;i++)for(let j=0;j<nk;j++)for(let m=0;m<nl;m++){out.push(`${r.h[i]} ${r.k[j]} ${r.l[m]} ${r.I[idx(r.shape,i,j,m)]}`);}saveText(`${base()}.dat`,out.join("\n"),"text/plain;charset=utf-8");}
+function saveJson(){if(!state.res||!state.rmc)return;const r=state.res,p={sourceFile:state.rmc.file,atoms:state.rmc.atoms,supercell:state.rmc.super,cellDeg:state.rmc.cellDeg,shape:r.shape,hAxis:r.h,kAxis:r.k,lAxis:r.l,Bq:r.Bq,Bp:r.Bp,hklToQ:"Q = [h,k,l] * Bq",minI:r.min,maxI:r.max,backend:r.backend,options:r.opts,timings:r.timings||null,intensity:Array.from(r.I)};saveText(`${base()}.json`,JSON.stringify(p),"application/json;charset=utf-8");}
+
+async function onFile(f){if(!f)return;status(`Reading ${f.name} ...`);const txt=await f.text(),parsed=parseRMC(f.name,txt);state.rmc=parsed;state.res=null;state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeMoving=false;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};meta(parsed);syncResultControls();draw();setPlot3dStatus("3D view is idle.");if(parsed.unknown.length)status(`Loaded ${f.name}. Unknown elements: ${parsed.unknown.join(", ")} -> fca=10.0.`,`warn`);else status(`Loaded ${f.name}. Ready to compute.`,`ok`);}
+
+function updateSmoothUi(){const on=$("smooth3d").value==="1",type=$("smoothType").value;$("smoothType").disabled=!on;$("smoothScale").disabled=!on;$("chebDb").disabled=(!on||type!=="chebyshev");}
+
+function bind(){const drop=$("drop"),file=$("file");drop.addEventListener("click",()=>file.click());drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("drag");});drop.addEventListener("dragleave",()=>drop.classList.remove("drag"));drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("drag");onFile(e.dataTransfer.files?.[0]).catch(err=>status(`File load failed: ${err.message}`,"err"));});file.addEventListener("change",e=>onFile(e.target.files?.[0]).catch(err=>status(`File load failed: ${err.message}`,"err")));
+$("backend").addEventListener("change",()=>{if($("backend").value==="webgpu_fft"&&!navigator.gpu){$("backend").value="fft";status("WebGPU unavailable in this browser; switched backend to CPU FFT.","warn");}applyBackendDefaults($("backend").value,true);});
+if(!navigator.gpu){const be=$("backend"),opt=be.querySelector('option[value="webgpu_fft"]');if(opt){opt.disabled=true;opt.textContent="Type-3 + webgpufft (WebGPU unavailable)";}if(be.value==="webgpu_fft")be.value="fft";}
+applyBackendDefaults($("backend").value,false);
+$("smooth3d").addEventListener("change",updateSmoothUi);$("smoothType").addEventListener("change",updateSmoothUi);
+$("run").addEventListener("click",()=>compute().catch(err=>{$("run").disabled=false;syncResultControls();status(`Compute failed: ${err.message}`,"err");}));
+$("saveDat").addEventListener("click",saveDat);$("saveJson").addEventListener("click",saveJson);
+$("sliceMode").addEventListener("change",()=>{state.planeMoving=false;state.render3dEpoch++;updateSliceUI();resetDisplayLevels();draw();schedule3dRender(false,180);});
+$("axis").addEventListener("change",()=>{updateSliceUI();draw();schedule3dRender(false,140);});
+$("idx").addEventListener("input",()=>{draw();schedule3dRender(false,140);});
+$("scale").addEventListener("change",()=>{resetDisplayLevels();draw();schedule3dRender(false,160);});
+$("colorMap").addEventListener("change",()=>{draw();schedule3dRender(false,120);});
+$("levelMode").addEventListener("change",()=>{const on=$("levelMode").value==="both";$("levelWindowPct").disabled=!state.res||!on;});
+$("levelWindowPct").addEventListener("change",()=>{if($("levelMode").value==="both"&&state.sliceLevels)draw();});
+$("resetLevels").addEventListener("click",()=>{resetDisplayLevels();draw();});
+$("planeApply").addEventListener("click",()=>{state.planeMoving=false;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");applyPlaneFromInputs();resetDisplayLevels();draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
+$("planeMove").addEventListener("input",()=>{state.planeMoving=true;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}movePlaneToSlider(Number($("planeMove").value));if(state.planeMoveRaf){cancelAnimationFrame(state.planeMoveRaf);}state.planeMoveRaf=requestAnimationFrame(()=>{state.planeMoveRaf=0;draw({planeResOverride:fastPlaneRes()});updatePlaneTraceFast().catch(()=>{});});});
+$("planeMove").addEventListener("change",()=>{state.planeMoving=false;draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
+for(const id of ["pRes","pScale"]){$(id).addEventListener("change",()=>{if(getSliceMode()==="plane"){invalidatePlaneSliceCache();resetDisplayLevels();draw();const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});}
+$("heatmap").addEventListener("click",onHeatmapClick);
+$("render3d").addEventListener("click",()=>render3d(true).catch(err=>setPlot3dStatus(`3D render failed: ${err.message}`)));
+$("openSliceWin").addEventListener("click",()=>{try{openSliceWindow();}catch(err){status(`Slice window failed: ${err.message}`,"err");}});
+$("closeSliceWin").addEventListener("click",closeSliceWindow);
+$("show2d").addEventListener("change",()=>{update2dVisibility();if($("show2d").value==="1"){draw();}});
+for(const id of ["isoPct","isoCount","voxelCap","showIso3d","showPlane3d","auto3d"]){$(id).addEventListener("change",()=>schedule3dRender(false));}
+window.addEventListener("beforeunload",closeSliceWindow);
+updateSmoothUi();syncResultControls();updateSliceUI();update2dVisibility();$("levelWindowPct").disabled=true;setPlot3dStatus("3D view is idle.");}
+bind();draw();
+</script>
+</body>
+</html>
+
+

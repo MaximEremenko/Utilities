@@ -12,6 +12,8 @@ Access live demos via GitHub Pages:
   *(Tool for performing Kernel Density Estimation as part of the RMC analysis)*
 - **PCA SDE Tool:** [PCA SDE Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/PCA_SDE/PCA_SDE_rmcdisplacements.html)  
   *(Tool for performing Surface Density Estimation as part of the RMC analysis)*
+- **Diffuse Scattering Tool (Client-side):** [RMC6f Diffuse Scattering Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/Diffuse_Scattering/Diffuse_Scattering_RMC6f.html)  
+  *(Compute/visualize/save diffuse scattering I(h,k,l) in-browser from RMC6f input using Type-3 NUFFT JS backend)*
 - **Slice Diffuse 3D RMCProfile Tool:** [RMC Diffuse 3DSlice Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/RMCDiffuse3DSlice/SliceDiffuse3DRMC.html)
 - **Background Remover:** [Background Remover Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/Background_Remover/Background_Remover.html)  
   *(Interactive tool to remove white or near-white backgrounds from PNG, JPEG, and TIFF images. Useful for preprocessing images in RMC analysis and visualization workflows.)*
@@ -31,6 +33,8 @@ Access live demos via GitHub Pages:
 
 - **PCA_SDE/**  
   Contains the PCA SDE analysis tools for RMC6f files.
+- **Diffuse_Scattering/**  
+  Contains the in-browser diffuse scattering calculator for RMC6f files.
 - **Slice Diffuse 3D RMCProfile Tool/**  
   Contains the Tool to make slices of RMCProfile Diffuse 3D dat files.
 - **index.html**  
@@ -48,6 +52,9 @@ This repository includes several utilities designed to help analyze RMC6f files:
 
 - **PCA SDE Tool:**  
   Utilizes Surface Density Estimation (SDE) as part of the RMC analysis.
+
+- **Diffuse Scattering Tool (Client-side):**  
+  Computes diffuse scattering from RMC6f configurations in the browser, visualizes slices, and saves `.dat`/`.json` outputs.
 
 - **Slice Diffuse 3D RMCProfile Tool:**  
   Tool to make slices of RMCProfile Diffuse 3D dat files.
