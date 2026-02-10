@@ -509,48 +509,151 @@ return out;
 function makeHklAxesOverlayTraces(res){
 if(!res||!Array.isArray(res.Bq))return[];
 const hMin=res.h[0],hMax=res.h[res.h.length-1],kMin=res.k[0],kMax=res.k[res.k.length-1],lMin=res.l[0],lMax=res.l[res.l.length-1];
-const hRef=chooseAxisRef(hMin,hMax),kRef=chooseAxisRef(kMin,kMax),lRef=chooseAxisRef(lMin,lMax);
-const ranges=[Math.max(1e-9,Math.abs(hMax-hMin)),Math.max(1e-9,Math.abs(kMax-kMin)),Math.max(1e-9,Math.abs(lMax-lMin))];
-const tickLen=0.035*Math.max(ranges[0],ranges[1],ranges[2]);
+const h0=hMin,k0=kMin,l0=lMin;
+const eps=1e-9;
 const axisH=[],axisK=[],axisL=[],gridH=[],gridK=[],gridL=[],edgeH=[],edgeK=[],edgeL=[];
-function addSeg(dstH,dstK,dstL,a,b){
-const qa=hklVecToQ(a,res.Bq),qb=hklVecToQ(b,res.Bq);
-dstH.push(qa[0],qb[0],NaN);dstK.push(qa[1],qb[1],NaN);dstL.push(qa[2],qb[2],NaN);
+const tickBarH=[],tickBarK=[],tickBarL=[],tickTxtH=[],tickTxtK=[],tickTxtL=[],nameTxtH=[],nameTxtK=[],nameTxtL=[];
+const qb=qBoundsFromRes(res);
+const vAdd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const vSub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const vScale=(v,s)=>[v[0]*s,v[1]*s,v[2]*s];
+const vDot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const vNorm=v=>Math.hypot(v[0],v[1],v[2]);
+const vHat=v=>{const n=vNorm(v);return n>1e-12?[v[0]/n,v[1]/n,v[2]/n]:[0,0,0];};
+const vCross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const vOrth=(v,u)=>{const uh=vHat(u);return vSub(v,vScale(uh,vDot(v,uh)));};
+const toQ=(h,k,l)=>hklToQ(h,k,l,res.Bq);
+function addSeg(dstH,dstK,dstL,a,b){dstH.push(a[0],b[0],NaN);dstK.push(a[1],b[1],NaN);dstL.push(a[2],b[2],NaN);}
+function addSegHKL(dstH,dstK,dstL,a,b){addSeg(dstH,dstK,dstL,toQ(a[0],a[1],a[2]),toQ(b[0],b[1],b[2]));}
+function addPolyline(dstH,dstK,dstL,poly){
+if(!poly||!Array.isArray(poly.x)||poly.x.length<2)return;
+if(dstH.length){dstH.push(NaN);dstK.push(NaN);dstL.push(NaN);}
+for(let i=0;i<poly.x.length;i++){
+const x=poly.x[i],y=poly.y[i],z=poly.z[i];
+if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z)){dstH.push(NaN);dstK.push(NaN);dstL.push(NaN);continue;}
+dstH.push(x);dstK.push(y);dstL.push(z);
 }
-// Main HKL axes in Cartesian-Q view, anchored near HKL origin.
-addSeg(axisH,axisK,axisL,[hMin,kRef,lRef],[hMax,kRef,lRef]);
-addSeg(axisH,axisK,axisL,[hRef,kMin,lRef],[hRef,kMax,lRef]);
-addSeg(axisH,axisK,axisL,[hRef,kRef,lMin],[hRef,kRef,lMax]);
-// Box edges and face grid lines (Dash-style overlay)
+}
+const SF={};
+SF["0"]={w:0.6,s:[[0.05,0.1,0.15,0,0.45,0,0.55,0.1,0.55,0.9,0.45,1,0.15,1,0.05,0.9,0.05,0.1]]};
+SF["1"]={w:0.4,s:[[0.05,0.2,0.2,0,0.2,1],[0.05,1,0.35,1]]};
+SF["2"]={w:0.6,s:[[0,0.15,0.05,0.05,0.15,0,0.45,0,0.55,0.05,0.55,0.35,0.05,1,0.55,1]]};
+SF["3"]={w:0.6,s:[[0.05,0.05,0.15,0,0.45,0,0.55,0.1,0.55,0.4,0.45,0.48,0.25,0.48],[0.45,0.48,0.55,0.58,0.55,0.9,0.45,1,0.15,1,0.05,0.95]]};
+SF["4"]={w:0.6,s:[[0.42,1,0.42,0,0,0.7,0.55,0.7]]};
+SF["5"]={w:0.6,s:[[0.55,0,0.05,0,0.05,0.45,0.45,0.45,0.55,0.55,0.55,0.9,0.45,1,0.1,1,0.05,0.9]]};
+SF["6"]={w:0.6,s:[[0.5,0.05,0.35,0,0.15,0,0.05,0.1,0.05,0.9,0.15,1,0.45,1,0.55,0.9,0.55,0.58,0.45,0.48,0.05,0.48]]};
+SF["7"]={w:0.6,s:[[0,0,0.55,0,0.2,1]]};
+SF["8"]={w:0.6,s:[[0.15,0,0.45,0,0.55,0.1,0.55,0.38,0.45,0.48,0.15,0.48,0.05,0.38,0.05,0.1,0.15,0],[0.15,0.48,0.05,0.6,0.05,0.9,0.15,1,0.45,1,0.55,0.9,0.55,0.6,0.45,0.48]]};
+SF["9"]={w:0.6,s:[[0.55,0.48,0.15,0.48,0.05,0.1,0.15,0,0.45,0,0.55,0.1,0.55,0.9,0.45,1,0.15,1,0.05,0.9]]};
+SF["-"]={w:0.45,s:[[0.05,0.5,0.4,0.5]]};
+SF["."]={w:0.2,s:[[0.06,0.88,0.14,0.88,0.14,0.98,0.06,0.98,0.06,0.88]]};
+SF["H"]={w:0.6,s:[[0,0,0,1],[0.6,0,0.6,1],[0,0.5,0.6,0.5]]};
+SF["K"]={w:0.58,s:[[0,0,0,1],[0.55,0,0.05,0.5,0.55,1]]};
+SF["L"]={w:0.5,s:[[0,0,0,1,0.48,1]]};
+SF["r"]={w:0.35,s:[[0,0.35,0,1],[0,0.55,0.12,0.38,0.32,0.35]]};
+SF["l"]={w:0.18,s:[[0.09,0,0.09,1]]};
+SF["u"]={w:0.45,s:[[0,0.35,0,0.88,0.1,1,0.35,1,0.45,0.88],[0.45,0.35,0.45,1]]};
+SF["("]={w:0.25,s:[[0.22,0,0.08,0.25,0.08,0.75,0.22,1]]};
+SF[")"]={w:0.25,s:[[0.03,0,0.17,0.25,0.17,0.75,0.03,1]]};
+SF[" "]={w:0.3,s:[]};
+function strokeText3D(text,origin,rightDir,upDir,charH,anchor){
+const R=vHat(rightDir),U=vHat(upDir),gap=0.1*charH;
+let totalW=0;
+for(const ch of text){const g=SF[ch];totalW+=(g?g.w:0.3)*charH+gap;}
+totalW=Math.max(0,totalW-gap);
+let offX=0;
+if(anchor==="center")offX=-totalW/2;
+if(anchor==="right")offX=-totalW;
+const xs=[],ys=[],zs=[];
+let cur=offX;
+for(const ch of text){
+const g=SF[ch];
+if(!g){cur+=0.3*charH+gap;continue;}
+for(const stroke of g.s){
+if(xs.length){xs.push(NaN);ys.push(NaN);zs.push(NaN);}
+for(let i=0;i<stroke.length;i+=2){
+const sx=stroke[i],sy=stroke[i+1];
+const wx=cur+sx*charH,wy=(1-sy)*charH;
+const p=vAdd(origin,vAdd(vScale(R,wx),vScale(U,wy)));
+xs.push(p[0]);ys.push(p[1]);zs.push(p[2]);
+}
+}
+cur+=g.w*charH+gap;
+}
+return{x:xs,y:ys,z:zs};
+}
+function buildTicks(min,max,arr,target){
+const loI=Math.ceil(min-eps),hiI=Math.floor(max+eps);
+if(loI<=hiI){
+const nI=hiI-loI+1,den=Math.max(1,target-1),stepI=Math.max(1,Math.ceil(nI/den)),ints=[];
+for(let t=loI;t<=hiI+eps;t+=stepI)ints.push(t);
+if(ints.length>=2)return ints;
+}
+let ticks=[];
+if(Array.isArray(arr)&&arr.length){
+ticks=(arr.length<=target?arr.slice():chooseTickValues(arr,target)).filter(v=>Number.isFinite(v)&&v>=min-eps&&v<=max+eps);
+}
+if(!ticks.length)ticks=hklAxisTicks(min,max,chooseHklTickStep(arr,target));
+ticks.push(min,max);
+ticks.sort((a,b)=>a-b);
+const out=[];
+for(const t of ticks){if(!out.length||Math.abs(t-out[out.length-1])>eps)out.push(t);} 
+return out;
+}
+addSegHKL(axisH,axisK,axisL,[hMin,k0,l0],[hMax,k0,l0]);
+addSegHKL(axisH,axisK,axisL,[h0,kMin,l0],[h0,kMax,l0]);
+addSegHKL(axisH,axisK,axisL,[h0,k0,lMin],[h0,k0,lMax]);
 const hs=[hMin,hMax],ks=[kMin,kMax],ls=[lMin,lMax],hStep=chooseHklTickStep(res.h,9),kStep=chooseHklTickStep(res.k,9),lStep=chooseHklTickStep(res.l,9),hTicks=hklAxisTicks(hMin,hMax,hStep),kTicks=hklAxisTicks(kMin,kMax,kStep),lTicks=hklAxisTicks(lMin,lMax,lStep);
-for(const h of hs){for(const k of kTicks)addSeg(gridH,gridK,gridL,[h,k,lMin],[h,k,lMax]);for(const l of lTicks)addSeg(gridH,gridK,gridL,[h,kMin,l],[h,kMax,l]);}
-for(const k of ks){for(const h of hTicks)addSeg(gridH,gridK,gridL,[h,k,lMin],[h,k,lMax]);for(const l of lTicks)addSeg(gridH,gridK,gridL,[hMin,k,l],[hMax,k,l]);}
-for(const l of ls){for(const h of hTicks)addSeg(gridH,gridK,gridL,[h,kMin,l],[h,kMax,l]);for(const k of kTicks)addSeg(gridH,gridK,gridL,[hMin,k,l],[hMax,k,l]);}
+for(const h of hs){for(const k of kTicks)addSegHKL(gridH,gridK,gridL,[h,k,lMin],[h,k,lMax]);for(const l of lTicks)addSegHKL(gridH,gridK,gridL,[h,kMin,l],[h,kMax,l]);}
+for(const k of ks){for(const h of hTicks)addSegHKL(gridH,gridK,gridL,[h,k,lMin],[h,k,lMax]);for(const l of lTicks)addSegHKL(gridH,gridK,gridL,[hMin,k,l],[hMax,k,l]);}
+for(const l of ls){for(const h of hTicks)addSegHKL(gridH,gridK,gridL,[h,kMin,l],[h,kMax,l]);for(const k of kTicks)addSegHKL(gridH,gridK,gridL,[hMin,k,l],[hMax,k,l]);}
 const corners=[[hMin,kMin,lMin],[hMin,kMin,lMax],[hMin,kMax,lMin],[hMin,kMax,lMax],[hMax,kMin,lMin],[hMax,kMin,lMax],[hMax,kMax,lMin],[hMax,kMax,lMax]],edges=[[0,1],[0,2],[0,4],[7,6],[7,5],[7,3],[1,3],[1,5],[2,3],[2,6],[4,5],[4,6]];
-for(const e of edges){addSeg(edgeH,edgeK,edgeL,corners[e[0]],corners[e[1]]);}
-const txtX=[],txtY=[],txtZ=[],txt=[];
-function addTicks(axis,min,max,step,anchor){
-const ticks=hklAxisTicks(min,max,step),perp=(axis+1)%3;
-for(const t of ticks){
-const a=anchor.slice(),b=anchor.slice(),lab=anchor.slice();
-a[axis]=t;b[axis]=t;lab[axis]=t;
-a[perp]-=tickLen*0.5;b[perp]+=tickLen*0.5;lab[perp]+=tickLen*0.9;
-addSeg(axisH,axisK,axisL,a,b);
-const q=hklVecToQ(lab,res.Bq);txtX.push(q[0]);txtY.push(q[1]);txtZ.push(q[2]);txt.push(fmtTick(t));
-}
-const off=anchor.slice();off[axis]=max;off[perp]+=tickLen*1.6;
-const qn=hklVecToQ(off,res.Bq);
-  txtX.push(qn[0]);txtY.push(qn[1]);txtZ.push(qn[2]);txt.push(axis===0?"H (r.l.u)":axis===1?"K (r.l.u)":"L (r.l.u)");
-}
-addTicks(0,hMin,hMax,chooseHklTickStep(res.h,8),[hRef,kRef,lRef]);
-addTicks(1,kMin,kMax,chooseHklTickStep(res.k,8),[hRef,kRef,lRef]);
-addTicks(2,lMin,lMax,chooseHklTickStep(res.l,8),[hRef,kRef,lRef]);
-return[
-{type:"scatter3d",mode:"lines",x:gridH,y:gridK,z:gridL,hoverinfo:"skip",showlegend:false,line:{color:"#27415a",width:1}},
-{type:"scatter3d",mode:"lines",x:edgeH,y:edgeK,z:edgeL,hoverinfo:"skip",showlegend:false,line:{color:"#425f82",width:2}},
-{type:"scatter3d",mode:"lines",x:axisH,y:axisK,z:axisL,hoverinfo:"skip",showlegend:false,line:{color:"#9aa4b2",width:4}},
-{type:"scatter3d",mode:"text",x:txtX,y:txtY,z:txtZ,text:txt,hoverinfo:"skip",showlegend:false,textfont:{color:"#dbeafe",size:13}}
+for(const e of edges)addSegHKL(edgeH,edgeK,edgeL,corners[e[0]],corners[e[1]]);
+const qHdir=vHat(hklVecToQ([1,0,0],res.Bq)),qKdir=vHat(hklVecToQ([0,1,0],res.Bq));
+const diag=Math.max(1e-9,vNorm(vSub(qb.max,qb.min)));
+const tickLen=0.024*diag,tickGap=2.0*tickLen,tickCharH=0.022*diag,labelCharH=0.031*diag,labelOffset=0.120*diag;
+const qCenter=[0.5*(qb.min[0]+qb.max[0]),0.5*(qb.min[1]+qb.max[1]),0.5*(qb.min[2]+qb.max[2])];
+const axes=[
+{idx:0,label:"H (r.l.u.)",start:[hMin,k0,l0],end:[hMax,k0,l0],range:[hMin,hMax],arr:res.h,partner:qKdir,mirror:false},
+{idx:1,label:"K (r.l.u.)",start:[h0,kMin,l0],end:[h0,kMax,l0],range:[kMin,kMax],arr:res.k,partner:qHdir,mirror:true},
+{idx:2,label:"L (r.l.u.)",start:[h0,k0,lMin],end:[h0,k0,lMax],range:[lMin,lMax],arr:res.l,partner:qKdir,mirror:true}
 ];
+let originShown=false;
+for(const a of axes){
+const qS=toQ(a.start[0],a.start[1],a.start[2]),qE=toQ(a.end[0],a.end[1],a.end[2]),qAlong=vHat(vSub(qE,qS));
+let raw=vOrth(a.partner,qAlong);
+if(vNorm(raw)<=1e-10)raw=vCross(qAlong,[0,0,1]);
+if(vNorm(raw)<=1e-10)raw=vCross(qAlong,[0,1,0]);
+let tp=vScale(vHat(raw),-1);
+const mid=[a.start[0],a.start[1],a.start[2]];mid[a.idx]=0.5*(a.range[0]+a.range[1]);
+const qMid=toQ(mid[0],mid[1],mid[2]);
+if(vDot(vSub(qCenter,qMid),tp)>0)tp=vScale(tp,-1);
+const textUp=vScale(tp,a.mirror?1:-1);
+const ticks=buildTicks(a.range[0],a.range[1],a.arr,6);
+for(let ti=0;ti<ticks.length;ti++){
+const t=ticks[ti];
+const p=[a.start[0],a.start[1],a.start[2]];p[a.idx]=t;
+const qT=toQ(p[0],p[1],p[2]);
+addSeg(tickBarH,tickBarK,tickBarL,qT,vAdd(qT,vScale(tp,tickLen)));
+if(Math.abs(t-a.range[0])<=eps){if(originShown)continue;originShown=true;}
+const tStr=t.toFixed(1);
+let tOrigin=vAdd(qT,vScale(tp,tickGap));
+if(ti===0)tOrigin=vAdd(tOrigin,vScale(qAlong,1.1*tickCharH));
+else if(ti===ticks.length-1)tOrigin=vAdd(tOrigin,vScale(qAlong,-1.1*tickCharH));
+const tAnchor="center";
+addPolyline(tickTxtH,tickTxtK,tickTxtL,strokeText3D(tStr,tOrigin,qAlong,textUp,tickCharH,tAnchor));
+}
+const lOrigin=vAdd(qMid,vScale(tp,labelOffset));
+addPolyline(nameTxtH,nameTxtK,nameTxtL,strokeText3D(a.label,lOrigin,qAlong,textUp,labelCharH,"center"));
+}
+const traces=[];
+// Hide dense box-face grid; keep only box edges and axes.
+traces.push({type:"scatter3d",mode:"lines",x:edgeH,y:edgeK,z:edgeL,hoverinfo:"skip",showlegend:false,line:{color:"#425f82",width:2}});
+traces.push({type:"scatter3d",mode:"lines",x:axisH,y:axisK,z:axisL,hoverinfo:"skip",showlegend:false,line:{color:"#9aa4b2",width:4}});
+traces.push({type:"scatter3d",mode:"lines",x:tickBarH,y:tickBarK,z:tickBarL,hoverinfo:"skip",showlegend:false,line:{color:"#94a3b8",width:2}});
+traces.push({type:"scatter3d",mode:"lines",x:tickTxtH,y:tickTxtK,z:tickTxtL,hoverinfo:"skip",showlegend:false,line:{color:"#e2e8f0",width:1.8}});
+traces.push({type:"scatter3d",mode:"lines",x:nameTxtH,y:nameTxtK,z:nameTxtL,hoverinfo:"skip",showlegend:false,line:{color:"#f8fafc",width:2.2}});
+return traces;
 }
 function makeSurfaceHklCustom(H,K,L){
 const rows=H.length,out=new Array(rows);
@@ -605,7 +708,7 @@ return{x:QX,y:QY,z:QZ};
 function cell2vec(a,b,c,al,be,ga){const v=[[0,0,0],[0,0,0],[0,0,0]];v[2][0]=a*Math.cos(be);v[1][1]=b*Math.sin(al);v[2][1]=b*Math.cos(al);v[2][2]=c;v[1][0]=(a*b*Math.cos(ga)-v[2][0]*v[2][1])/v[1][1];v[0][0]=Math.sqrt(Math.max(0,a*a-v[1][0]*v[1][0]-v[2][0]*v[2][0]));return[[v[0][0],v[1][0],v[2][0]],[v[0][1],v[1][1],v[2][1]],[v[0][2],v[1][2],v[2][2]]];}
 function vec2space(v){const av=col3(v,0),bv=col3(v,1),cv=col3(v,2),den=dot(av,cross(bv,cv));if(!Number.isFinite(den)||Math.abs(den)<1e-20)throw new Error("Invalid reciprocal basis");const ap=cross(bv,cv).map(x=>x/den),bp=cross(cv,av).map(x=>x/den),cp=cross(av,bv).map(x=>x/den),Bp=[ap,bp,cp];return{B:inv3(Bp),Bp};}
 function wrapDelta(x){if(x<-0.5)return x+1;if(x>0.5)return x-1;return x;}
-function axis(min,max,step){if(!Number.isFinite(min)||!Number.isFinite(max)||!Number.isFinite(step)||step<=0||max<min)throw new Error("Invalid axis limits/step");const out=[];let x=min,g=0;const eps=Math.abs(step)*1e-9;while(x<=max+eps){out.push(Number(x.toFixed(10)));x+=step;if(++g>2000000)throw new Error("Axis guard");}return out;}
+function axis(min,max,step){if(!Number.isFinite(min)||!Number.isFinite(max)||!Number.isFinite(step)||step<=0||max<min)throw new Error("Invalid axis limits/step");const out=[];let x=min,g=0;const eps=Math.abs(step)*1e-9;while(x<=max+eps){out.push(Number(x.toFixed(10)));x+=step;if(++g>2000000)throw new Error("Axis guard");}if(out.length){const last=out[out.length-1];if(last<max-eps){const nxt=Number((last+step).toFixed(10));if(Number.isFinite(nxt)&&nxt>last+eps)out.push(nxt);}}return out;}
 function needType3(fn){if(typeof fn!=="function")throw new Error(`Type-3 library not loaded. Check ${WEBGPU_NUFFT_CDN_BASE}/lib/type3_cpu_like.js`);}
 function needRmcReader(){if(!window.RMC6fReader||typeof window.RMC6fReader.parse!=="function")throw new Error("RMC6f reader module missing. Check ./js/rmc6f_reader.js");}
 function needDiffuseCore(){if(!window.DiffuseCore)throw new Error("Diffuse core module missing. Check ./js/diffuse_core.js");}
@@ -845,7 +948,29 @@ if(showPlane){
 if(getSliceMode()==="plane"){planeTraces.push(makeNormalPlaneTrace(res,mode));}
 else{const a=$("axis").value,fix=Math.max(0,Math.min(Number($("idx").value)||0,(a==="h"?res.shape[0]-1:a==="k"?res.shape[1]-1:res.shape[2]-1)));planeTraces.push(makePlaneTrace(res,a,fix,mode));}
 }
-const axisOverlay=makeHklAxesOverlayTraces(res),qb=qBoundsFromRes(res),qxRange=[qb.min[0],qb.max[0]],qyRange=[qb.min[1],qb.max[1]],qzRange=[qb.min[2],qb.max[2]],spanQx=Math.max(1e-9,Math.abs(qxRange[1]-qxRange[0])),spanQy=Math.max(1e-9,Math.abs(qyRange[1]-qyRange[0])),spanQz=Math.max(1e-9,Math.abs(qzRange[1]-qzRange[0])),spanMax=Math.max(spanQx,spanQy,spanQz,1e-9),sceneRev=`${res.file||"res"}|${res.shape.join("x")}`;
+const axisOverlay=makeHklAxesOverlayTraces(res),qb=qBoundsFromRes(res);
+const ovMin=[Infinity,Infinity,Infinity],ovMax=[-Infinity,-Infinity,-Infinity];
+for(const tr of axisOverlay){
+if(!tr||!Array.isArray(tr.x)||!Array.isArray(tr.y)||!Array.isArray(tr.z))continue;
+const n=Math.min(tr.x.length,tr.y.length,tr.z.length);
+for(let i=0;i<n;i++){
+const x=Number(tr.x[i]),y=Number(tr.y[i]),z=Number(tr.z[i]);
+if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z))continue;
+if(x<ovMin[0])ovMin[0]=x;if(x>ovMax[0])ovMax[0]=x;
+if(y<ovMin[1])ovMin[1]=y;if(y>ovMax[1])ovMax[1]=y;
+if(z<ovMin[2])ovMin[2]=z;if(z>ovMax[2])ovMax[2]=z;
+}
+}
+const qMin=[qb.min[0],qb.min[1],qb.min[2]],qMax=[qb.max[0],qb.max[1],qb.max[2]];
+if(Number.isFinite(ovMin[0])&&Number.isFinite(ovMin[1])&&Number.isFinite(ovMin[2])&&Number.isFinite(ovMax[0])&&Number.isFinite(ovMax[1])&&Number.isFinite(ovMax[2])){
+for(let i=0;i<3;i++){qMin[i]=Math.min(qMin[i],ovMin[i]);qMax[i]=Math.max(qMax[i],ovMax[i]);}
+}
+for(let i=0;i<3;i++){
+const s=Math.max(1e-9,Math.abs(qMax[i]-qMin[i]));
+const p=0.03*s;
+qMin[i]-=p;qMax[i]+=p;
+}
+const qxRange=[qMin[0],qMax[0]],qyRange=[qMin[1],qMax[1]],qzRange=[qMin[2],qMax[2]],spanQx=Math.max(1e-9,Math.abs(qxRange[1]-qxRange[0])),spanQy=Math.max(1e-9,Math.abs(qyRange[1]-qyRange[0])),spanQz=Math.max(1e-9,Math.abs(qzRange[1]-qzRange[0])),spanMax=Math.max(spanQx,spanQy,spanQz,1e-9),sceneRev=`${res.file||"res"}|${res.shape.join("x")}`;
 if(renderEpoch!==state.render3dEpoch||(!force&&state.planeMoving&&getSliceMode()==="plane"))return;
 const sceneBase={
 aspectmode:"manual",
@@ -888,7 +1013,11 @@ if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=nu
 capture3dCameras();
 const prevPlaneState=state.plane?JSON.parse(JSON.stringify(state.plane)):null;
 state.planeMoving=false;state.planeMoveCameraLock=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;
-const r=filterParsedByElements(state.rmc,getIncludedElements()),h=axis(Number($("hMin").value),Number($("hMax").value),Number($("hStep").value)),k=axis(Number($("kMin").value),Number($("kMax").value),Number($("kStep").value)),l=axis(Number($("lMin").value),Number($("lMax").value),Number($("lStep").value)),shape=[h.length,k.length,l.length],grid=shape[0]*shape[1]*shape[2],backend=$("backend").value,limit=Number($("gridLimit").value),scatteringCfg=getScatteringConfigFromUi();
+const r=filterParsedByElements(state.rmc,getIncludedElements());
+const hMinReq=Number($("hMin").value),hMaxReq=Number($("hMax").value),hStepReq=Number($("hStep").value);
+const kMinReq=Number($("kMin").value),kMaxReq=Number($("kMax").value),kStepReq=Number($("kStep").value);
+const lMinReq=Number($("lMin").value),lMaxReq=Number($("lMax").value),lStepReq=Number($("lStep").value);
+const h=axis(hMinReq,hMaxReq,hStepReq),k=axis(kMinReq,kMaxReq,kStepReq),l=axis(lMinReq,lMaxReq,lStepReq),shape=[h.length,k.length,l.length],grid=shape[0]*shape[1]*shape[2],backend=$("backend").value,limit=Number($("gridLimit").value),scatteringCfg=getScatteringConfigFromUi();
 if(!Number.isFinite(limit)||limit<1)throw new Error("Grid safety limit must be positive");
 const useWebgpuChunking=backend==="webgpu_fft"&&grid>limit;
 if(backend!=="webgpu_fft"&&grid>limit){const rec=Math.ceil(grid*1.1);throw new Error(`Grid ${grid} exceeds limit ${limit}. Set Grid safety limit >= ${rec} (or choose WebGPU preset).`);}
