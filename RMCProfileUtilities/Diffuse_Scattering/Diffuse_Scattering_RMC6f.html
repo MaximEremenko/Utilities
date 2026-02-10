@@ -83,17 +83,17 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <div class="card">
       <h2>2) Compute</h2>
       <div class="row">
-        <label>H min<input id="hMin" type="number" value="0" step="0.01"></label>
-        <label>H max<input id="hMax" type="number" value="4" step="0.01"></label>
-        <label>H step<input id="hStep" type="number" value="0.1" step="0.001"></label>
-        <label>K min<input id="kMin" type="number" value="0" step="0.01"></label>
-        <label>K max<input id="kMax" type="number" value="4" step="0.01"></label>
-        <label>K step<input id="kStep" type="number" value="0.1" step="0.001"></label>
+        <label>H min<input id="hMin" type="number" value="0.00" step="0.01"></label>
+        <label>H max<input id="hMax" type="number" value="4.00" step="0.01"></label>
+        <label>H step<input id="hStep" type="number" value="0.100" step="0.001"></label>
+        <label>K min<input id="kMin" type="number" value="0.00" step="0.01"></label>
+        <label>K max<input id="kMax" type="number" value="4.00" step="0.01"></label>
+        <label>K step<input id="kStep" type="number" value="0.100" step="0.001"></label>
       </div>
       <div class="row">
-        <label>L min<input id="lMin" type="number" value="0" step="0.01"></label>
-        <label>L max<input id="lMax" type="number" value="4" step="0.01"></label>
-        <label>L step<input id="lStep" type="number" value="0.1" step="0.001"></label>
+        <label>L min<input id="lMin" type="number" value="0.00" step="0.01"></label>
+        <label>L max<input id="lMax" type="number" value="4.00" step="0.01"></label>
+        <label>L step<input id="lStep" type="number" value="0.100" step="0.001"></label>
         <label>Backend<select id="backend"><option value="webgpu_fft">Type-3 + webgpufft (WebGPU)</option><option value="fft">type3NufftCpu (CPU FFT)</option><option value="direct">type3NufftCpuDirect</option></select></label>
         <label>Tolerance<input id="tol" type="number" value="1e-9" step="1e-10"></label>
         <label>Upsampling<input id="upsamp" type="number" value="2.0" step="0.1"></label>
@@ -139,19 +139,19 @@ button:disabled{opacity:.45;cursor:not-allowed}
           </div>
           <div id="planeControls">
             <div class="vec3">
-              <label>nH<input id="pNX" type="number" value="1" step="0.1" disabled></label>
-              <label>nK<input id="pNY" type="number" value="0" step="0.1" disabled></label>
-              <label>nL<input id="pNZ" type="number" value="0" step="0.1" disabled></label>
+              <label>nH<input id="pNX" type="number" value="1.00" step="0.1" disabled></label>
+              <label>nK<input id="pNY" type="number" value="0.00" step="0.1" disabled></label>
+              <label>nL<input id="pNZ" type="number" value="0.00" step="0.1" disabled></label>
             </div>
             <div class="vec3">
-              <label>oH<input id="pOX" type="number" value="0" step="0.01" disabled></label>
-              <label>oK<input id="pOY" type="number" value="0" step="0.01" disabled></label>
-              <label>oL<input id="pOZ" type="number" value="0" step="0.01" disabled></label>
+              <label>oH<input id="pOX" type="number" value="0.00" step="0.01" disabled></label>
+              <label>oK<input id="pOY" type="number" value="0.00" step="0.01" disabled></label>
+              <label>oL<input id="pOZ" type="number" value="0.00" step="0.01" disabled></label>
             </div>
             <div class="vec3">
-              <label>cH<input id="pCX" type="number" value="0" step="0.001" readonly disabled></label>
-              <label>cK<input id="pCY" type="number" value="0" step="0.001" readonly disabled></label>
-              <label>cL<input id="pCZ" type="number" value="0" step="0.001" readonly disabled></label>
+              <label>cH<input id="pCX" type="number" value="0.00" step="0.001" readonly disabled></label>
+              <label>cK<input id="pCY" type="number" value="0.00" step="0.001" readonly disabled></label>
+              <label>cL<input id="pCZ" type="number" value="0.00" step="0.001" readonly disabled></label>
             </div>
             <label>Move Along Normal<input id="planeMove" type="range" min="0" max="100" step="1" value="50" disabled></label>
             <div id="planeMoveVal">Plane center: -</div>
@@ -384,8 +384,8 @@ function scale3(v,s){return[v[0]*s,v[1]*s,v[2]*s];}
 function boundsRes(res){return{min:[res.h[0],res.k[0],res.l[0]],max:[res.h[res.h.length-1],res.k[res.k.length-1],res.l[res.l.length-1]]};}
 function stepRes(arr){return arr.length>1?(arr[arr.length-1]-arr[0])/(arr.length-1):1;}
 function planeSig(res){return`${res.shape.join("x")}|${res.h[0]}|${res.h[res.h.length-1]}|${res.k[0]}|${res.k[res.k.length-1]}|${res.l[0]}|${res.l[res.l.length-1]}`;}
-function updatePlaneMoveLabel(){if(!state.res||!state.plane){$("planeMoveVal").textContent="Plane center: -";for(const id of["pCX","pCY","pCZ"]){const e=$(id);if(e)e.value="";}return;}const p=state.plane,t=p.sliderPositions[p.sliderIndex]||0,c=p.center;$("planeMoveVal").textContent=`Plane center: (${c[0].toFixed(5)}, ${c[1].toFixed(5)}, ${c[2].toFixed(5)}) | t=${t.toFixed(5)} | n=(${p.normal[0].toFixed(3)}, ${p.normal[1].toFixed(3)}, ${p.normal[2].toFixed(3)})`;if($("pCX"))$("pCX").value=c[0].toFixed(6);if($("pCY"))$("pCY").value=c[1].toFixed(6);if($("pCZ"))$("pCZ").value=c[2].toFixed(6);}
-function setPlaneUiFromState(){if(!state.res||!state.plane)return;const p=state.plane;$("pNX").value=p.normal[0].toFixed(6);$("pNY").value=p.normal[1].toFixed(6);$("pNZ").value=p.normal[2].toFixed(6);$("pOX").value=p.origin[0].toFixed(6);$("pOY").value=p.origin[1].toFixed(6);$("pOZ").value=p.origin[2].toFixed(6);const s=$("planeMove");s.min="0";s.max=String(Math.max(0,p.sliderPositions.length-1));s.value=String(Math.max(0,Math.min(p.sliderIndex,p.sliderPositions.length-1)));updatePlaneMoveLabel();}
+function updatePlaneMoveLabel(){if(!state.res||!state.plane){$("planeMoveVal").textContent="Plane center: -";for(const id of["pCX","pCY","pCZ"]){const e=$(id);if(e)e.value="";}return;}const p=state.plane,t=p.sliderPositions[p.sliderIndex]||0,c=p.center;$("planeMoveVal").textContent=`Plane center: (${c[0].toFixed(5)}, ${c[1].toFixed(5)}, ${c[2].toFixed(5)}) | t=${t.toFixed(5)} | n=(${p.normal[0].toFixed(3)}, ${p.normal[1].toFixed(3)}, ${p.normal[2].toFixed(3)})`;if($("pCX"))$("pCX").value=c[0].toFixed(2);if($("pCY"))$("pCY").value=c[1].toFixed(2);if($("pCZ"))$("pCZ").value=c[2].toFixed(2);}
+function setPlaneUiFromState(){if(!state.res||!state.plane)return;const p=state.plane;$("pNX").value=p.normal[0].toFixed(2);$("pNY").value=p.normal[1].toFixed(2);$("pNZ").value=p.normal[2].toFixed(2);$("pOX").value=p.origin[0].toFixed(2);$("pOY").value=p.origin[1].toFixed(2);$("pOZ").value=p.origin[2].toFixed(2);const s=$("planeMove");s.min="0";s.max=String(Math.max(0,p.sliderPositions.length-1));s.value=String(Math.max(0,Math.min(p.sliderIndex,p.sliderPositions.length-1)));updatePlaneMoveLabel();}
 function movePlaneToSlider(idx){if(!state.plane)return;const p=state.plane;if(!p.sliderPositions.length){p.sliderPositions=[0];}const i=Math.max(0,Math.min(Math.floor(idx),p.sliderPositions.length-1));p.sliderIndex=i;const t=p.sliderPositions[i]||0,u=getPlaneUnit(p);p.center=add3(p.origin,scale3(u,t));invalidatePlaneSliceCache();setPlaneUiFromState();}
 function rebuildPlaneSlider(){if(!state.res||!state.plane)return;const p=state.plane,b=boundsRes(state.res),n=getPlaneUnit(p),tv=[];for(let i=0;i<3;i++){const ni=n[i];if(Math.abs(ni)>1e-9){tv.push((b.min[i]-p.origin[i])/ni,(b.max[i]-p.origin[i])/ni);}}if(tv.length===0)tv.push(-1,1);tv.sort((a,bv)=>a-bv);const t0=tv[0],t1=tv[tv.length-1],count=401;p.sliderPositions=Array.from({length:count},(_,i)=>t0+(t1-t0)*i/Math.max(1,count-1));let best=0,bestAbs=Infinity;for(let i=0;i<p.sliderPositions.length;i++){const av=Math.abs(p.sliderPositions[i]);if(av<bestAbs){bestAbs=av;best=i;}}movePlaneToSlider(best);}
 function ensurePlaneState(res){const sig=planeSig(res);if(state.plane&&state.plane.signature===sig)return state.plane;const b=boundsRes(res),mid=[0.5*(b.min[0]+b.max[0]),0.5*(b.min[1]+b.max[1]),0.5*(b.min[2]+b.max[2])];state.plane={signature:sig,normal:[1,0,0],normalUnit:[1,0,0],origin:mid.slice(),center:mid.slice(),sliderPositions:[0],sliderIndex:0};invalidatePlaneSliceCache();rebuildPlaneSlider();return state.plane;}
@@ -407,7 +407,7 @@ state.planeMoveCameraLock=null;
 $("sliceMode").value="plane";
 const b=boundsRes(state.res),mid=[0.5*(b.min[0]+b.max[0]),0.5*(b.min[1]+b.max[1]),0.5*(b.min[2]+b.max[2])];
 $("pNX").value="1";$("pNY").value="0";$("pNZ").value="0";
-$("pOX").value=mid[0].toFixed(6);$("pOY").value=mid[1].toFixed(6);$("pOZ").value=mid[2].toFixed(6);
+$("pOX").value=mid[0].toFixed(2);$("pOY").value=mid[1].toFixed(2);$("pOZ").value=mid[2].toFixed(2);
 $("pRes").value="200";$("pScale").value="1.75";
 applyPlaneFromInputs();
 resetDisplayLevels();
@@ -592,7 +592,7 @@ function creal(a){needDiffuseCore();return window.DiffuseCore.complexReal(a);}
 
 function parseRMC(name,text){needRmcReader();needDiffuseCore();const parsed=window.RMC6fReader.parse(name,text);return window.DiffuseCore.attachNeutronCoefficients(parsed,10);}
 
-function meta(r){$("mFile").textContent=r.file;$("mAtoms").textContent=String(r.atoms);$("mSuper").textContent=r.super.join(" × ");const c=r.cellDeg.map((v,i)=>i<3?v.toFixed(5):v.toFixed(3));$("mCell").textContent=`${c[0]}, ${c[1]}, ${c[2]} ; ${c[3]}, ${c[4]}, ${c[5]}`;$("mElem").textContent=r.present.join(", ");$("hStep").value=(1/r.super[0]).toFixed(6);$("kStep").value=(1/r.super[1]).toFixed(6);$("lStep").value=(1/r.super[2]).toFixed(6);}
+function meta(r){$("mFile").textContent=r.file;$("mAtoms").textContent=String(r.atoms);$("mSuper").textContent=r.super.join(" × ");const c=r.cellDeg.map((v,i)=>i<3?v.toFixed(5):v.toFixed(3));$("mCell").textContent=`${c[0]}, ${c[1]}, ${c[2]} ; ${c[3]}, ${c[4]}, ${c[5]}`;$("mElem").textContent=r.present.join(", ");$("hStep").value=(1/r.super[0]).toFixed(3);$("kStep").value=(1/r.super[1]).toFixed(3);$("lStep").value=(1/r.super[2]).toFixed(3);}
 
 function targetsChunk(h,k,l,Bq,start,count){needDiffuseCore();return window.DiffuseCore.targetsChunk(h,k,l,Bq,start,count);}
 function acosh1(x){if(x<1)x=1;return Math.log(x+Math.sqrt(Math.max(0,x*x-1)));}
