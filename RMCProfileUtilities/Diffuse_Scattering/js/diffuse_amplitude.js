@@ -329,7 +329,14 @@
         ? Math.floor(profile.includedAtomCount)
         : parsed.atoms
     );
-    const mInv = 1 / includedAtomCount;
+    const avgNormMode =
+      String(args.avgNormMode || "included").trim().toLowerCase() === "total"
+        ? "total"
+        : "included";
+    const avgNormN = avgNormMode === "total" ? Math.max(1, parsed.atoms) : includedAtomCount;
+    const mInv = 1 / avgNormN;
+    profile.avgNormModeUsed = avgNormMode;
+    profile.avgNormNUsed = avgNormN;
     let min = Infinity;
     let max = -Infinity;
 
