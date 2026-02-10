@@ -175,10 +175,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
           <h3>Color Levels</h3>
           <div class="colorRow">
             <label>Color map<select id="colorMap" disabled><option value="turbo">Turbo</option><option value="viridis" selected>Viridis</option><option value="inferno">Inferno</option><option value="plasma">Plasma</option><option value="magma">Magma</option><option value="gray">Gray</option></select></label>
-            <label>Color-bar click<select id="levelMode" disabled><option value="both" selected>Set min+max</option><option value="min">Set min</option><option value="max">Set max</option></select></label>
           </div>
           <div class="colorRow2">
-            <label>Window % (both)<input id="levelWindowPct" type="number" value="35" min="1" max="100" step="1" disabled></label>
             <button id="resetLevels" class="alt" disabled>Reset</button>
           </div>
           <div id="levelInfo" class="mono">Display levels: auto</div>
@@ -244,7 +242,7 @@ const PLOTLY_CDN="https://cdn.plot.ly/plotly-2.35.2.min.js";
 const BACKEND_PRESETS={webgpu_fft:{tol:"1e-7",upsamp:"1.5",gridLimit:"8000000"},fft:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"},direct:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"}};
 const WEBGPU_STAGE_ORDER=["spread_setup","spread_dispatch","amplify_dispatch","fft_dispatch","interp_dispatch","postmul_dispatch","smooth_axis0_dispatch","smooth_axis1_dispatch","smooth_axis2_dispatch","done","smooth_done"];
 const WEBGPU_STAGE_LABEL={spread_setup:"setup",spread_dispatch:"spread",amplify_dispatch:"amplify",fft_dispatch:"fft",interp_dispatch:"interp",postmul_dispatch:"postmul",smooth_axis0_dispatch:"smooth-h",smooth_axis1_dispatch:"smooth-k",smooth_axis2_dispatch:"smooth-l",done:"done",smooth_done:"smooth-done"};
-const state={rmc:null,res:null,sliceWin:null,volCache:null,render3dTimer:null,last3dStamp:0,sliceLevels:null,lastBar:null,plane:null,planeSliceCache:null,offscreen:null,planeMoveRaf:0,planeTraceReqId:0,planeTraceBusy:false,planeTraceQueued:null,planeMoving:false,planeMoveCameraLock:null,render3dEpoch:0,sceneCamera:{iso:null,plane:null}};
+const state={rmc:null,res:null,sliceWin:null,volCache:null,render3dTimer:null,last3dStamp:0,sliceLevels:null,lastBar:null,levelDrag:null,levelClickSuppress:false,level3dSyncTimer:null,plane:null,planeSliceCache:null,offscreen:null,planeMoveRaf:0,planeTraceReqId:0,planeTraceBusy:false,planeTraceQueued:null,planeMoving:false,planeMoveCameraLock:null,render3dEpoch:0,sceneCamera:{iso:null,plane:null}};
 const COLOR_PRESETS={
 turbo:{plotly:"Turbo",stops:[[0,[48,18,59]],[.2,[32,78,168]],[.45,[44,165,197]],[.7,[109,206,111]],[.9,[246,220,80]],[1,[232,79,53]]]},
 viridis:{plotly:"Viridis",stops:[[0,[68,1,84]],[.25,[59,82,139]],[.5,[33,145,140]],[.75,[94,201,98]],[1,[253,231,37]]]},
@@ -297,11 +295,46 @@ throw new Error(`webgpufft API missing.${serveHint} ${errs.join(" | ")}`.trim())
 async function ensurePlotly(){if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;const errs=[];try{await loadScriptOnce(PLOTLY_CDN);}catch(e){errs.push(e&&e.message?e.message:String(e));}if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;throw new Error(`Plotly is unavailable${errs.length?`: ${errs.join(" | ")}`:""}.`);}
 function applyBackendDefaults(backend,announce=false){const p=BACKEND_PRESETS[backend];if(!p)return;let changed=false;if($("tol").value!==p.tol){$("tol").value=p.tol;changed=true;}if($("upsamp").value!==p.upsamp){$("upsamp").value=p.upsamp;changed=true;}if($("gridLimit").value!==p.gridLimit){$("gridLimit").value=p.gridLimit;changed=true;}if(announce&&changed){const n=backend==="webgpu_fft"?"WebGPU":"CPU";status(`Applied ${n} preset: tol=${p.tol}, upsamp=${p.upsamp}, grid limit=${p.gridLimit}.`,"ok");}}
 function formatWebgpuStageTotals(stages){const parts=[];for(const k of WEBGPU_STAGE_ORDER){const v=stages[k]||0;if(v>0)parts.push(`${WEBGPU_STAGE_LABEL[k]||k}=${fmtMs(v)}`);}return parts.join(", ");}
-function syncResultControls(){const has=!!state.res,planeMode=$("sliceMode").value==="plane";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("axis").disabled=!has||planeMode;$("idx").disabled=!has||planeMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("levelMode").disabled=!has;$("levelWindowPct").disabled=!has||$("levelMode").value!=="both";$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale","planeApply","planeReset"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
+function syncResultControls(){const has=!!state.res,planeMode=$("sliceMode").value==="plane";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("axis").disabled=!has||planeMode;$("idx").disabled=!has||planeMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale","planeApply","planeReset"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
 function clamp01(v){return v<0?0:(v>1?1:v);}function lerp(a,b,t){return a+(b-a)*t;}
 function readNumberInput(id,fallback){const el=$(id);if(!el)return fallback;const v=Number.isFinite(el.valueAsNumber)?el.valueAsNumber:Number(String(el.value||"").replace(/,/g,"."));return Number.isFinite(v)?v:fallback;}
 function getColorPreset(){const key=$("colorMap")&&$("colorMap").value?$("colorMap").value:"viridis";return COLOR_PRESETS[key]||COLOR_PRESETS.viridis;}
 function rgbFromStops(stops,t){const u=clamp01(t);for(let i=0;i<stops.length-1;i++){const a=stops[i],b=stops[i+1];if(u>=a[0]&&u<=b[0]){const tt=(u-a[0])/((b[0]-a[0])||1);return[Math.round(lerp(a[1][0],b[1][0],tt)),Math.round(lerp(a[1][1],b[1][1],tt)),Math.round(lerp(a[1][2],b[1][2],tt))];}}return stops[stops.length-1][1];}
+function getGlobalDisplayBounds(mode){if(!state.res)return{min:0,max:1};let mn=scaledVal(state.res.min,mode),mx=scaledVal(state.res.max,mode);if(!Number.isFinite(mn)||!Number.isFinite(mx)){mn=0;mx=1;}if(!(mx>mn))mx=mn+1;return{min:mn,max:mx};}
+function setDisplayLevelsFromBounds(min,max,bounds){let nmin=Number(min),nmax=Number(max),bmin=Number(bounds&&bounds.min),bmax=Number(bounds&&bounds.max);if(!(Number.isFinite(bmin)&&Number.isFinite(bmax)&&bmax>bmin)){bmin=0;bmax=1;}if(!Number.isFinite(nmin))nmin=bmin;if(!Number.isFinite(nmax))nmax=bmax;nmin=Math.max(bmin,Math.min(nmin,bmax-1e-12));nmax=Math.min(bmax,Math.max(nmax,bmin+1e-12));if(!(nmax>nmin)){nmin=bmin;nmax=bmax;}state.sliceLevels={min:nmin,max:nmax};return{min:nmin,max:nmax};}
+function barValueFromY(y,b){const den=Math.max(1e-30,b.rawMax-b.rawMin),u=1-(y-b.y)/Math.max(1,b.h-1);return b.rawMin+clamp01(u)*den;}
+function barYFromValue(v,b){const den=Math.max(1e-30,b.rawMax-b.rawMin),u=clamp01((v-b.rawMin)/den);return b.y+(1-u)*Math.max(1,b.h-1);}
+function pickColorBarHandle(x,y,b){
+if(!b)return null;
+const yMin=barYFromValue(b.dispMin,b),yMax=barYFromValue(b.dispMax,b);
+const inY=(yy)=>Math.abs(y-yy)<=12;
+const nearMin=(x>=b.x-30&&x<=b.x+b.w+8&&inY(yMin));
+const nearMax=(x>=b.x-30&&x<=b.x+b.w+8&&inY(yMax));
+if(!nearMin&&!nearMax)return null;
+if(nearMin&&nearMax)return Math.abs(y-yMin)<=Math.abs(y-yMax)?"min":"max";
+return nearMin?"min":"max";
+}
+function getHeatmapCanvasXY(ev,cv){const r=cv.getBoundingClientRect();return{x:(ev.clientX-r.left)*(cv.width/r.width),y:(ev.clientY-r.top)*(cv.height/r.height)};}
+function drawColorBarHandle(ctx,b,y,active){
+const tipX=b.x-1,baseX=b.x-20,hh=10;
+ctx.beginPath();
+ctx.moveTo(tipX,y);
+ctx.lineTo(baseX,y-hh);
+ctx.lineTo(baseX,y+hh);
+ctx.closePath();
+ctx.fillStyle=active?"#1f2937":"#0f172a";
+ctx.fill();
+ctx.strokeStyle=active?"#ffffff":"#cbd5e1";
+ctx.lineWidth=1.5;
+ctx.stroke();
+ctx.lineWidth=1;
+ctx.beginPath();
+ctx.moveTo(baseX+5,y-4);
+ctx.lineTo(baseX+5,y+4);
+ctx.strokeStyle=active?"#ffffff":"#94a3b8";
+ctx.stroke();
+}
+function scheduleLevelSync3d(immediate=false){if(state.level3dSyncTimer){clearTimeout(state.level3dSyncTimer);state.level3dSyncTimer=null;}const delay=immediate?0:120;state.level3dSyncTimer=setTimeout(()=>{state.level3dSyncTimer=null;schedule3dRender(true,0);},delay);}
 function getSliceMode(){return $("sliceMode")&&$("sliceMode").value==="plane"?"plane":"axis";}
 function norm3(v){const n=Math.hypot(v[0],v[1],v[2]);if(!(n>1e-12))return[1,0,0];return[v[0]/n,v[1]/n,v[2]/n];}
 function projOnPlane(axis,n){const d=axis[0]*n[0]+axis[1]*n[1]+axis[2]*n[2];return[axis[0]-d*n[0],axis[1]-d*n[1],axis[2]-d*n[2]];}
@@ -856,19 +889,58 @@ function updateSliceModePanels(){const planeMode=getSliceMode()==="plane",axisBo
 function update2dVisibility(){const p=$("slice2dPanel"),show=!$("show2d")||$("show2d").value==="1";if(p)p.classList.toggle("hidden",!show);}
 function updateSliceUI(){updateSliceModePanels();if(!state.res){syncResultControls();$("sliceVal").textContent="Slice: -";$("planeMoveVal").textContent="Plane center: -";for(const id of["pCX","pCY","pCZ"]){if($(id))$(id).value="";}return;}if(getSliceMode()==="plane"){ensurePlaneState(state.res);setPlaneUiFromState();}else{const a=$("axis").value,[nh,nk,nl]=state.res.shape,max=a==="h"?nh-1:a==="k"?nk-1:nl-1;$("idx").max=String(Math.max(0,max));$("idx").value=String(Math.min(Number($("idx").value),max));}syncResultControls();updateSliceVal();}
 function updateSliceVal(){if(!state.res){$("sliceVal").textContent="Slice: -";return;}if(getSliceMode()==="plane"){ensurePlaneState(state.res);const c=state.plane.center,n=state.plane.normal;$("sliceVal").textContent=`Plane c=(${c[0].toFixed(4)}, ${c[1].toFixed(4)}, ${c[2].toFixed(4)}) n=(${n[0].toFixed(3)}, ${n[1].toFixed(3)}, ${n[2].toFixed(3)})`;return;}const a=$("axis").value,i=Number($("idx").value),v=a==="h"?state.res.h[i]:a==="k"?state.res.k[i]:state.res.l[i];$("sliceVal").textContent=`Slice ${a.toUpperCase()}[${i}] = ${v}`;}
-function resetDisplayLevels(){state.sliceLevels=null;state.lastBar=null;const info=$("levelInfo");if(info)info.textContent="Display levels: auto";}
+function resetDisplayLevels(){state.sliceLevels=null;state.lastBar=null;state.levelDrag=null;state.levelClickSuppress=false;const info=$("levelInfo");if(info)info.textContent="Display levels: auto";}
 function onHeatmapClick(ev){
+if(state.levelClickSuppress){state.levelClickSuppress=false;return;}
 if(!state.res||!state.lastBar)return;
-const cv=$("heatmap"),r=cv.getBoundingClientRect(),x=(ev.clientX-r.left)*(cv.width/r.width),y=(ev.clientY-r.top)*(cv.height/r.height),b=state.lastBar;
+const cv=$("heatmap"),pt=getHeatmapCanvasXY(ev,cv),x=pt.x,y=pt.y,b=state.lastBar;
 if(x<b.x||x>b.x+b.w||y<b.y||y>b.y+b.h)return;
-const u=1-(y-b.y)/Math.max(1,b.h-1),picked=b.rawMin+clamp01(u)*(b.rawMax-b.rawMin),mode=$("levelMode").value;
+const picked=barValueFromY(y,b);
 let nmin=b.dispMin,nmax=b.dispMax;
-if(mode==="min"){nmin=Math.min(picked,nmax-1e-12);}
-else if(mode==="max"){nmax=Math.max(picked,nmin+1e-12);}
-else{const pct=Math.max(1,Math.min(100,Number($("levelWindowPct").value)||35)),half=0.5*(pct/100)*(b.rawMax-b.rawMin);nmin=picked-half;nmax=picked+half;}
-nmin=Math.max(b.rawMin,Math.min(nmin,b.rawMax-1e-12));nmax=Math.min(b.rawMax,Math.max(nmax,b.rawMin+1e-12));
-if(!(nmax>nmin)){nmin=b.rawMin;nmax=b.rawMax;}
-state.sliceLevels={min:nmin,max:nmax};draw();
+if(Math.abs(picked-nmin)<=Math.abs(picked-nmax))nmin=Math.min(picked,nmax-1e-12);
+else nmax=Math.max(picked,nmin+1e-12);
+setDisplayLevelsFromBounds(nmin,nmax,{min:b.rawMin,max:b.rawMax});
+draw();
+scheduleLevelSync3d(true);
+}
+function onHeatmapPointerDown(ev){
+if(!state.res||!state.lastBar)return;
+const cv=$("heatmap"),pt=getHeatmapCanvasXY(ev,cv),handle=pickColorBarHandle(pt.x,pt.y,state.lastBar);
+if(!handle)return;
+state.levelDrag={active:true,pointerId:ev.pointerId,handle,moved:false};
+state.levelClickSuppress=true;
+cv.style.cursor="ns-resize";
+if(typeof cv.setPointerCapture==="function"){try{cv.setPointerCapture(ev.pointerId);}catch(_){/* no-op */}}
+ev.preventDefault();
+}
+function onHeatmapPointerMove(ev){
+const drag=state.levelDrag,b=state.lastBar;
+const cv=$("heatmap"),pt=getHeatmapCanvasXY(ev,cv);
+if(!b){cv.style.cursor="default";return;}
+if(!drag||!drag.active){
+const hoverHandle=pickColorBarHandle(pt.x,pt.y,b);
+cv.style.cursor=hoverHandle?"ns-resize":"default";
+return;
+}
+cv.style.cursor="ns-resize";
+const picked=barValueFromY(pt.y,b);
+let nmin=b.dispMin,nmax=b.dispMax;
+if(drag.handle==="min"){nmin=Math.min(picked,nmax-1e-12);}else{nmax=Math.max(picked,nmin+1e-12);}
+setDisplayLevelsFromBounds(nmin,nmax,{min:b.rawMin,max:b.rawMax});
+drag.moved=true;
+state.levelClickSuppress=true;
+draw();
+scheduleLevelSync3d(false);
+}
+function onHeatmapPointerUp(ev){
+const drag=state.levelDrag;
+const cv=$("heatmap");
+if(!drag||!drag.active){cv.style.cursor="default";return;}
+if(typeof cv.releasePointerCapture==="function"){try{cv.releasePointerCapture(ev.pointerId);}catch(_){/* no-op */}}
+const moved=!!drag.moved;
+state.levelDrag=null;
+cv.style.cursor="default";
+if(moved){scheduleLevelSync3d(true);}
 }
 
 function draw(opts){
@@ -884,8 +956,9 @@ let mn=Infinity,mx=-Infinity;
 for(let i=0;i<sl.d.length;i++){const rv=sl.d[i],v=sm==="plane"?rv:scaledVal(rv,mode);t[i]=v;if(Number.isFinite(v)&&v<mn)mn=v;if(Number.isFinite(v)&&v>mx)mx=v;}
 if(!Number.isFinite(mn)||!Number.isFinite(mx)){mn=0;mx=1;}
 if(Math.abs(mx-mn)<1e-30)mx=mn+1;
-let dmin=mn,dmax=mx;
-if(state.sliceLevels&&Number.isFinite(state.sliceLevels.min)&&Number.isFinite(state.sliceLevels.max)){dmin=Math.max(mn,Math.min(state.sliceLevels.min,mx-1e-12));dmax=Math.min(mx,Math.max(state.sliceLevels.max,mn+1e-12));if(!(dmax>dmin)){dmin=mn;dmax=mx;state.sliceLevels=null;}}
+const globalBounds=getGlobalDisplayBounds(mode),gmin=globalBounds.min,gmax=globalBounds.max;
+let dmin=gmin,dmax=gmax;
+if(state.sliceLevels&&Number.isFinite(state.sliceLevels.min)&&Number.isFinite(state.sliceLevels.max)){dmin=Math.max(gmin,Math.min(state.sliceLevels.min,gmax-1e-12));dmax=Math.min(gmax,Math.max(state.sliceLevels.max,gmin+1e-12));if(!(dmax>dmin)){dmin=gmin;dmax=gmax;state.sliceLevels=null;}}
 if(!state.offscreen)state.offscreen=document.createElement("canvas");
 const off=state.offscreen;
 if(off.width!==sl.cols)off.width=sl.cols;
@@ -941,15 +1014,31 @@ for(const tck of yTicks){const p=mapXY(visXMin,tck);ctx.beginPath();ctx.moveTo(p
 ctx.fillText(`${(sl.xLabel||"x")}`,drawX+Math.max(4,Math.floor(drawW*0.5)-10),Math.min(cv.height-8,drawY+drawH+30));
 ctx.save();ctx.translate(Math.max(12,drawX-44),drawY+Math.max(20,Math.floor(drawH*0.5)+18));ctx.rotate(-Math.PI/2);ctx.fillText(`${(sl.yLabel||"y")}`,0,0);ctx.restore();
 for(let i=0;i<bh;i++){const u=1-i/Math.max(1,bh-1),rgb=rgbFromStops(stops,u);ctx.fillStyle=`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;ctx.fillRect(bx,by+i,bw,1);}
+const barMeta={x:bx,y:by,w:bw,h:bh,rawMin:gmin,rawMax:gmax,dispMin:dmin,dispMax:dmax};
+const yDispMax=barYFromValue(dmax,barMeta),yDispMin=barYFromValue(dmin,barMeta);
+ctx.fillStyle="rgba(2,6,23,.52)";
+if(yDispMax>by)ctx.fillRect(bx,by,bw,yDispMax-by);
+if(yDispMin<by+bh)ctx.fillRect(bx,yDispMin,bw,by+bh-yDispMin);
+const activeHandle=state.levelDrag&&state.levelDrag.active?state.levelDrag.handle:null;
+drawColorBarHandle(ctx,barMeta,yDispMax,activeHandle==="max");
+drawColorBarHandle(ctx,barMeta,yDispMin,activeHandle==="min");
+ctx.strokeStyle="#f8fafc";
+ctx.lineWidth=2;
+ctx.beginPath();ctx.moveTo(bx-5,yDispMax+0.5);ctx.lineTo(bx+bw+5,yDispMax+0.5);ctx.stroke();
+ctx.beginPath();ctx.moveTo(bx-5,yDispMin+0.5);ctx.lineTo(bx+bw+5,yDispMin+0.5);ctx.stroke();
+ctx.lineWidth=1;
 ctx.strokeStyle="#dbeafe";
 ctx.strokeRect(bx,by,bw,bh);
 ctx.fillStyle="#e2e8f0";
 ctx.font="12px Consolas";
-ctx.fillText(dmax.toExponential(2),bx-78,by+10);
-ctx.fillText(dmin.toExponential(2),bx-78,by+bh-2);
-state.lastBar={x:bx,y:by,w:bw,h:bh,rawMin:mn,rawMax:mx,dispMin:dmin,dispMax:dmax};
+ctx.fillText(gmax.toExponential(2),bx-78,by+10);
+ctx.fillText(gmin.toExponential(2),bx-78,by+bh-2);
+ctx.font="11px Consolas";
+ctx.fillText(dmax.toExponential(2),bx-132,Math.max(by+10,yDispMax-4));
+ctx.fillText(dmin.toExponential(2),bx-132,Math.min(by+bh-2,yDispMin+12));
+state.lastBar=barMeta;
 const info=$("levelInfo");
-if(info)info.textContent=state.sliceLevels?`Display levels: [${dmin.toExponential(3)}, ${dmax.toExponential(3)}]`:`Display levels: auto [${mn.toExponential(3)}, ${mx.toExponential(3)}]`;
+if(info)info.textContent=state.sliceLevels?`Display levels: [${dmin.toExponential(3)}, ${dmax.toExponential(3)}] | global [${gmin.toExponential(3)}, ${gmax.toExponential(3)}]`:`Display levels: auto [${gmin.toExponential(3)}, ${gmax.toExponential(3)}]`;
 const validMsg=sm==="plane"?` | valid=${sl.validCount||0}/${sl.rows*sl.cols}`:"";
 const uvMsg=sm==="plane"?" | uv: u->right, v->up":"";
 const mapMsg=(Array.isArray(sl.xQVec)&&Array.isArray(sl.yQVec))?" | map=Q-cart":"";
@@ -1055,25 +1144,26 @@ $("axis").addEventListener("change",()=>{updateSliceUI();draw();schedule3dRender
 $("idx").addEventListener("input",()=>{draw();schedule3dRender(false,140);});
 $("scale").addEventListener("change",()=>{resetDisplayLevels();draw();schedule3dRender(false,160);});
 $("colorMap").addEventListener("change",()=>{draw();schedule3dRender(false,120);});
-$("levelMode").addEventListener("change",()=>{const on=$("levelMode").value==="both";$("levelWindowPct").disabled=!state.res||!on;});
-$("levelWindowPct").addEventListener("change",()=>{if($("levelMode").value==="both"&&state.sliceLevels)draw();});
-$("resetLevels").addEventListener("click",()=>{resetDisplayLevels();draw();});
+$("resetLevels").addEventListener("click",()=>{resetDisplayLevels();draw();scheduleLevelSync3d(true);});
 $("planeApply").addEventListener("click",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");applyPlaneFromInputs();resetDisplayLevels();draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
 $("planeReset").addEventListener("click",()=>{resetPlaneToolDefaults();});
 $("planeMove").addEventListener("input",()=>{if(!state.planeMoving){const liveCam=readSceneCamera("plot3dPlane");state.planeMoveCameraLock=liveCam?cloneCamera(liveCam):null;}state.planeMoving=true;state.render3dEpoch++;if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}movePlaneToSlider(Number($("planeMove").value));if(state.planeMoveRaf){cancelAnimationFrame(state.planeMoveRaf);}state.planeMoveRaf=requestAnimationFrame(()=>{state.planeMoveRaf=0;draw({planeResOverride:fastPlaneRes()});updatePlaneTraceFast().catch(()=>{});});});
 $("planeMove").addEventListener("change",async()=>{try{draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));await updatePlaneTraceFast(fullRes);}else{schedule3dRender(false,220);}}finally{state.planeMoving=false;const liveCam=readSceneCamera("plot3dPlane");if(liveCam)state.sceneCamera.plane=cloneCamera(liveCam);state.planeMoveCameraLock=null;}});
 for(const id of ["pRes","pScale"]){$(id).addEventListener("change",()=>{if(getSliceMode()==="plane"){invalidatePlaneSliceCache();resetDisplayLevels();draw();const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});}
 $("heatmap").addEventListener("click",onHeatmapClick);
+$("heatmap").addEventListener("pointerdown",onHeatmapPointerDown);
+$("heatmap").addEventListener("pointermove",onHeatmapPointerMove);
+$("heatmap").addEventListener("pointerup",onHeatmapPointerUp);
+$("heatmap").addEventListener("pointercancel",onHeatmapPointerUp);
+$("heatmap").addEventListener("pointerleave",onHeatmapPointerUp);
 $("render3d").addEventListener("click",()=>render3d(true).catch(err=>setPlot3dStatus(`3D render failed: ${err.message}`)));
 $("openSliceWin").addEventListener("click",()=>{try{openSliceWindow();}catch(err){status(`Slice window failed: ${err.message}`,"err");}});
 $("closeSliceWin").addEventListener("click",closeSliceWindow);
 $("show2d").addEventListener("change",()=>{update2dVisibility();if($("show2d").value==="1"){draw();}});
 for(const id of ["isoPct","isoCount","voxelCap","showIso3d","showPlane3d","auto3d"]){$(id).addEventListener("change",()=>schedule3dRender(false));}
 window.addEventListener("beforeunload",closeSliceWindow);
-updateScatteringUi();updateSmoothUi();syncResultControls();updateSliceUI();update2dVisibility();$("levelWindowPct").disabled=true;setPlot3dStatus("3D view is idle.");}
+updateScatteringUi();updateSmoothUi();syncResultControls();updateSliceUI();update2dVisibility();setPlot3dStatus("3D view is idle.");}
 bind();draw();
 </script>
 </body>
 </html>
-
-
