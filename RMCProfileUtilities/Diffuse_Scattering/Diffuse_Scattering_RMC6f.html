@@ -32,11 +32,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
 #status{padding:8px;border-radius:8px;background:#edf2f9;min-height:36px;font-family:Consolas,monospace;font-size:.88rem}
 #status.ok{background:#e9f8ef;color:var(--ok)}#status.warn{background:#fff6e8;color:var(--warn)}#status.err{background:#fbeaea;color:var(--err)}
 
-.workspace{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:12px;align-items:start}
-.sidePanel{display:grid;gap:10px}
-.viewerMain{display:grid;gap:10px}
-.toolBox{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel)}
-.planeHeader{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) 120px;gap:8px;align-items:end;margin-bottom:8px}
+.workspace{display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr);gap:12px;align-items:start}
+.workspace>*{min-width:0}
+.sidePanel{display:grid;gap:10px;min-width:0}
+.viewerMain{display:grid;gap:10px;min-width:0}
+.toolBox{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel);overflow:hidden}
+.planeHeader{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:end;margin-bottom:8px}
 .vec3{display:grid;grid-template-columns:repeat(3,minmax(70px,1fr));gap:8px;margin-bottom:8px}
 .planeMetaRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .axisRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
@@ -47,9 +48,9 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .canvasWrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0b1321}
 #heatmap{display:block;width:100%;height:auto;background:#0b1321}
 #sliceStats{margin-top:8px;font-family:Consolas,monospace;font-size:.88rem;color:#334155}
-.viewer3dCtl{display:grid;grid-template-columns:repeat(7,minmax(120px,1fr));gap:8px;align-items:end;margin-bottom:8px}
-.plotSplit{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.plot3dWrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#070b12}
+.viewer3dCtl{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end;margin-bottom:8px}
+.plotSplit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.plot3dWrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#070b12;min-width:0}
 #plot3dIso,#plot3dPlane{width:100%;height:520px}
 .mono{font-family:Consolas,monospace}
 .fine{margin-top:6px;font-size:.82rem;color:var(--muted)}
@@ -104,6 +105,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
         <label>Base name<input id="baseName" type="text" value="diffuse_result"></label>
       </div>
       <div class="row4">
+        <label>Scattering type<select id="scatterType"><option value="neutron" selected>Neutron</option><option value="xray">X-ray</option><option value="electron">Electron</option></select></label>
+        <label>Model<select id="scatterModel"><option value="fast">Fast (neutron)</option><option value="grouped_exact">Grouped exact (neutron)</option></select></label>
+        <label>Table<select id="scatterTable" disabled><option value="0">0: Waasmaier</option><option value="1">1: Lobato</option><option value="2">2: Peng 0.4</option><option value="3">3: Doyle</option><option value="4">4: Weickenmeier</option><option value="5">5: Kirkland</option></select></label>
+        <label>Ion valence map<input id="ionValence" type="text" value="" placeholder="Fe:2,O:-2"></label>
+      </div>
+      <div class="row4">
         <label>Smooth 3D<select id="smooth3d"><option value="0">OFF</option><option value="1" selected>ON</option></select></label>
         <label>Filter<select id="smoothType"><option value="lanczos">Lanczos</option><option value="chebyshev" selected>Chebyshev</option></select></label>
         <label>Chebyshev dB<input id="chebDb" type="number" value="100" step="1" min="20" max="200"></label>
@@ -128,22 +135,23 @@ button:disabled{opacity:.45;cursor:not-allowed}
             <label>Slice mode<select id="sliceMode" disabled><option value="axis">Axis</option><option value="plane" selected>Normal plane</option></select></label>
             <label>Scale<select id="scale" disabled><option value="log">log10</option><option value="linear">linear</option></select></label>
             <button id="planeApply" class="alt" disabled>Set Plane</button>
+            <button id="planeReset" class="alt" disabled>Reset Tool</button>
           </div>
           <div id="planeControls">
             <div class="vec3">
-              <label>nX<input id="pNX" type="number" value="1" step="0.1" disabled></label>
-              <label>nY<input id="pNY" type="number" value="0" step="0.1" disabled></label>
-              <label>nZ<input id="pNZ" type="number" value="0" step="0.1" disabled></label>
+              <label>nH<input id="pNX" type="number" value="1" step="0.1" disabled></label>
+              <label>nK<input id="pNY" type="number" value="0" step="0.1" disabled></label>
+              <label>nL<input id="pNZ" type="number" value="0" step="0.1" disabled></label>
             </div>
             <div class="vec3">
-              <label>oX<input id="pOX" type="number" value="0" step="0.01" disabled></label>
-              <label>oY<input id="pOY" type="number" value="0" step="0.01" disabled></label>
-              <label>oZ<input id="pOZ" type="number" value="0" step="0.01" disabled></label>
+              <label>oH<input id="pOX" type="number" value="0" step="0.01" disabled></label>
+              <label>oK<input id="pOY" type="number" value="0" step="0.01" disabled></label>
+              <label>oL<input id="pOZ" type="number" value="0" step="0.01" disabled></label>
             </div>
             <div class="vec3">
-              <label>cX<input id="pCX" type="number" value="0" step="0.001" readonly disabled></label>
-              <label>cY<input id="pCY" type="number" value="0" step="0.001" readonly disabled></label>
-              <label>cZ<input id="pCZ" type="number" value="0" step="0.001" readonly disabled></label>
+              <label>cH<input id="pCX" type="number" value="0" step="0.001" readonly disabled></label>
+              <label>cK<input id="pCY" type="number" value="0" step="0.001" readonly disabled></label>
+              <label>cL<input id="pCZ" type="number" value="0" step="0.001" readonly disabled></label>
             </div>
             <label>Move Along Normal<input id="planeMove" type="range" min="0" max="100" step="1" value="50" disabled></label>
             <div id="planeMoveVal">Plane center: -</div>
@@ -218,6 +226,11 @@ button:disabled{opacity:.45;cursor:not-allowed}
 
 <script src="https://cdn.jsdelivr.net/gh/MaximEremenko/WebGPU-NUFFT@main/lib/type3_cpu_like.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/MaximEremenko/WebGPU-NUFFT@main/lib/type3_webgpu_gpufft.js"></script>
+<script src="./js/diffuse_core.js"></script>
+<script src="./js/diffuse_amplitude.js"></script>
+<script src="./js/rmc6f_reader.js"></script>
+<script src="./js/scattering_coeff_db.js"></script>
+<script src="./js/scattering_coeff_sources.js"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id), PI2=2*Math.PI, EPS=1e-15;
@@ -231,7 +244,7 @@ const PLOTLY_CDN="https://cdn.plot.ly/plotly-2.35.2.min.js";
 const BACKEND_PRESETS={webgpu_fft:{tol:"1e-7",upsamp:"1.5",gridLimit:"8000000"},fft:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"},direct:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"}};
 const WEBGPU_STAGE_ORDER=["spread_setup","spread_dispatch","amplify_dispatch","fft_dispatch","interp_dispatch","postmul_dispatch","smooth_axis0_dispatch","smooth_axis1_dispatch","smooth_axis2_dispatch","done","smooth_done"];
 const WEBGPU_STAGE_LABEL={spread_setup:"setup",spread_dispatch:"spread",amplify_dispatch:"amplify",fft_dispatch:"fft",interp_dispatch:"interp",postmul_dispatch:"postmul",smooth_axis0_dispatch:"smooth-h",smooth_axis1_dispatch:"smooth-k",smooth_axis2_dispatch:"smooth-l",done:"done",smooth_done:"smooth-done"};
-const state={rmc:null,res:null,sliceWin:null,volCache:null,render3dTimer:null,last3dStamp:0,sliceLevels:null,lastBar:null,plane:null,planeSliceCache:null,offscreen:null,planeMoveRaf:0,planeTraceReqId:0,planeTraceBusy:false,planeTraceQueued:null,planeMoving:false,render3dEpoch:0,sceneCamera:{iso:null,plane:null}};
+const state={rmc:null,res:null,sliceWin:null,volCache:null,render3dTimer:null,last3dStamp:0,sliceLevels:null,lastBar:null,plane:null,planeSliceCache:null,offscreen:null,planeMoveRaf:0,planeTraceReqId:0,planeTraceBusy:false,planeTraceQueued:null,planeMoving:false,planeMoveCameraLock:null,render3dEpoch:0,sceneCamera:{iso:null,plane:null}};
 const COLOR_PRESETS={
 turbo:{plotly:"Turbo",stops:[[0,[48,18,59]],[.2,[32,78,168]],[.45,[44,165,197]],[.7,[109,206,111]],[.9,[246,220,80]],[1,[232,79,53]]]},
 viridis:{plotly:"Viridis",stops:[[0,[68,1,84]],[.25,[59,82,139]],[.5,[33,145,140]],[.75,[94,201,98]],[1,[253,231,37]]]},
@@ -240,7 +253,6 @@ plasma:{plotly:"Plasma",stops:[[0,[13,8,135]],[.25,[126,3,168]],[.5,[203,71,119]
 magma:{plotly:"Magma",stops:[[0,[0,0,3]],[.25,[79,18,123]],[.5,[182,55,121]],[.75,[251,140,60]],[1,[252,253,191]]]},
 gray:{plotly:"Greys",stops:[[0,[0,0,0]],[1,[255,255,255]]]}
 };
-const NEUTRON={"va":0,"h":-0.3739,"d":0.6671,"he":0.326,"li":-0.19,"7l":-0.222,"be":0.779,"b":0.53,"c":0.6646,"n":0.936,"o":0.5803,"f":0.5654,"ne":0.4566,"na":0.363,"mg":0.5375,"al":0.3449,"si":0.41491,"p":0.513,"s":0.2847,"cl":0.9577,"ar":0.1909,"k":0.367,"ca":0.47,"sc":1.229,"ti":-0.3438,"v":-0.03824,"cr":0.3635,"mn":-0.373,"fe":0.945,"co":0.249,"ni":1.03,"cu":0.7718,"zn":0.568,"ga":0.7288,"ge":0.8185,"as":0.658,"se":0.797,"br":0.6795,"kr":0.781,"rb":0.709,"sr":0.702,"y":0.775,"zr":0.716,"nb":0.7054,"mo":0.6715,"tc":0.68,"ru":0.703,"rh":0.588,"pd":0.591,"ag":0.5922,"cd":0.487,"in":0.4065,"sn":0.6225,"sb":0.557,"te":0.58,"i":0.528,"xe":0.492,"cs":0.542,"ba":0.507,"la":0.824,"ce":0.484,"pr":0.458,"nd":0.769,"pm":1.26,"sm":0.08,"eu":0.722,"gd":0.65,"tb":0.738,"dy":1.69,"ho":0.801,"er":0.779,"tm":0.707,"yb":1.243,"lu":0.721,"hf":0.777,"ta":0.691,"w":0.486,"re":0.92,"os":1.07,"ir":1.06,"pt":0.96,"au":0.763,"hg":1.2692,"tl":0.8776,"pb":0.9405,"bi":0.8532,"po":0,"at":0,"rn":0,"fr":0,"ra":1,"ac":0,"th":1.031,"pa":0.91,"u":0.8417,"np":1.055,"pu":0,"am":0.83,"cm":0};
 
 function status(msg,kind=""){const e=$("status");e.textContent=msg;e.className=kind?kind:"";}
 function fmtMs(ms){if(!Number.isFinite(ms)||ms<0)return"0 ms";if(ms>=1000)return`${(ms/1000).toFixed(2)} s`;return`${ms.toFixed(0)} ms`;}
@@ -285,7 +297,7 @@ throw new Error(`webgpufft API missing.${serveHint} ${errs.join(" | ")}`.trim())
 async function ensurePlotly(){if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;const errs=[];try{await loadScriptOnce(PLOTLY_CDN);}catch(e){errs.push(e&&e.message?e.message:String(e));}if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;throw new Error(`Plotly is unavailable${errs.length?`: ${errs.join(" | ")}`:""}.`);}
 function applyBackendDefaults(backend,announce=false){const p=BACKEND_PRESETS[backend];if(!p)return;let changed=false;if($("tol").value!==p.tol){$("tol").value=p.tol;changed=true;}if($("upsamp").value!==p.upsamp){$("upsamp").value=p.upsamp;changed=true;}if($("gridLimit").value!==p.gridLimit){$("gridLimit").value=p.gridLimit;changed=true;}if(announce&&changed){const n=backend==="webgpu_fft"?"WebGPU":"CPU";status(`Applied ${n} preset: tol=${p.tol}, upsamp=${p.upsamp}, grid limit=${p.gridLimit}.`,"ok");}}
 function formatWebgpuStageTotals(stages){const parts=[];for(const k of WEBGPU_STAGE_ORDER){const v=stages[k]||0;if(v>0)parts.push(`${WEBGPU_STAGE_LABEL[k]||k}=${fmtMs(v)}`);}return parts.join(", ");}
-function syncResultControls(){const has=!!state.res,planeMode=$("sliceMode").value==="plane";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("axis").disabled=!has||planeMode;$("idx").disabled=!has||planeMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("levelMode").disabled=!has;$("levelWindowPct").disabled=!has||$("levelMode").value!=="both";$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale","planeApply"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
+function syncResultControls(){const has=!!state.res,planeMode=$("sliceMode").value==="plane";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("axis").disabled=!has||planeMode;$("idx").disabled=!has||planeMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("levelMode").disabled=!has;$("levelWindowPct").disabled=!has||$("levelMode").value!=="both";$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale","planeApply","planeReset"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
 function clamp01(v){return v<0?0:(v>1?1:v);}function lerp(a,b,t){return a+(b-a)*t;}
 function getColorPreset(){const key=$("colorMap")&&$("colorMap").value?$("colorMap").value:"viridis";return COLOR_PRESETS[key]||COLOR_PRESETS.viridis;}
 function rgbFromStops(stops,t){const u=clamp01(t);for(let i=0;i<stops.length-1;i++){const a=stops[i],b=stops[i+1];if(u>=a[0]&&u<=b[0]){const tt=(u-a[0])/((b[0]-a[0])||1);return[Math.round(lerp(a[1][0],b[1][0],tt)),Math.round(lerp(a[1][1],b[1][1],tt)),Math.round(lerp(a[1][2],b[1][2],tt))];}}return stops[stops.length-1][1];}
@@ -303,17 +315,34 @@ function movePlaneToSlider(idx){if(!state.plane)return;const p=state.plane;if(!p
 function rebuildPlaneSlider(){if(!state.res||!state.plane)return;const p=state.plane,b=boundsRes(state.res),n=getPlaneUnit(p),tv=[];for(let i=0;i<3;i++){const ni=n[i];if(Math.abs(ni)>1e-9){tv.push((b.min[i]-p.origin[i])/ni,(b.max[i]-p.origin[i])/ni);}}if(tv.length===0)tv.push(-1,1);tv.sort((a,bv)=>a-bv);const t0=tv[0],t1=tv[tv.length-1],count=401;p.sliderPositions=Array.from({length:count},(_,i)=>t0+(t1-t0)*i/Math.max(1,count-1));let best=0,bestAbs=Infinity;for(let i=0;i<p.sliderPositions.length;i++){const av=Math.abs(p.sliderPositions[i]);if(av<bestAbs){bestAbs=av;best=i;}}movePlaneToSlider(best);}
 function ensurePlaneState(res){const sig=planeSig(res);if(state.plane&&state.plane.signature===sig)return state.plane;const b=boundsRes(res),mid=[0.5*(b.min[0]+b.max[0]),0.5*(b.min[1]+b.max[1]),0.5*(b.min[2]+b.max[2])];state.plane={signature:sig,normal:[1,0,0],normalUnit:[1,0,0],origin:mid.slice(),center:mid.slice(),sliderPositions:[0],sliderIndex:0};invalidatePlaneSliceCache();rebuildPlaneSlider();return state.plane;}
 function applyPlaneFromInputs(){if(!state.res)return;ensurePlaneState(state.res);const nx=Number($("pNX").value),ny=Number($("pNY").value),nz=Number($("pNZ").value),ox=Number($("pOX").value),oy=Number($("pOY").value),oz=Number($("pOZ").value),rawCandidate=[Number.isFinite(nx)?nx:1,Number.isFinite(ny)?ny:0,Number.isFinite(nz)?nz:0],raw=Math.hypot(rawCandidate[0],rawCandidate[1],rawCandidate[2])>1e-12?rawCandidate:[1,0,0];state.plane.normal=raw;state.plane.normalUnit=norm3(raw);state.plane.origin=[Number.isFinite(ox)?ox:0,Number.isFinite(oy)?oy:0,Number.isFinite(oz)?oz:0];invalidatePlaneSliceCache();rebuildPlaneSlider();}
+function resetPlaneToolDefaults(){
+if(!state.res){
+$("sliceMode").value="plane";
+$("pNX").value="1";$("pNY").value="0";$("pNZ").value="0";
+$("pOX").value="0";$("pOY").value="0";$("pOZ").value="0";
+$("pCX").value="";$("pCY").value="";$("pCZ").value="";
+$("pRes").value="200";$("pScale").value="1.75";
+$("planeMoveVal").textContent="Plane center: -";
+updateSliceUI();
+return;
+}
+captureSceneCamera("plot3dPlane","plane");
+state.planeMoving=false;
+state.planeMoveCameraLock=null;
+$("sliceMode").value="plane";
+const b=boundsRes(state.res),mid=[0.5*(b.min[0]+b.max[0]),0.5*(b.min[1]+b.max[1]),0.5*(b.min[2]+b.max[2])];
+$("pNX").value="1";$("pNY").value="0";$("pNZ").value="0";
+$("pOX").value=mid[0].toFixed(6);$("pOY").value=mid[1].toFixed(6);$("pOZ").value=mid[2].toFixed(6);
+$("pRes").value="200";$("pScale").value="1.75";
+applyPlaneFromInputs();
+resetDisplayLevels();
+updateSliceUI();
+draw();
+const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));
+updatePlaneTraceFast(fullRes).catch(()=>{});
+}
 function sampleTrilinearPartialRenorm(vol,shape,fx,fy,fz){let i0=Math.floor(fx),j0=Math.floor(fy),k0=Math.floor(fz),rx=fx-i0,ry=fy-j0,rz=fz-k0,val=0,wSum=0;for(let dz=0;dz<=1;dz++)for(let dy=0;dy<=1;dy++)for(let dx=0;dx<=1;dx++){const ii=i0+dx,jj=j0+dy,kk=k0+dz;if(ii<0||jj<0||kk<0||ii>=shape[0]||jj>=shape[1]||kk>=shape[2])continue;const w=(dx?rx:1-rx)*(dy?ry:1-ry)*(dz?rz:1-rz),idxv=(ii*shape[1]+jj)*shape[2]+kk,valv=vol[idxv];if(!Number.isFinite(valv))continue;val+=valv*w;wSum+=w;}return wSum>0?val/wSum:NaN;}
 function buildNormalPlaneSlice(res,mode,wantMesh=false,resOverride){ensurePlaneState(res);const p=state.plane,n=getPlaneUnit(p),ref=Math.abs(n[0])>0.9?[0,1,0]:[1,0,0],u=norm3(cross(ref,n)),v=norm3(cross(n,u)),range=[res.h[res.h.length-1]-res.h[0],res.k[res.k.length-1]-res.k[0],res.l[res.l.length-1]-res.l[0]],planeScale=Math.max(0.2,Number($("pScale").value)||1.75),planeSize=Math.max(1e-6,Math.max(range[0],range[1],range[2])*planeScale),nRes=Math.max(32,Math.min(600,Math.floor(Number.isFinite(resOverride)?resOverride:(Number($("pRes").value)||200)))),c0=p.center,half=0.5*planeSize,step=nRes>1?planeSize/(nRes-1):0,key=`${planeSig(res)}|${mode}|${wantMesh?1:0}|${nRes}|${planeSize.toFixed(6)}|${n[0].toFixed(7)},${n[1].toFixed(7)},${n[2].toFixed(7)}|${c0[0].toFixed(7)},${c0[1].toFixed(7)},${c0[2].toFixed(7)}`;if(state.planeSliceCache&&state.planeSliceCache.key===key)return state.planeSliceCache.value;const h0=res.h[0],k0=res.k[0],l0=res.l[0],dh=stepRes(res.h),dk=stepRes(res.k),dl=stepRes(res.l),invDh=1/(Math.abs(dh)>1e-30?dh:1),invDk=1/(Math.abs(dk)>1e-30?dk:1),invDl=1/(Math.abs(dl)>1e-30?dl:1),rows=nRes,cols=nRes,data=new Float64Array(rows*cols),cx=c0[0],cy=c0[1],cz=c0[2],ux=u[0],uy=u[1],uz=u[2],vx=v[0],vy=v[1],vz=v[2],stepUx=ux*step,stepUy=uy*step,stepUz=uz*step;let valid=0;const X=wantMesh?new Array(rows):null,Y=wantMesh?new Array(rows):null,Z=wantMesh?new Array(rows):null,C=wantMesh?new Array(rows):null;for(let r=0;r<rows;r++){const rv=-half+r*step,base= r*cols;let px=cx+vx*rv-ux*half,py=cy+vy*rv-uy*half,pz=cz+vz*rv-uz*half;const rowX=wantMesh?new Array(cols):null,rowY=wantMesh?new Array(cols):null,rowZ=wantMesh?new Array(cols):null,rowC=wantMesh?new Array(cols):null;for(let c=0;c<cols;c++){const fx=(px-h0)*invDh,fy=(py-k0)*invDk,fz=(pz-l0)*invDl,val=sampleTrilinearPartialRenorm(res.I,res.shape,fx,fy,fz),vv=Number.isFinite(val)?scaledVal(val,mode):NaN;data[base+c]=vv;if(Number.isFinite(vv))valid++;if(wantMesh){if(Number.isFinite(vv)){rowX[c]=px;rowY[c]=py;rowZ[c]=pz;rowC[c]=vv;}else{rowX[c]=NaN;rowY[c]=NaN;rowZ[c]=NaN;rowC[c]=NaN;}}px+=stepUx;py+=stepUy;pz+=stepUz;}if(wantMesh){X[r]=rowX;Y[r]=rowY;Z[r]=rowZ;C[r]=rowC;}}const qU=mul(u,res.Bq),qV=mul(v,res.Bq),xScaleQ=Math.max(1e-12,normVec(qU)),yScaleQ=Math.max(1e-12,normVec(qV)),nr=p.normal||n,result={rows,cols,d:data,plane:`Plane n=(${nr[0].toFixed(3)},${nr[1].toFixed(3)},${nr[2].toFixed(3)}) c=(${c0[0].toFixed(4)},${c0[1].toFixed(4)},${c0[2].toFixed(4)})`,x:`u span ${(-half).toFixed(3)}..${half.toFixed(3)}`,y:`v span ${(-half).toFixed(3)}..${half.toFixed(3)}`,xLabel:"u",yLabel:"v",xMin:-half,xMax:half,yMin:-half,yMax:half,xScaleQ,yScaleQ,xQVec:qU,yQVec:qV,validCount:valid,x3:X,y3:Y,z3:Z,c3:C};state.planeSliceCache={key,value:result};return result;}
-
-class RMC{
-  constructor(){this.header=[];this.rows=[];this.super=[1,1,1];this.cellDeg=[NaN,NaN,NaN,NaN,NaN,NaN];this.cellRad=[NaN,NaN,NaN,NaN,NaN,NaN];this.cols=0;this.names=[];}
-  parse(txt){const lines=txt.split(/\r?\n/).map(l=>l.replace(/\x00/g,""));const s=this.findHeader(lines);this.header=lines.slice(0,s);this.rows=this.parseRows(lines.slice(s));this.getSuper();this.getCell();}
-  findHeader(lines){for(let i=0;i<Math.min(lines.length,151);i++) if(lines[i].includes("Atoms:")) return i+1; return 0;}
-  parseRows(lines){const out=[];for(const raw of lines){const line=raw.trim();if(!line) continue;const p=line.split(/\s+/);if(!this.cols){this.cols=p.length;if(this.cols===10)this.names=["atomNumber","element","id","x","y","z","refNumber","cellRefNumX","cellRefNumY","cellRefNumZ"];else if(this.cols===9)this.names=["atomNumber","element","x","y","z","refNumber","cellRefNumX","cellRefNumY","cellRefNumZ"];else throw new Error(`Unsupported RMC6f: ${this.cols} columns`);}const r={};for(let i=0;i<this.cols;i++){const n=this.names[i]||`c${i}`;r[n]=["atomNumber","x","y","z","refNumber","cellRefNumX","cellRefNumY","cellRefNumZ"].includes(n)?Number(p[i]):p[i];}out.push(r);}return out;}
-  getSuper(){const line=this.header.find(l=>l.includes("Supercell"));if(!line){this.super=[1,1,1];return;}const n=line.split(/\s+/).map(v=>parseInt(v,10)).filter(Number.isInteger);this.super=n.length>=3?n.slice(0,3):[1,1,1];}
-  getCell(){const line=this.header.find(l=>l.includes("Cell (Ang/deg)"))||this.header.find(l=>/^\s*Cell\b/i.test(l));if(!line)return;const v=line.split(/\s+/).map(Number).filter(Number.isFinite);if(v.length>=6){this.cellDeg=v.slice(0,6);this.cellRad=[v[0],v[1],v[2],v[3]*Math.PI/180,v[4]*Math.PI/180,v[5]*Math.PI/180];}}
-}
 
 function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
 function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
@@ -433,19 +462,18 @@ function cell2vec(a,b,c,al,be,ga){const v=[[0,0,0],[0,0,0],[0,0,0]];v[2][0]=a*Ma
 function vec2space(v){const av=col3(v,0),bv=col3(v,1),cv=col3(v,2),den=dot(av,cross(bv,cv));if(!Number.isFinite(den)||Math.abs(den)<1e-20)throw new Error("Invalid reciprocal basis");const ap=cross(bv,cv).map(x=>x/den),bp=cross(cv,av).map(x=>x/den),cp=cross(av,bv).map(x=>x/den),Bp=[ap,bp,cp];return{B:inv3(Bp),Bp};}
 function wrapDelta(x){if(x<-0.5)return x+1;if(x>0.5)return x-1;return x;}
 function axis(min,max,step){if(!Number.isFinite(min)||!Number.isFinite(max)||!Number.isFinite(step)||step<=0||max<min)throw new Error("Invalid axis limits/step");const out=[];let x=min,g=0;const eps=Math.abs(step)*1e-9;while(x<=max+eps){out.push(Number(x.toFixed(10)));x+=step;if(++g>2000000)throw new Error("Axis guard");}return out;}
-function inter3(x,y,z){const n=x.length,o=new Float64Array(n*3);for(let i=0;i<n;i++){o[i*3]=x[i];o[i*3+1]=y[i];o[i*3+2]=z[i];}return o;}
-function creal(a){const o=new Float64Array(a.length*2);for(let i=0;i<a.length;i++)o[i*2]=a[i];return o;}
 function needType3(fn){if(typeof fn!=="function")throw new Error(`Type-3 library not loaded. Check ${WEBGPU_NUFFT_CDN_BASE}/lib/type3_cpu_like.js`);}
+function needRmcReader(){if(!window.RMC6fReader||typeof window.RMC6fReader.parse!=="function")throw new Error("RMC6f reader module missing. Check ./js/rmc6f_reader.js");}
+function needDiffuseCore(){if(!window.DiffuseCore)throw new Error("Diffuse core module missing. Check ./js/diffuse_core.js");}
+function needDiffuseAmplitude(){if(!window.DiffuseAmplitude||typeof window.DiffuseAmplitude.computeIntensity!=="function")throw new Error("Diffuse amplitude module missing. Check ./js/diffuse_amplitude.js");}
+function inter3(x,y,z){needDiffuseCore();return window.DiffuseCore.interleave3(x,y,z);}
+function creal(a){needDiffuseCore();return window.DiffuseCore.complexReal(a);}
 
-function parseRMC(name,text){const r=new RMC();r.parse(text);if(!r.rows.length)throw new Error("No atom rows found");if(!r.cellRad.every(Number.isFinite))throw new Error("Cell parameters missing");const [sx,sy,sz]=r.super,[a,b,c,al,be,ga]=r.cellRad;const vpc=cell2vec(a/sx,b/sy,c/sz,al,be,ga),sp=vec2space(vpc),Bscaled=scaleCols(sp.B,[sx,sy,sz]),Bq=scaleMat(sp.Bp,PI2);
-const n=r.rows.length,x=new Float64Array(n),y=new Float64Array(n),z=new Float64Array(n),xa=new Float64Array(n),ya=new Float64Array(n),za=new Float64Array(n),dx=new Float64Array(n),dy=new Float64Array(n),dz=new Float64Array(n),fca=new Float64Array(n),unknown=new Set(),present=new Set();
-for(let i=0;i<n;i++){const row=r.rows[i],fx=Number(row.cellRefNumX)/sx,fy=Number(row.cellRefNumY)/sy,fz=Number(row.cellRefNumZ)/sz,d0=wrapDelta(Number(row.x)-fx),d1=wrapDelta(Number(row.y)-fy),d2=wrapDelta(Number(row.z)-fz),pA=mul([fx,fy,fz],Bscaled),pD=mul([d0,d1,d2],Bscaled);xa[i]=pA[0];ya[i]=pA[1];za[i]=pA[2];dx[i]=pD[0];dy[i]=pD[1];dz[i]=pD[2];x[i]=pA[0]+pD[0];y[i]=pA[1]+pD[1];z[i]=pA[2]+pD[2];const e=String(row.element||"").trim(),k=e.toLowerCase();present.add(e);if(Object.prototype.hasOwnProperty.call(NEUTRON,k))fca[i]=NEUTRON[k];else{fca[i]=10;unknown.add(e);}}
-return{file:name,atoms:n,super:[sx,sy,sz],cellDeg:r.cellDeg.slice(0,6),Bp:sp.Bp,Bq,x,y,z,xa,ya,za,dx,dy,dz,fca,present:[...present].sort(),unknown:[...unknown].sort()};}
+function parseRMC(name,text){needRmcReader();needDiffuseCore();const parsed=window.RMC6fReader.parse(name,text);return window.DiffuseCore.attachNeutronCoefficients(parsed,10);}
 
 function meta(r){$("mFile").textContent=r.file;$("mAtoms").textContent=String(r.atoms);$("mSuper").textContent=r.super.join(" × ");const c=r.cellDeg.map((v,i)=>i<3?v.toFixed(5):v.toFixed(3));$("mCell").textContent=`${c[0]}, ${c[1]}, ${c[2]} ; ${c[3]}, ${c[4]}, ${c[5]}`;$("mElem").textContent=r.present.join(", ");$("hStep").value=(1/r.super[0]).toFixed(6);$("kStep").value=(1/r.super[1]).toFixed(6);$("lStep").value=(1/r.super[2]).toFixed(6);}
 
-function targetsChunk(h,k,l,Bq,start,count){const nh=h.length,nk=k.length,nl=l.length,total=nh*nk*nl;if(start<0||count<0||start+count>total)throw new Error(`Target chunk out of range: start=${start}, count=${count}, total=${total}`);const t=new Float64Array(count*3),plane=nk*nl;for(let q=0;q<count;q++){const linear=start+q,ih=Math.floor(linear/plane),rem=linear-ih*plane,ik=Math.floor(rem/nl),il=rem-ik*nl,v=mul([h[ih],k[ik],l[il]],Bq);t[q*3]=v[0];t[q*3+1]=v[1];t[q*3+2]=v[2];}return t;}
-function targets(h,k,l,Bq){return targetsChunk(h,k,l,Bq,0,h.length*k.length*l.length);}
+function targetsChunk(h,k,l,Bq,start,count){needDiffuseCore();return window.DiffuseCore.targetsChunk(h,k,l,Bq,start,count);}
 function acosh1(x){if(x<1)x=1;return Math.log(x+Math.sqrt(Math.max(0,x*x-1)));}
 function dftComplex(reIn,imIn,inverse=false){const n=reIn.length,reOut=new Float64Array(n),imOut=new Float64Array(n),sgn=inverse?1:-1,scale=inverse?1/n:1;for(let k=0;k<n;k++){let ar=0,ai=0;for(let t=0;t<n;t++){const ang=sgn*2*Math.PI*k*t/n,c=Math.cos(ang),s=Math.sin(ang),r=reIn[t],im=imIn[t];ar+=r*c-im*s;ai+=r*s+im*c;}reOut[k]=ar*scale;imOut[k]=ai*scale;}return{re:reOut,im:imOut};}
 function fftMagShiftNorm(window,nfft){const re=new Float64Array(nfft),im=new Float64Array(nfft);for(let i=0;i<Math.min(window.length,nfft);i++)re[i]=window[i];const F=dftComplex(re,im,false),out=new Float64Array(nfft),tmp=new Float64Array(nfft);let mx=0,den=Math.max(1e-12,window.length/2);for(let i=0;i<nfft;i++){const m=Math.hypot(F.re[i]/den,F.im[i]/den);tmp[i]=m;if(m>mx)mx=m;}if(mx<=0)mx=1;const mid=Math.floor(nfft/2);for(let i=0;i<nfft;i++)out[i]=tmp[(i+mid)%nfft]/mx;return out;}
@@ -459,10 +487,14 @@ function smoothIntensity3d(I,shape,superCell,cfg){const nh=shape[0],nk=shape[1],
 function idx(shape,ih,ik,il){return(ih*shape[1]+ik)*shape[2]+il;}
 function setPlot3dStatus(msg){const e=$("plot3dStatus");if(e)e.textContent=msg;}
 function cloneCamera(cam){if(!cam)return null;return JSON.parse(JSON.stringify(cam));}
-function readSceneCamera(plotId){const gd=$(plotId);if(!gd)return null;const scene=gd._fullLayout&&gd._fullLayout.scene?gd._fullLayout.scene:null;if(scene&&scene.camera)return cloneCamera(scene.camera);if(gd.layout&&gd.layout.scene&&gd.layout.scene.camera)return cloneCamera(gd.layout.scene.camera);if(scene){try{if(scene._scene&&typeof scene._scene.getCamera==="function"){const cam=scene._scene.getCamera();if(cam)return cloneCamera(cam);}}catch(_){/* no-op */}}return null;}
+function readSceneCamera(plotId){const gd=$(plotId);if(!gd)return null;const scene=gd._fullLayout&&gd._fullLayout.scene?gd._fullLayout.scene:null;if(scene){try{if(scene._scene&&typeof scene._scene.getCamera==="function"){const cam=scene._scene.getCamera();if(cam)return cloneCamera(cam);}}catch(_){/* no-op */}if(scene.camera)return cloneCamera(scene.camera);}if(gd.layout&&gd.layout.scene&&gd.layout.scene.camera)return cloneCamera(gd.layout.scene.camera);return null;}
 function captureSceneCamera(plotId,key){const cam=readSceneCamera(plotId);if(cam)state.sceneCamera[key]=cam;}
 function capture3dCameras(){captureSceneCamera("plot3dIso","iso");captureSceneCamera("plot3dPlane","plane");}
-function wireCameraTracking(plotId,key){const gd=$(plotId);if(!gd||gd.__cameraTrackKey===key)return;gd.__cameraTrackKey=key;if(typeof gd.on==="function"){const onCam=(ev)=>{if(ev&&ev["scene.camera"])state.sceneCamera[key]=cloneCamera(ev["scene.camera"]);setTimeout(()=>captureSceneCamera(plotId,key),0);};gd.on("plotly_relayout",onCam);gd.on("plotly_relayouting",onCam);gd.on("plotly_doubleclick",()=>setTimeout(()=>captureSceneCamera(plotId,key),0));}}
+function mergeCameraFromRelayout(prev,ev){const cam=cloneCamera(prev)||{};if(ev&&ev["scene.camera"]&&typeof ev["scene.camera"]==="object"){return cloneCamera(ev["scene.camera"]);}if(!ev||typeof ev!=="object")return cam;let touched=false;for(const k of Object.keys(ev)){if(!k.startsWith("scene.camera."))continue;const path=k.substring("scene.camera.".length).split(".");if(!path.length)continue;let obj=cam;for(let i=0;i<path.length-1;i++){const p=path[i];if(!obj[p]||typeof obj[p]!=="object")obj[p]={};obj=obj[p];}obj[path[path.length-1]]=ev[k];touched=true;}return touched?cam:(cloneCamera(prev)||null);}
+function getCurrentCamera(plotId,key){return readSceneCamera(plotId)||(state.sceneCamera[key]?cloneCamera(state.sceneCamera[key]):null);}
+function cameraClose(a,b,eps=1e-10){if(!a||!b)return false;const va=[a.eye&&a.eye.x,a.eye&&a.eye.y,a.eye&&a.eye.z,a.center&&a.center.x,a.center&&a.center.y,a.center&&a.center.z,a.up&&a.up.x,a.up&&a.up.y,a.up&&a.up.z],vb=[b.eye&&b.eye.x,b.eye&&b.eye.y,b.eye&&b.eye.z,b.center&&b.center.x,b.center&&b.center.y,b.center&&b.center.z,b.up&&b.up.x,b.up&&b.up.y,b.up&&b.up.z];for(let i=0;i<va.length;i++){const x=Number(va[i]),y=Number(vb[i]);if(!Number.isFinite(x)||!Number.isFinite(y))return false;if(Math.abs(x-y)>eps)return false;}return true;}
+async function applyCameraIfNeeded(plotId,key,cam){if(!cam)return;const current=readSceneCamera(plotId);if(current&&cameraClose(current,cam)){state.sceneCamera[key]=cloneCamera(cam);return;}const plotly=await ensurePlotly();const gd=$(plotId);if(!gd)return;await plotly.relayout(gd,{"scene.camera":cloneCamera(cam)});state.sceneCamera[key]=cloneCamera(cam);}
+function wireCameraTracking(plotId,key){const gd=$(plotId);if(!gd||gd.__cameraTrackKey===key)return;gd.__cameraTrackKey=key;if(typeof gd.on==="function"){const onCam=(ev)=>{if(key==="plane"&&state.planeMoving&&state.planeMoveCameraLock)return;const merged=mergeCameraFromRelayout(state.sceneCamera[key],ev);if(merged)state.sceneCamera[key]=merged;setTimeout(()=>captureSceneCamera(plotId,key),0);};gd.on("plotly_relayout",onCam);gd.on("plotly_relayouting",onCam);gd.on("plotly_doubleclick",()=>setTimeout(()=>captureSceneCamera(plotId,key),0));}}
 function scaledVal(v,mode){return mode==="log"?Math.log10(Math.max(0,v)+EPS):v;}
 function downsampleIndices(n,step){const out=[];for(let i=0;i<n;i+=step)out.push(i);if(out.length===0||out[out.length-1]!==n-1)out.push(n-1);return out;}
 function chooseStrides(shape,maxVox){const nh=shape[0],nk=shape[1],nl=shape[2],limit=Math.max(5000,Math.floor(maxVox||220000));let sh=1,sk=1,sl=1;while(Math.ceil(nh/sh)*Math.ceil(nk/sk)*Math.ceil(nl/sl)>limit){const ah=Math.ceil(nh/sh),ak=Math.ceil(nk/sk),al=Math.ceil(nl/sl);if(ah>=ak&&ah>=al)sh++;else if(ak>=ah&&ak>=al)sk++;else sl++;}return[sh,sk,sl];}
@@ -477,6 +509,7 @@ function makeNormalPlaneTrace(res,mode,resOverride){const planeRes=Math.max(40,M
 async function updatePlaneTraceFast(resHint){
 if(!state.res||$("showPlane3d").value!=="1"||getSliceMode()!=="plane")return;
 state.planeTraceReqId++;
+const reqId=state.planeTraceReqId;
 state.planeTraceQueued=Number.isFinite(resHint)?Math.max(40,Math.min(260,Math.floor(resHint))):null;
 if(state.planeTraceBusy)return;
 state.planeTraceBusy=true;
@@ -490,8 +523,18 @@ const queued=state.planeTraceQueued;
 state.planeTraceQueued=null;
 const planeRes=Number.isFinite(queued)?queued:Math.max(48,Math.min(140,fastPlaneRes()));
 const tr=makeNormalPlaneTrace(state.res,$("scale").value,planeRes);
+let keepCam=null;
+if(state.planeMoving){
+const liveCam=readSceneCamera("plot3dPlane");
+if(liveCam)state.planeMoveCameraLock=cloneCamera(liveCam);
+keepCam=state.planeMoveCameraLock?cloneCamera(state.planeMoveCameraLock):null;
+}
+if(keepCam){
+await plotly.update(gd,{x:[tr.x],y:[tr.y],z:[tr.z],customdata:[tr.customdata],surfacecolor:[tr.surfacecolor],colorscale:[tr.colorscale],opacity:[tr.opacity],hovertemplate:[tr.hovertemplate]},{"scene.camera":keepCam},[0]);
+}else{
 await plotly.restyle(gd,{x:[tr.x],y:[tr.y],z:[tr.z],customdata:[tr.customdata],surfacecolor:[tr.surfacecolor],colorscale:[tr.colorscale],opacity:[tr.opacity],hovertemplate:[tr.hovertemplate]},0);
-captureSceneCamera("plot3dPlane","plane");
+}
+if(!keepCam){captureSceneCamera("plot3dPlane","plane");}
 if(state.planeTraceQueued===null)break;
 }
 }finally{
@@ -531,9 +574,9 @@ const axisOverlay=makeHklAxesOverlayTraces(res),qb=qBoundsFromRes(res),qxRange=[
 if(renderEpoch!==state.render3dEpoch||(!force&&state.planeMoving&&getSliceMode()==="plane"))return;
 const sceneBase={aspectmode:"manual",aspectratio:{x:spanQx/spanMax,y:spanQy/spanMax,z:spanQz/spanMax},uirevision:sceneRev,xaxis:{visible:false,range:qxRange,autorange:false,backgroundcolor:"#0f172a",gridcolor:"#2b3647",zerolinecolor:"#44526b",color:"#dbeafe"},yaxis:{visible:false,range:qyRange,autorange:false,backgroundcolor:"#0f172a",gridcolor:"#2b3647",zerolinecolor:"#44526b",color:"#dbeafe"},zaxis:{visible:false,range:qzRange,autorange:false,backgroundcolor:"#0f172a",gridcolor:"#2b3647",zerolinecolor:"#44526b",color:"#dbeafe"}};
 const sceneIso={...sceneBase,xaxis:{...sceneBase.xaxis},yaxis:{...sceneBase.yaxis},zaxis:{...sceneBase.zaxis}},scenePlane={...sceneBase,xaxis:{...sceneBase.xaxis},yaxis:{...sceneBase.yaxis},zaxis:{...sceneBase.zaxis}};
-const keepIsoCam=readSceneCamera("plot3dIso")||(state.sceneCamera.iso?cloneCamera(state.sceneCamera.iso):null),keepPlaneCam=readSceneCamera("plot3dPlane")||(state.sceneCamera.plane?cloneCamera(state.sceneCamera.plane):null);
-if(keepIsoCam)sceneIso.camera=keepIsoCam;
-if(keepPlaneCam)scenePlane.camera=keepPlaneCam;
+const isoGd=$("plot3dIso"),planeGd=$("plot3dPlane"),hasIsoPlot=!!(isoGd&&Array.isArray(isoGd.data)&&isoGd.data.length),hasPlanePlot=!!(planeGd&&Array.isArray(planeGd.data)&&planeGd.data.length),liveIsoCam=readSceneCamera("plot3dIso"),livePlaneCam=readSceneCamera("plot3dPlane"),keepIsoCam=liveIsoCam||(state.sceneCamera.iso?cloneCamera(state.sceneCamera.iso):null),keepPlaneCam=livePlaneCam||(state.sceneCamera.plane?cloneCamera(state.sceneCamera.plane):null);
+if(!hasIsoPlot&&!liveIsoCam&&keepIsoCam)sceneIso.camera=keepIsoCam;
+if(!hasPlanePlot&&!livePlaneCam&&keepPlaneCam)scenePlane.camera=keepPlaneCam;
 const layoutIso={paper_bgcolor:"#070b12",plot_bgcolor:"#070b12",font:{color:"#dbeafe"},margin:{l:0,r:0,b:0,t:34},uirevision:sceneRev,title:{text:`Diffuse 3D Isosurface (${mode})${showIso?"":" [OFF]"}`,font:{size:14}},scene:sceneIso};
 const layoutPlane={paper_bgcolor:"#070b12",plot_bgcolor:"#070b12",font:{color:"#dbeafe"},margin:{l:0,r:0,b:0,t:34},uirevision:sceneRev,title:{text:`Slice Plane (${getSliceMode()==="plane"?"Normal":"Axis"})${showPlane?"":" [OFF]"}`,font:{size:14}},scene:scenePlane};
 await Promise.all([
@@ -549,7 +592,7 @@ wireCameraTracking("plot3dPlane","plane");
 state.last3dStamp=performance.now();
 setPlot3dStatus(`3D ready. ${isoMsg}. plane=${planeTraces.length?"on":"off"}.`);
 }
-function schedule3dRender(force=false,delayMs=100){if(!state.res)return;if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}if(!force&&$("auto3d").value!=="1")return;if(!force&&state.planeMoving&&getSliceMode()==="plane")return;const delay=Math.max(0,Math.floor(Number.isFinite(delayMs)?delayMs:100));state.render3dTimer=setTimeout(()=>{state.render3dTimer=null;render3d(force).catch(e=>setPlot3dStatus(`3D render failed: ${e.message}`));},delay);}
+function schedule3dRender(force=false,delayMs=100){if(!state.res)return;if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}if(!force&&$("auto3d").value!=="1")return;if(!force&&state.planeMoving&&getSliceMode()==="plane")return;const delay=Math.max(0,Math.floor(Number.isFinite(delayMs)?delayMs:100));state.render3dTimer=setTimeout(()=>{state.render3dTimer=null;if(state.planeMoving&&getSliceMode()==="plane")return;render3d(force).catch(e=>setPlot3dStatus(`3D render failed: ${e.message}`));},delay);}
 function ensureSliceWindow(){if(state.sliceWin&&!state.sliceWin.closed)return state.sliceWin;const w=window.open("","diffuse_slice_window","width=1180,height=860,resizable=yes,scrollbars=yes");if(!w)throw new Error("Popup blocked by browser.");w.document.open();w.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>Diffuse Slice View</title><style>body{margin:0;font-family:Segoe UI,Tahoma,sans-serif;background:#060b14;color:#dbeafe}header{padding:10px 12px;background:#0f172a;border-bottom:1px solid #273449}main{padding:10px}#im{width:100%;height:auto;border:1px solid #334155;border-radius:8px;background:#0b1321}#meta{margin-top:10px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap}</style></head><body><header><strong>Diffuse Slice Window</strong></header><main><img id="im" alt="slice"><div id="meta">No slice yet.</div></main><script>window.updateSlice=function(p){document.title='Diffuse Slice - '+(p.title||'-');document.getElementById('im').src=p.img||'';document.getElementById('meta').textContent=(p.title||'')+'\\n'+(p.stats||'');};<\/script></body></html>`);w.document.close();state.sliceWin=w;$("closeSliceWin").disabled=false;return w;}
 function pushSliceWindow(){const w=state.sliceWin;if(!w||w.closed){if(w&&w.closed){state.sliceWin=null;$("closeSliceWin").disabled=true;}return;}if(!state.res)return;const cv=$("heatmap"),payload={title:$("sliceVal").textContent||"",stats:$("sliceStats").textContent||"",img:cv&&cv.toDataURL?cv.toDataURL("image/png"):""};if(typeof w.updateSlice==="function")w.updateSlice(payload);}
 function openSliceWindow(){const w=ensureSliceWindow();pushSliceWindow();try{w.focus();}catch(_){/* no-op */}}
@@ -559,35 +602,41 @@ async function runType3(spec,opts,backend,onStageTiming){if(backend==="webgpu_ff
 
 async function compute(){
 if(!state.rmc){status("Load an .rmc6f file first.","warn");return;}
-state.planeMoving=false;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;
-const r=state.rmc,h=axis(Number($("hMin").value),Number($("hMax").value),Number($("hStep").value)),k=axis(Number($("kMin").value),Number($("kMax").value),Number($("kStep").value)),l=axis(Number($("lMin").value),Number($("lMax").value),Number($("lStep").value)),shape=[h.length,k.length,l.length],grid=shape[0]*shape[1]*shape[2],backend=$("backend").value,limit=Number($("gridLimit").value);
+if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}
+capture3dCameras();
+const prevPlaneState=state.plane?JSON.parse(JSON.stringify(state.plane)):null;
+state.planeMoving=false;state.planeMoveCameraLock=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;
+const r=state.rmc,h=axis(Number($("hMin").value),Number($("hMax").value),Number($("hStep").value)),k=axis(Number($("kMin").value),Number($("kMax").value),Number($("kStep").value)),l=axis(Number($("lMin").value),Number($("lMax").value),Number($("lStep").value)),shape=[h.length,k.length,l.length],grid=shape[0]*shape[1]*shape[2],backend=$("backend").value,limit=Number($("gridLimit").value),scatteringCfg=getScatteringConfigFromUi();
 if(!Number.isFinite(limit)||limit<1)throw new Error("Grid safety limit must be positive");
 const useWebgpuChunking=backend==="webgpu_fft"&&grid>limit;
 if(backend!=="webgpu_fft"&&grid>limit){const rec=Math.ceil(grid*1.1);throw new Error(`Grid ${grid} exceeds limit ${limit}. Set Grid safety limit >= ${rec} (or choose WebGPU preset).`);}
 $("run").disabled=true;$("saveDat").disabled=true;$("saveJson").disabled=true;$("axis").disabled=true;$("idx").disabled=true;$("scale").disabled=true;$("render3d").disabled=true;$("openSliceWin").disabled=true;$("sliceMode").disabled=true;$("planeMove").disabled=true;$("planeApply").disabled=true;
 const opts={tol:Number($("tol").value),upsampfac:Number($("upsamp").value)},sub=$("subAvg").value==="1",smoothEnabled=$("smooth3d").value==="1",smoothType=$("smoothType").value,chebDb=Number.isFinite(Number($("chebDb").value))?Number($("chebDb").value):100,smoothScale=Math.max(1,Math.floor(Number($("smoothScale").value)||1)),t0=performance.now(),timings={prepare:0,a:0,aavg:0,adelta:0,finalize:0,smooth:0,webgpu:{}};
 const onStageTiming=(stage,dt)=>{timings.webgpu[stage]=(timings.webgpu[stage]||0)+dt;};
-status(`Preparing grid ${shape[0]}×${shape[1]}×${shape[2]} (${grid}) ...`);await new Promise(r=>setTimeout(r,0));
-const tPrep=performance.now();const src=inter3(r.x,r.y,r.z),srcA=inter3(r.xa,r.ya,r.za),srcD=inter3(r.dx,r.dy,r.dz),cAtoms=creal(r.fca),cOnes=new Float64Array(r.atoms*2);for(let i=0;i<r.atoms;i++)cOnes[i*2]=1;timings.prepare=performance.now()-tPrep;
-const I=new Float64Array(grid),mInv=1/r.atoms;let min=Infinity,max=-Infinity;
+status(`Preparing grid ${shape[0]}×${shape[1]}×${shape[2]} (${grid}) for ${scatteringCfg.type} ...`);await new Promise(r=>setTimeout(r,0));
+needDiffuseAmplitude();
 const chunkSize=useWebgpuChunking?Math.max(1,Math.floor(limit)):grid,totalChunks=Math.max(1,Math.ceil(grid/chunkSize));
 if(useWebgpuChunking){status(`Grid ${grid} exceeds safety limit ${limit}; running WebGPU chunked NUFFT in ${totalChunks} chunks ...`,"warn");await new Promise(r=>setTimeout(r,0));}
-for(let chunk=0,start=0;start<grid;chunk++,start+=chunkSize){
-const count=Math.min(chunkSize,grid-start),trg=targetsChunk(h,k,l,r.Bq,start,count),chunkTag=totalChunks>1?` (${chunk+1}/${totalChunks})`:"";
-status(`Computing A(hkl)${chunkTag} ...`);await new Promise(r=>setTimeout(r,0));
-const tA=performance.now();const qRes=await runType3({dim:3,isign:1,sourcesPacked:src,targetsPacked:trg,strengths:cAtoms},opts,backend,onStageTiming);timings.a+=performance.now()-tA;const q=qRes.out;
-let qa=null,qd=null;
-if(sub){
-status(`Computing Aavg(hkl)${chunkTag} ...`);await new Promise(r=>setTimeout(r,0));
-const tAa=performance.now();const qaRes=await runType3({dim:3,isign:1,sourcesPacked:srcA,targetsPacked:trg,strengths:cOnes},opts,backend,onStageTiming);timings.aavg+=performance.now()-tAa;qa=qaRes.out;
-status(`Computing Adelta(hkl)${chunkTag} ...`);await new Promise(r=>setTimeout(r,0));
-const tAd=performance.now();const qdRes=await runType3({dim:3,isign:1,sourcesPacked:srcD,targetsPacked:trg,strengths:cAtoms},opts,backend,onStageTiming);timings.adelta+=performance.now()-tAd;qd=qdRes.out;
-}
-status(`Finalizing intensity${chunkTag} ...`);await new Promise(r=>setTimeout(r,0));
-const tFin=performance.now();
-for(let i=0;i<count;i++){const ar=q[i*2],ai=q[i*2+1];let br=0,bi=0;if(sub){const avr=qa[i*2],avi=qa[i*2+1],dr=qd[i*2],di=qd[i*2+1];br=(avr*dr-avi*di)*mInv;bi=(avr*di+avi*dr)*mInv;}const rr=ar-br,ii=ai-bi,v=rr*rr+ii*ii;I[start+i]=v;if(v<min)min=v;if(v>max)max=v;}
-timings.finalize+=performance.now()-tFin;
-}
+const amp=await window.DiffuseAmplitude.computeIntensity({
+parsed:r,
+h,k,l,Bq:r.Bq,
+backend,
+opts,
+sub,
+chunkSize,
+scattering:scatteringCfg,
+runType3,
+onStageTiming,
+onStatus:(msg)=>{status(msg);}
+});
+timings.prepare=amp.timings.prepare||0;
+timings.a=amp.timings.a||0;
+timings.aavg=amp.timings.aavg||0;
+timings.adelta=amp.timings.adelta||0;
+timings.finalize=amp.timings.finalize||0;
+const I=amp.I;
+let min=amp.min;
+let max=amp.max;
 let Iout=I,smoothMeta=null;
 if(smoothEnabled){
 status(`Applying ${smoothType} smoothing ...`);await new Promise(r=>setTimeout(r,0));
@@ -608,10 +657,11 @@ const sm=smoothIntensity3d(I,shape,r.super,{type:smoothType,chebDb:chebDb,scale:
 }
 timings.smooth=performance.now()-tSm;
 }
-state.res={file:r.file,shape,h,k,l,Bq:r.Bq,Bp:r.Bp,I:Iout,min,max,backend,opts:{...opts,subtractAverage:sub,targetChunkSize:chunkSize,targetChunks:totalChunks,smoothing:{enabled:smoothEnabled,type:smoothType,chebDb:chebDb,scale:smoothScale,kernel:smoothMeta?smoothMeta.kernel:null,engine:smoothMeta?smoothMeta.engine:null}},timings};
-state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};
-const dt=(performance.now()-t0)/1000,timingParts=[`prep=${fmtMs(timings.prepare)}`,`A=${fmtMs(timings.a)}`];if(sub){timingParts.push(`Aavg=${fmtMs(timings.aavg)}`);timingParts.push(`Adelta=${fmtMs(timings.adelta)}`);}timingParts.push(`final=${fmtMs(timings.finalize)}`);if(timings.smooth>0)timingParts.push(`smooth=${fmtMs(timings.smooth)}`);const gpuBreakdown=backend==="webgpu_fft"?formatWebgpuStageTotals(timings.webgpu):"",chunkMsg=totalChunks>1?` chunks=${totalChunks}`:"";const timingMsg=`Timing: ${timingParts.join(", ")}${gpuBreakdown?` | GPU ${gpuBreakdown}`:""}${chunkMsg}`;const smoothMsg=smoothMeta?` Smoothed (${smoothMeta.type}, kernel=${smoothMeta.kernel.join("x")}).`:"";const unknownMsg=r.unknown.length?` Unknown elements: ${r.unknown.join(", ")} -> fca=10.0.`:"";status(`Done in ${dt.toFixed(2)} s. I range [${min.toExponential(4)}, ${max.toExponential(4)}]. ${timingMsg}${smoothMsg}${unknownMsg}`,r.unknown.length?"warn":"ok");
-$("scale").value=$("defScale").value;syncResultControls();updateSliceUI();draw();schedule3dRender(true);$("run").disabled=false;
+state.res={file:r.file,shape,h,k,l,Bq:r.Bq,Bp:r.Bp,I:Iout,min,max,backend,opts:{...opts,subtractAverage:sub,targetChunkSize:chunkSize,targetChunks:totalChunks,scattering:scatteringCfg,scatteringEngine:amp.profile&&amp.profile.engine?amp.profile.engine:"neutron_fast",smoothing:{enabled:smoothEnabled,type:smoothType,chebDb:chebDb,scale:smoothScale,kernel:smoothMeta?smoothMeta.kernel:null,engine:smoothMeta?smoothMeta.engine:null}},timings};
+const newSig=planeSig(state.res),canRestorePlane=!!(prevPlaneState&&prevPlaneState.signature===newSig);
+state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=canRestorePlane?prevPlaneState:null;state.planeSliceCache=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;
+const dt=(performance.now()-t0)/1000,timingParts=[`prep=${fmtMs(timings.prepare)}`,`A=${fmtMs(timings.a)}`];if(sub){timingParts.push(`Aavg=${fmtMs(timings.aavg)}`);timingParts.push(`Adelta=${fmtMs(timings.adelta)}`);}timingParts.push(`final=${fmtMs(timings.finalize)}`);if(timings.smooth>0)timingParts.push(`smooth=${fmtMs(timings.smooth)}`);const gpuBreakdown=backend==="webgpu_fft"?formatWebgpuStageTotals(timings.webgpu):"",chunkMsg=totalChunks>1?` chunks=${totalChunks}`:"";const timingMsg=`Timing: ${timingParts.join(", ")}${gpuBreakdown?` | GPU ${gpuBreakdown}`:""}${chunkMsg}`;const smoothMsg=smoothMeta?` Smoothed (${smoothMeta.type}, kernel=${smoothMeta.kernel.join("x")}).`:"";const scatMsg=amp.profile&&amp.profile.description?` ${amp.profile.description}.`:"";const unknownMsg=(scatteringCfg.type==="neutron"&&r.unknown.length)?` Unknown elements: ${r.unknown.join(", ")} -> fca=10.0.`:"";status(`Done in ${dt.toFixed(2)} s. I range [${min.toExponential(4)}, ${max.toExponential(4)}].${scatMsg} ${timingMsg}${smoothMsg}${unknownMsg}`,(scatteringCfg.type==="neutron"&&r.unknown.length)?"warn":"ok");
+$("scale").value=$("defScale").value;syncResultControls();updateSliceUI();draw();schedule3dRender(true,0);$("run").disabled=false;
 }
 
 function slice(res,axisName,fix){const [nh,nk,nl]=res.shape,qH=mul([1,0,0],res.Bq),qK=mul([0,1,0],res.Bq),qL=mul([0,0,1],res.Bq);if(axisName==="h"){const rows=nk,cols=nl,d=new Float64Array(rows*cols);for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)d[r*cols+c]=res.I[idx(res.shape,fix,r,c)];return{rows,cols,d,plane:`H=${res.h[fix]}`,x:`L ${res.l[0]}..${res.l[nl-1]}`,y:`K ${res.k[0]}..${res.k[nk-1]}`,xLabel:"L",yLabel:"K",xMin:res.l[0],xMax:res.l[nl-1],yMin:res.k[0],yMax:res.k[nk-1],xScaleQ:Math.max(1e-12,normVec(qL)),yScaleQ:Math.max(1e-12,normVec(qK)),xQVec:qL,yQVec:qK};}
@@ -727,18 +777,95 @@ function saveText(name,text,mime){const b=new Blob([text],{type:mime}),u=URL.cre
 function saveDat(){if(!state.res)return;const r=state.res,[nh,nk,nl]=r.shape,out=["# h k l intensity"];for(let i=0;i<nh;i++)for(let j=0;j<nk;j++)for(let m=0;m<nl;m++){out.push(`${r.h[i]} ${r.k[j]} ${r.l[m]} ${r.I[idx(r.shape,i,j,m)]}`);}saveText(`${base()}.dat`,out.join("\n"),"text/plain;charset=utf-8");}
 function saveJson(){if(!state.res||!state.rmc)return;const r=state.res,p={sourceFile:state.rmc.file,atoms:state.rmc.atoms,supercell:state.rmc.super,cellDeg:state.rmc.cellDeg,shape:r.shape,hAxis:r.h,kAxis:r.k,lAxis:r.l,Bq:r.Bq,Bp:r.Bp,hklToQ:"Q = [h,k,l] * Bq",minI:r.min,maxI:r.max,backend:r.backend,options:r.opts,timings:r.timings||null,intensity:Array.from(r.I)};saveText(`${base()}.json`,JSON.stringify(p),"application/json;charset=utf-8");}
 
-async function onFile(f){if(!f)return;status(`Reading ${f.name} ...`);const txt=await f.text(),parsed=parseRMC(f.name,txt);state.rmc=parsed;state.res=null;state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeMoving=false;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};meta(parsed);syncResultControls();draw();setPlot3dStatus("3D view is idle.");if(parsed.unknown.length)status(`Loaded ${f.name}. Unknown elements: ${parsed.unknown.join(", ")} -> fca=10.0.`,`warn`);else status(`Loaded ${f.name}. Ready to compute.`,`ok`);}
+async function onFile(f){if(!f)return;status(`Reading ${f.name} ...`);const txt=await f.text(),parsed=parseRMC(f.name,txt);state.rmc=parsed;state.res=null;state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeMoving=false;state.planeMoveCameraLock=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};meta(parsed);syncResultControls();draw();setPlot3dStatus("3D view is idle.");if(parsed.unknown.length)status(`Loaded ${f.name}. Unknown elements: ${parsed.unknown.join(", ")} -> fca=10.0.`,`warn`);else status(`Loaded ${f.name}. Ready to compute.`,`ok`);}
 
+const SCATTER_MODEL_OPTIONS={
+neutron:[{value:"fast",label:"Fast (neutron)"},{value:"grouped_exact",label:"Grouped exact (neutron)"}],
+xray:[{value:"table",label:"X-ray (table list)"}],
+electron:[{value:"neutral_table",label:"Neutral (table)"},{value:"ion_peng",label:"Ion (Peng)"}]
+};
+const SCATTER_TABLE_OPTIONS={
+neutron:[{value:"default",label:"default"}],
+xray:[{value:"0",label:"0: Waasmaier"},{value:"1",label:"1: Lobato"},{value:"2",label:"2: Peng 0.4"},{value:"3",label:"3: Doyle"},{value:"4",label:"4: Weickenmeier"},{value:"5",label:"5: Kirkland"}],
+electronNeutral:[{value:"1",label:"1: Lobato"},{value:"2",label:"2: Peng 0.4"},{value:"3",label:"3: Doyle"},{value:"4",label:"4: Weickenmeier"},{value:"5",label:"5: Kirkland"}],
+electronIon:[{value:"ion_peng",label:"Ion (Peng)"}]
+};
+function setSelectOptions(sel,opts,keep){
+if(!sel)return;
+sel.innerHTML="";
+for(const o of opts){
+const el=document.createElement("option");
+el.value=o.value;
+el.textContent=o.label;
+sel.appendChild(el);
+}
+if(opts.some(o=>o.value===keep))sel.value=keep;
+}
+function updateScatteringUi(){
+const type=(($("scatterType")&&$("scatterType").value)||"neutron").toLowerCase();
+const modelSel=$("scatterModel");
+if(modelSel){
+const keep=modelSel.value||"";
+setSelectOptions(modelSel,SCATTER_MODEL_OPTIONS[type]||SCATTER_MODEL_OPTIONS.neutron,keep);
+}
+const model=(modelSel&&modelSel.value)||"fast";
+const table=$("scatterTable"),valence=$("ionValence");
+if(table){
+const tKeep=table.value||"";
+let tOpts=SCATTER_TABLE_OPTIONS.neutron;
+if(type==="xray")tOpts=SCATTER_TABLE_OPTIONS.xray;
+else if(type==="electron"&&model==="neutral_table")tOpts=SCATTER_TABLE_OPTIONS.electronNeutral;
+else if(type==="electron"&&model==="ion_peng")tOpts=SCATTER_TABLE_OPTIONS.electronIon;
+setSelectOptions(table,tOpts,tKeep);
+}
+if(table)table.disabled=!(type==="xray"&&model==="table")&&!(type==="electron"&&model==="neutral_table");
+if(valence){
+valence.disabled=!(type==="electron"&&model==="ion_peng");
+valence.placeholder=model==="ion_peng"?"Fe:2,O:-2":"";
+}
+}
+function tableNumFromUi(type,model,tableRaw){
+if(type==="xray"){
+const v=Math.floor(Number(tableRaw));
+return Number.isFinite(v)?Math.max(0,Math.min(5,v)):0;
+}
+if(type==="electron"&&model==="neutral_table"){
+const v=Math.floor(Number(tableRaw));
+return Number.isFinite(v)?Math.max(1,Math.min(5,v)):1;
+}
+return 1;
+}
+function getScatteringConfigFromUi(){
+needDiffuseAmplitude();
+const type=$("scatterType").value;
+const model=$("scatterModel").value;
+const tableRaw=$("scatterTable").value;
+const cfg=window.DiffuseAmplitude.normalizeScatteringConfig({
+type:type,
+model:model,
+tableNum:tableNumFromUi(type,model,tableRaw),
+defaultValence:0,
+valenceMapText:$("ionValence").value
+});
+if($("scatterTable")){
+if(type==="neutron")$("scatterTable").value="default";
+else if(type==="electron"&&model==="ion_peng")$("scatterTable").value="ion_peng";
+else $("scatterTable").value=String(cfg.tableNum);
+}
+return cfg;
+}
 function updateSmoothUi(){const on=$("smooth3d").value==="1",type=$("smoothType").value;$("smoothType").disabled=!on;$("smoothScale").disabled=!on;$("chebDb").disabled=(!on||type!=="chebyshev");}
 
 function bind(){const drop=$("drop"),file=$("file");drop.addEventListener("click",()=>file.click());drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("drag");});drop.addEventListener("dragleave",()=>drop.classList.remove("drag"));drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("drag");onFile(e.dataTransfer.files?.[0]).catch(err=>status(`File load failed: ${err.message}`,"err"));});file.addEventListener("change",e=>onFile(e.target.files?.[0]).catch(err=>status(`File load failed: ${err.message}`,"err")));
 $("backend").addEventListener("change",()=>{if($("backend").value==="webgpu_fft"&&!navigator.gpu){$("backend").value="fft";status("WebGPU unavailable in this browser; switched backend to CPU FFT.","warn");}applyBackendDefaults($("backend").value,true);});
 if(!navigator.gpu){const be=$("backend"),opt=be.querySelector('option[value="webgpu_fft"]');if(opt){opt.disabled=true;opt.textContent="Type-3 + webgpufft (WebGPU unavailable)";}if(be.value==="webgpu_fft")be.value="fft";}
 applyBackendDefaults($("backend").value,false);
+$("scatterType").addEventListener("change",updateScatteringUi);
+$("scatterModel").addEventListener("change",updateScatteringUi);
 $("smooth3d").addEventListener("change",updateSmoothUi);$("smoothType").addEventListener("change",updateSmoothUi);
 $("run").addEventListener("click",()=>compute().catch(err=>{$("run").disabled=false;syncResultControls();status(`Compute failed: ${err.message}`,"err");}));
 $("saveDat").addEventListener("click",saveDat);$("saveJson").addEventListener("click",saveJson);
-$("sliceMode").addEventListener("change",()=>{state.planeMoving=false;state.render3dEpoch++;updateSliceUI();resetDisplayLevels();draw();schedule3dRender(false,180);});
+$("sliceMode").addEventListener("change",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;updateSliceUI();resetDisplayLevels();draw();schedule3dRender(false,180);});
 $("axis").addEventListener("change",()=>{updateSliceUI();draw();schedule3dRender(false,140);});
 $("idx").addEventListener("input",()=>{draw();schedule3dRender(false,140);});
 $("scale").addEventListener("change",()=>{resetDisplayLevels();draw();schedule3dRender(false,160);});
@@ -746,9 +873,10 @@ $("colorMap").addEventListener("change",()=>{draw();schedule3dRender(false,120);
 $("levelMode").addEventListener("change",()=>{const on=$("levelMode").value==="both";$("levelWindowPct").disabled=!state.res||!on;});
 $("levelWindowPct").addEventListener("change",()=>{if($("levelMode").value==="both"&&state.sliceLevels)draw();});
 $("resetLevels").addEventListener("click",()=>{resetDisplayLevels();draw();});
-$("planeApply").addEventListener("click",()=>{state.planeMoving=false;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");applyPlaneFromInputs();resetDisplayLevels();draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
-$("planeMove").addEventListener("input",()=>{state.planeMoving=true;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}movePlaneToSlider(Number($("planeMove").value));if(state.planeMoveRaf){cancelAnimationFrame(state.planeMoveRaf);}state.planeMoveRaf=requestAnimationFrame(()=>{state.planeMoveRaf=0;draw({planeResOverride:fastPlaneRes()});updatePlaneTraceFast().catch(()=>{});});});
-$("planeMove").addEventListener("change",()=>{state.planeMoving=false;draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
+$("planeApply").addEventListener("click",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");applyPlaneFromInputs();resetDisplayLevels();draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
+$("planeReset").addEventListener("click",()=>{resetPlaneToolDefaults();});
+$("planeMove").addEventListener("input",()=>{if(!state.planeMoving){const liveCam=readSceneCamera("plot3dPlane");state.planeMoveCameraLock=liveCam?cloneCamera(liveCam):null;}state.planeMoving=true;state.render3dEpoch++;if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}movePlaneToSlider(Number($("planeMove").value));if(state.planeMoveRaf){cancelAnimationFrame(state.planeMoveRaf);}state.planeMoveRaf=requestAnimationFrame(()=>{state.planeMoveRaf=0;draw({planeResOverride:fastPlaneRes()});updatePlaneTraceFast().catch(()=>{});});});
+$("planeMove").addEventListener("change",async()=>{try{draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));await updatePlaneTraceFast(fullRes);}else{schedule3dRender(false,220);}}finally{state.planeMoving=false;const liveCam=readSceneCamera("plot3dPlane");if(liveCam)state.sceneCamera.plane=cloneCamera(liveCam);state.planeMoveCameraLock=null;}});
 for(const id of ["pRes","pScale"]){$(id).addEventListener("change",()=>{if(getSliceMode()==="plane"){invalidatePlaneSliceCache();resetDisplayLevels();draw();const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});}
 $("heatmap").addEventListener("click",onHeatmapClick);
 $("render3d").addEventListener("click",()=>render3d(true).catch(err=>setPlot3dStatus(`3D render failed: ${err.message}`)));
@@ -757,7 +885,7 @@ $("closeSliceWin").addEventListener("click",closeSliceWindow);
 $("show2d").addEventListener("change",()=>{update2dVisibility();if($("show2d").value==="1"){draw();}});
 for(const id of ["isoPct","isoCount","voxelCap","showIso3d","showPlane3d","auto3d"]){$(id).addEventListener("change",()=>schedule3dRender(false));}
 window.addEventListener("beforeunload",closeSliceWindow);
-updateSmoothUi();syncResultControls();updateSliceUI();update2dVisibility();$("levelWindowPct").disabled=true;setPlot3dStatus("3D view is idle.");}
+updateScatteringUi();updateSmoothUi();syncResultControls();updateSliceUI();update2dVisibility();$("levelWindowPct").disabled=true;setPlot3dStatus("3D view is idle.");}
 bind();draw();
 </script>
 </body>
