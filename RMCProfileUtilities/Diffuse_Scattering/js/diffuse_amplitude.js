@@ -226,7 +226,9 @@
     }
 
     const valenceMap = parseValenceMap(cfg.valenceMapText);
-    const rawGroups = groupAtomsByElement(parsed);
+    const incSet = parsed.includedElements || null;
+    const rawGroups = groupAtomsByElement(parsed)
+      .filter((g) => !incSet || incSet.has(g.element) || incSet.has(g.key));
     const groups = rawGroups.map((g) => {
       const gi = g.indices[0];
       const valence = Number.isInteger(valenceMap[g.key])

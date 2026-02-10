@@ -629,25 +629,12 @@ return inc;
 
 function filterParsedByElements(parsed,includedSet){
 if(!includedSet||includedSet.size===parsed.present.length)return parsed;
-const keep=[];
+const fca=new Float64Array(parsed.fca.length);
 for(let i=0;i<parsed.atoms;i++){
 const el=String(parsed.elements[i]||"").trim();
-if(includedSet.has(el))keep.push(i);
+if(includedSet.has(el))fca[i]=parsed.fca[i];
 }
-if(keep.length===parsed.atoms)return parsed;
-const n=keep.length;
-const fx=new Float64Array(n),fy=new Float64Array(n),fz=new Float64Array(n);
-const fxa=new Float64Array(n),fya=new Float64Array(n),fza=new Float64Array(n);
-const fdx=new Float64Array(n),fdy=new Float64Array(n),fdz=new Float64Array(n);
-const ffca=new Float64Array(n),felems=new Array(n);
-for(let j=0;j<n;j++){
-const i=keep[j];
-fx[j]=parsed.x[i];fy[j]=parsed.y[i];fz[j]=parsed.z[i];
-fxa[j]=parsed.xa[i];fya[j]=parsed.ya[i];fza[j]=parsed.za[i];
-fdx[j]=parsed.dx[i];fdy[j]=parsed.dy[i];fdz[j]=parsed.dz[i];
-ffca[j]=parsed.fca[i];felems[j]=parsed.elements[i];
-}
-return {...parsed,atoms:n,x:fx,y:fy,z:fz,xa:fxa,ya:fya,za:fza,dx:fdx,dy:fdy,dz:fdz,fca:ffca,elements:felems,present:[...includedSet].sort()};
+return {...parsed,fca,includedElements:includedSet};
 }
 
 function targetsChunk(h,k,l,Bq,start,count){needDiffuseCore();return window.DiffuseCore.targetsChunk(h,k,l,Bq,start,count);}
