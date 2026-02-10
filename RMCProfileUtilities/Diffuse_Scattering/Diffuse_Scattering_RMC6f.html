@@ -54,6 +54,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 #plot3dIso,#plot3dPlane{width:100%;height:520px}
 .mono{font-family:Consolas,monospace}
 .fine{margin-top:6px;font-size:.82rem;color:var(--muted)}
+.elem-filter{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:2px}
+.elem-filter label{display:inline-flex;align-items:center;gap:3px;font-size:.85rem;color:var(--ink);cursor:pointer}
+.elem-filter input[type=checkbox]{width:15px;height:15px;margin:0;cursor:pointer}
+.elem-filter button{padding:3px 8px;font-size:.78rem;border-radius:6px;background:#3b4a63}
 .hidden{display:none !important}
 @media (max-width:1180px){.grid{grid-template-columns:1fr}.workspace{grid-template-columns:1fr}.sidePanel{grid-template-columns:1fr 1fr}}
 @media (max-width:760px){.row{grid-template-columns:repeat(2,minmax(120px,1fr))}.row4{grid-template-columns:repeat(2,minmax(120px,1fr))}.meta{grid-template-columns:1fr}.sidePanel{grid-template-columns:1fr}.planeHeader,.axisRow,.colorRow,.colorRow2,.vec3,.planeMetaRow{grid-template-columns:1fr}.viewer3dCtl{grid-template-columns:repeat(2,minmax(120px,1fr))}.plotSplit{grid-template-columns:1fr}#plot3dIso,#plot3dPlane{height:380px}}
@@ -76,6 +80,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
         <div class="k">Supercell</div><div id="mSuper">-</div>
         <div class="k">Cell (a,b,c; α,β,γ)</div><div id="mCell">-</div>
         <div class="k">Elements</div><div id="mElem">-</div>
+        <div id="mElemFilter" class="elem-filter"></div>
       </div>
       <div class="fine">Unknown elements use fallback scattering length <code>10.0</code>.</div>
     </div>
@@ -594,6 +599,57 @@ function parseRMC(name,text){needRmcReader();needDiffuseCore();const parsed=wind
 
 function meta(r){$("mFile").textContent=r.file;$("mAtoms").textContent=String(r.atoms);$("mSuper").textContent=r.super.join(" × ");const c=r.cellDeg.map((v,i)=>i<3?v.toFixed(5):v.toFixed(3));$("mCell").textContent=`${c[0]}, ${c[1]}, ${c[2]} ; ${c[3]}, ${c[4]}, ${c[5]}`;$("mElem").textContent=r.present.join(", ");$("hStep").value=(1/r.super[0]).toFixed(3);$("kStep").value=(1/r.super[1]).toFixed(3);$("lStep").value=(1/r.super[2]).toFixed(3);}
 
+function buildElementCheckboxes(present){
+const wrap=$("mElemFilter");
+wrap.innerHTML="";
+if(!present||present.length<2||present.length>12){wrap.style.display="none";return;}
+wrap.style.display="";
+for(const el of present){
+const lbl=document.createElement("label");
+const cb=document.createElement("input");
+cb.type="checkbox";cb.checked=true;cb.dataset.elem=el;
+lbl.appendChild(cb);lbl.appendChild(document.createTextNode(el));
+wrap.appendChild(lbl);
+}
+const bAll=document.createElement("button");bAll.textContent="All";
+bAll.addEventListener("click",()=>{wrap.querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true);});
+const bNone=document.createElement("button");bNone.textContent="None";
+bNone.addEventListener("click",()=>{wrap.querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false);});
+wrap.appendChild(bAll);wrap.appendChild(bNone);
+}
+
+function getIncludedElements(){
+const boxes=$("mElemFilter").querySelectorAll('input[type=checkbox]');
+if(!boxes.length)return null;
+const inc=new Set();
+boxes.forEach(cb=>{if(cb.checked)inc.add(cb.dataset.elem);});
+if(inc.size===0){console.warn("No elements selected — computing with all.");return null;}
+return inc;
+}
+
+function filterParsedByElements(parsed,includedSet){
+if(!includedSet||includedSet.size===parsed.present.length)return parsed;
+const keep=[];
+for(let i=0;i<parsed.atoms;i++){
+const el=String(parsed.elements[i]||"").trim();
+if(includedSet.has(el))keep.push(i);
+}
+if(keep.length===parsed.atoms)return parsed;
+const n=keep.length;
+const fx=new Float64Array(n),fy=new Float64Array(n),fz=new Float64Array(n);
+const fxa=new Float64Array(n),fya=new Float64Array(n),fza=new Float64Array(n);
+const fdx=new Float64Array(n),fdy=new Float64Array(n),fdz=new Float64Array(n);
+const ffca=new Float64Array(n),felems=new Array(n);
+for(let j=0;j<n;j++){
+const i=keep[j];
+fx[j]=parsed.x[i];fy[j]=parsed.y[i];fz[j]=parsed.z[i];
+fxa[j]=parsed.xa[i];fya[j]=parsed.ya[i];fza[j]=parsed.za[i];
+fdx[j]=parsed.dx[i];fdy[j]=parsed.dy[i];fdz[j]=parsed.dz[i];
+ffca[j]=parsed.fca[i];felems[j]=parsed.elements[i];
+}
+return {...parsed,atoms:n,x:fx,y:fy,z:fz,xa:fxa,ya:fya,za:fza,dx:fdx,dy:fdy,dz:fdz,fca:ffca,elements:felems,present:[...includedSet].sort()};
+}
+
 function targetsChunk(h,k,l,Bq,start,count){needDiffuseCore();return window.DiffuseCore.targetsChunk(h,k,l,Bq,start,count);}
 function acosh1(x){if(x<1)x=1;return Math.log(x+Math.sqrt(Math.max(0,x*x-1)));}
 function dftComplex(reIn,imIn,inverse=false){const n=reIn.length,reOut=new Float64Array(n),imOut=new Float64Array(n),sgn=inverse?1:-1,scale=inverse?1/n:1;for(let k=0;k<n;k++){let ar=0,ai=0;for(let t=0;t<n;t++){const ang=sgn*2*Math.PI*k*t/n,c=Math.cos(ang),s=Math.sin(ang),r=reIn[t],im=imIn[t];ar+=r*c-im*s;ai+=r*s+im*c;}reOut[k]=ar*scale;imOut[k]=ai*scale;}return{re:reOut,im:imOut};}
@@ -827,7 +883,7 @@ if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=nu
 capture3dCameras();
 const prevPlaneState=state.plane?JSON.parse(JSON.stringify(state.plane)):null;
 state.planeMoving=false;state.planeMoveCameraLock=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;
-const r=state.rmc,h=axis(Number($("hMin").value),Number($("hMax").value),Number($("hStep").value)),k=axis(Number($("kMin").value),Number($("kMax").value),Number($("kStep").value)),l=axis(Number($("lMin").value),Number($("lMax").value),Number($("lStep").value)),shape=[h.length,k.length,l.length],grid=shape[0]*shape[1]*shape[2],backend=$("backend").value,limit=Number($("gridLimit").value),scatteringCfg=getScatteringConfigFromUi();
+const r=filterParsedByElements(state.rmc,getIncludedElements()),h=axis(Number($("hMin").value),Number($("hMax").value),Number($("hStep").value)),k=axis(Number($("kMin").value),Number($("kMax").value),Number($("kStep").value)),l=axis(Number($("lMin").value),Number($("lMax").value),Number($("lStep").value)),shape=[h.length,k.length,l.length],grid=shape[0]*shape[1]*shape[2],backend=$("backend").value,limit=Number($("gridLimit").value),scatteringCfg=getScatteringConfigFromUi();
 if(!Number.isFinite(limit)||limit<1)throw new Error("Grid safety limit must be positive");
 const useWebgpuChunking=backend==="webgpu_fft"&&grid>limit;
 if(backend!=="webgpu_fft"&&grid>limit){const rec=Math.ceil(grid*1.1);throw new Error(`Grid ${grid} exceeds limit ${limit}. Set Grid safety limit >= ${rec} (or choose WebGPU preset).`);}
@@ -1053,7 +1109,7 @@ function saveText(name,text,mime){const b=new Blob([text],{type:mime}),u=URL.cre
 function saveDat(){if(!state.res)return;const r=state.res,[nh,nk,nl]=r.shape,out=["# h k l intensity"];for(let i=0;i<nh;i++)for(let j=0;j<nk;j++)for(let m=0;m<nl;m++){out.push(`${r.h[i]} ${r.k[j]} ${r.l[m]} ${r.I[idx(r.shape,i,j,m)]}`);}saveText(`${base()}.dat`,out.join("\n"),"text/plain;charset=utf-8");}
 function saveJson(){if(!state.res||!state.rmc)return;const r=state.res,p={sourceFile:state.rmc.file,atoms:state.rmc.atoms,supercell:state.rmc.super,cellDeg:state.rmc.cellDeg,shape:r.shape,hAxis:r.h,kAxis:r.k,lAxis:r.l,Bq:r.Bq,Bp:r.Bp,hklToQ:"Q = [h,k,l] * Bq",minI:r.min,maxI:r.max,backend:r.backend,options:r.opts,timings:r.timings||null,intensity:Array.from(r.I)};saveText(`${base()}.json`,JSON.stringify(p),"application/json;charset=utf-8");}
 
-async function onFile(f){if(!f)return;status(`Reading ${f.name} ...`);const txt=await f.text(),parsed=parseRMC(f.name,txt);state.rmc=parsed;state.res=null;state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeMoving=false;state.planeMoveCameraLock=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};meta(parsed);syncResultControls();draw();setPlot3dStatus("3D view is idle.");if(parsed.unknown.length)status(`Loaded ${f.name}. Unknown elements: ${parsed.unknown.join(", ")} -> fca=10.0.`,`warn`);else status(`Loaded ${f.name}. Ready to compute.`,`ok`);}
+async function onFile(f){if(!f)return;status(`Reading ${f.name} ...`);const txt=await f.text(),parsed=parseRMC(f.name,txt);state.rmc=parsed;state.res=null;state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeMoving=false;state.planeMoveCameraLock=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};meta(parsed);buildElementCheckboxes(parsed.present);syncResultControls();draw();setPlot3dStatus("3D view is idle.");if(parsed.unknown.length)status(`Loaded ${f.name}. Unknown elements: ${parsed.unknown.join(", ")} -> fca=10.0.`,`warn`);else status(`Loaded ${f.name}. Ready to compute.`,`ok`);}
 
 const SCATTER_MODEL_OPTIONS={
 neutron:[{value:"fast",label:"Fast (neutron)"},{value:"grouped_exact",label:"Grouped exact (neutron)"}],
