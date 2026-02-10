@@ -64,6 +64,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .elem-filter label{display:inline-flex;align-items:center;gap:3px;font-size:.85rem;color:var(--ink);cursor:pointer}
 .elem-filter input[type=checkbox]{width:15px;height:15px;margin:0;cursor:pointer}
 .elem-filter button{padding:3px 8px;font-size:.78rem;border-radius:6px;background:#3b4a63}
+.elem-warn{grid-column:1/-1;color:#b91c1c;font-size:.82rem;font-weight:700}
 .hidden{display:none !important}
 @media (max-width:1180px){.grid{grid-template-columns:1fr}.workspace{grid-template-columns:1fr}.sidePanel{grid-template-columns:1fr 1fr}}
 @media (max-width:760px){.row{grid-template-columns:repeat(2,minmax(120px,1fr))}.row4{grid-template-columns:repeat(2,minmax(120px,1fr))}.row5{grid-template-columns:repeat(2,minmax(120px,1fr))}.row6{grid-template-columns:repeat(2,minmax(120px,1fr))}.meta{grid-template-columns:1fr}.sidePanel{grid-template-columns:1fr}.planeHeader,.axisRow,.colorRow,.colorRow2,.vec3,.planeMetaRow{grid-template-columns:1fr}.viewer3dCtl{grid-template-columns:repeat(2,minmax(120px,1fr))}.plotSplit{grid-template-columns:1fr}#plot3dIso,#plot3dPlane{height:380px}}
@@ -87,6 +88,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
         <div class="k">Cell (a,b,c; α,β,γ)</div><div id="mCell">-</div>
         <div class="k">Elements</div><div id="mElem">-</div>
         <div id="mElemFilter" class="elem-filter"></div>
+        <div class="elem-warn">Warning: Selective element option is experimental and requires testing.</div>
       </div>
       <div class="fine">Unknown elements use fallback scattering length <code>10.0</code>.</div>
     </div>
