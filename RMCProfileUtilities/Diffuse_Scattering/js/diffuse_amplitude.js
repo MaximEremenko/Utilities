@@ -214,9 +214,45 @@
 
     const tPrep = nowMs();
     profile.src = core.interleave3(parsed.x, parsed.y, parsed.z);
-    profile.srcA = core.interleave3(parsed.xa, parsed.ya, parsed.za);
     profile.srcD = core.interleave3(parsed.dx, parsed.dy, parsed.dz);
-    profile.onesAll = core.complexOnes(parsed.atoms);
+    const incSetRaw = parsed.includedElements || null;
+    let incSet = null;
+    if (incSetRaw && typeof incSetRaw.forEach === "function") {
+      incSet = new Set();
+      incSetRaw.forEach((v) => {
+        const s = String(v || "").trim();
+        if (!s) return;
+        incSet.add(s);
+        incSet.add(normElem(s));
+      });
+    }
+    let includedIndices = [];
+    if (!incSet) {
+      includedIndices = Array.from({ length: parsed.atoms }, (_, i) => i);
+    } else {
+      for (let i = 0; i < parsed.atoms; i++) {
+        const raw = String(parsed.elements[i] || "").trim();
+        const key = normElem(raw);
+        if (incSet.has(raw) || incSet.has(key)) includedIndices.push(i);
+      }
+      if (!includedIndices.length) {
+        includedIndices = Array.from({ length: parsed.atoms }, (_, i) => i);
+        profile.warnings.push("No included elements resolved; using all atoms.");
+      }
+    }
+    profile.includedAtomCount = includedIndices.length;
+    if (profile.includedAtomCount === parsed.atoms) {
+      profile.srcA = core.interleave3(parsed.xa, parsed.ya, parsed.za);
+      profile.onesAvg = core.complexOnes(parsed.atoms);
+    } else {
+      profile.srcA = packTripletsByIndex(
+        parsed.xa,
+        parsed.ya,
+        parsed.za,
+        includedIndices
+      );
+      profile.onesAvg = core.complexOnes(profile.includedAtomCount);
+    }
 
     if (cfg.type === "neutron" && cfg.model === "fast") {
       profile.engine = "neutron_fast";
@@ -226,7 +262,6 @@
     }
 
     const valenceMap = parseValenceMap(cfg.valenceMapText);
-    const incSet = parsed.includedElements || null;
     const rawGroups = groupAtomsByElement(parsed)
       .filter((g) => !incSet || incSet.has(g.element) || incSet.has(g.key));
     const groups = rawGroups.map((g) => {
@@ -288,7 +323,13 @@
       adelta: 0,
       finalize: 0,
     };
-    const mInv = 1 / Math.max(1, parsed.atoms);
+    const includedAtomCount = Math.max(
+      1,
+      Number.isFinite(profile.includedAtomCount)
+        ? Math.floor(profile.includedAtomCount)
+        : parsed.atoms
+    );
+    const mInv = 1 / includedAtomCount;
     let min = Infinity;
     let max = -Infinity;
 
@@ -331,7 +372,7 @@
                 isign: 1,
                 sourcesPacked: profile.srcA,
                 targetsPacked: trg,
-                strengths: profile.onesAll,
+                strengths: profile.onesAvg,
               },
               opts,
               backend,
@@ -377,7 +418,7 @@
                 isign: 1,
                 sourcesPacked: profile.srcA,
                 targetsPacked: trg,
-                strengths: profile.onesAll,
+                strengths: profile.onesAvg,
               },
               opts,
               backend,
