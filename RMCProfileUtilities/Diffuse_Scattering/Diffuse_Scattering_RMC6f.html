@@ -49,6 +49,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 #heatmap{display:block;width:100%;height:auto;background:#0b1321}
 #sliceStats{margin-top:8px;font-family:Consolas,monospace;font-size:.88rem;color:#334155}
 .viewer3dCtl{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end;margin-bottom:8px}
+.viewer3dExport{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 8px}
+.panelHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.panelHead h3{margin:0}
+.panelActions{display:flex;align-items:center;gap:8px}
 .plotSplit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .plot3dWrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#070b12;min-width:0}
 #plot3dIso,#plot3dPlane{width:100%;height:520px}
@@ -67,7 +71,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <main class="app">
   <section class="hero">
     <h1>Diffuse Scattering From RMC6f (Client-side)</h1>
-    <p>Load <code>.rmc6f</code>, compute <code>I(h,k,l)=|A-Aavg|²</code> with Type-3 NUFFT JS, inspect slices, save <code>.dat</code>/<code>.json</code>.</p>
+    <p>Load <code>.rmc6f</code>, compute <code>I(h,k,l)=|A-Aavg|²</code> with Type-3 NUFFT JS, inspect slices, and export <code>.dat/.json/.vtk/.csv</code> plus per-plot SVG/HTML.</p>
   </section>
 
   <section class="grid">
@@ -125,6 +129,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
         <button id="run">Compute Diffuse</button>
         <button id="saveDat" class="alt" disabled>Save .dat</button>
         <button id="saveJson" class="alt" disabled>Save .json</button>
+        <button id="saveVtk" class="alt" disabled>Save ParaView .vtk</button>
       </div>
       <div id="status">Waiting for input file.</div>
     </div>
@@ -210,6 +215,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
             <label>Auto refresh<select id="auto3d"><option value="0">OFF</option><option value="1" selected>ON</option></select></label>
             <button id="render3d" class="alt" disabled>Render 3D</button>
           </div>
+          <div class="viewer3dExport">
+            <button id="savePlaneSvg" class="alt" disabled>Save plane .svg</button>
+            <button id="saveIsoSvg" class="alt" disabled>Save iso .svg</button>
+            <button id="savePlaneHtml" class="alt" disabled>Save plane .html</button>
+            <button id="saveIsoHtml" class="alt" disabled>Save iso .html</button>
+          </div>
           <div id="plot3dStatus" class="fine mono">3D view is idle.</div>
           <div class="plotSplit">
             <div class="plot3dWrap"><div id="plot3dPlane"></div></div>
@@ -218,7 +229,13 @@ button:disabled{opacity:.45;cursor:not-allowed}
         </div>
 
         <div class="toolBox" id="slice2dPanel">
-          <h3>2D Slice Map</h3>
+          <div class="panelHead">
+            <h3>2D Slice Map</h3>
+            <div class="panelActions">
+              <button id="saveSliceSvg" class="alt" disabled>Save slice .svg</button>
+              <button id="saveSliceCsv" class="alt" disabled>Save slice .csv</button>
+            </div>
+          </div>
           <div class="canvasWrap"><canvas id="heatmap" width="980" height="560"></canvas></div>
           <div id="sliceStats">No result yet.</div>
         </div>
@@ -247,7 +264,7 @@ const PLOTLY_CDN="https://cdn.plot.ly/plotly-2.35.2.min.js";
 const BACKEND_PRESETS={webgpu_fft:{tol:"1e-7",upsamp:"1.5",gridLimit:"8000000"},fft:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"},direct:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"}};
 const WEBGPU_STAGE_ORDER=["spread_setup","spread_dispatch","amplify_dispatch","fft_dispatch","interp_dispatch","postmul_dispatch","smooth_axis0_dispatch","smooth_axis1_dispatch","smooth_axis2_dispatch","done","smooth_done"];
 const WEBGPU_STAGE_LABEL={spread_setup:"setup",spread_dispatch:"spread",amplify_dispatch:"amplify",fft_dispatch:"fft",interp_dispatch:"interp",postmul_dispatch:"postmul",smooth_axis0_dispatch:"smooth-h",smooth_axis1_dispatch:"smooth-k",smooth_axis2_dispatch:"smooth-l",done:"done",smooth_done:"smooth-done"};
-const state={rmc:null,res:null,sliceWin:null,volCache:null,render3dTimer:null,last3dStamp:0,sliceLevels:null,lastBar:null,levelDrag:null,levelClickSuppress:false,level3dSyncTimer:null,plane:null,planeSliceCache:null,offscreen:null,planeMoveRaf:0,planeTraceReqId:0,planeTraceBusy:false,planeTraceQueued:null,planeMoving:false,planeMoveCameraLock:null,render3dEpoch:0,sceneCamera:{iso:null,plane:null}};
+const state={rmc:null,res:null,sliceWin:null,volCache:null,render3dTimer:null,last3dStamp:0,sliceLevels:null,lastBar:null,levelDrag:null,levelClickSuppress:false,level3dSyncTimer:null,plane:null,planeSliceCache:null,offscreen:null,planeMoveRaf:0,planeTraceReqId:0,planeTraceBusy:false,planeTraceQueued:null,planeMoving:false,planeMoveCameraLock:null,render3dEpoch:0,sceneCamera:{iso:null,plane:null},lastSlice:null};
 const COLOR_PRESETS={
 turbo:{plotly:"Turbo",stops:[[0,[48,18,59]],[.2,[32,78,168]],[.45,[44,165,197]],[.7,[109,206,111]],[.9,[246,220,80]],[1,[232,79,53]]]},
 viridis:{plotly:"Viridis",stops:[[0,[68,1,84]],[.25,[59,82,139]],[.5,[33,145,140]],[.75,[94,201,98]],[1,[253,231,37]]]},
@@ -300,7 +317,7 @@ throw new Error(`webgpufft API missing.${serveHint} ${errs.join(" | ")}`.trim())
 async function ensurePlotly(){if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;const errs=[];try{await loadScriptOnce(PLOTLY_CDN);}catch(e){errs.push(e&&e.message?e.message:String(e));}if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;throw new Error(`Plotly is unavailable${errs.length?`: ${errs.join(" | ")}`:""}.`);}
 function applyBackendDefaults(backend,announce=false){const p=BACKEND_PRESETS[backend];if(!p)return;let changed=false;if($("tol").value!==p.tol){$("tol").value=p.tol;changed=true;}if($("upsamp").value!==p.upsamp){$("upsamp").value=p.upsamp;changed=true;}if($("gridLimit").value!==p.gridLimit){$("gridLimit").value=p.gridLimit;changed=true;}if(announce&&changed){const n=backend==="webgpu_fft"?"WebGPU":"CPU";status(`Applied ${n} preset: tol=${p.tol}, upsamp=${p.upsamp}, grid limit=${p.gridLimit}.`,"ok");}}
 function formatWebgpuStageTotals(stages){const parts=[];for(const k of WEBGPU_STAGE_ORDER){const v=stages[k]||0;if(v>0)parts.push(`${WEBGPU_STAGE_LABEL[k]||k}=${fmtMs(v)}`);}return parts.join(", ");}
-function syncResultControls(){const has=!!state.res,planeMode=$("sliceMode").value==="plane";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("axis").disabled=!has||planeMode;$("idx").disabled=!has||planeMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale","planeApply","planeReset"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
+function syncResultControls(){const has=!!state.res,planeMode=$("sliceMode").value==="plane";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("saveVtk").disabled=!has;$("saveSliceSvg").disabled=!has;$("saveSliceCsv").disabled=!has;$("savePlaneSvg").disabled=!has;$("saveIsoSvg").disabled=!has;$("savePlaneHtml").disabled=!has;$("saveIsoHtml").disabled=!has;$("axis").disabled=!has||planeMode;$("idx").disabled=!has||planeMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale","planeApply","planeReset"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
 function clamp01(v){return v<0?0:(v>1?1:v);}function lerp(a,b,t){return a+(b-a)*t;}
 function readNumberInput(id,fallback){const el=$(id);if(!el)return fallback;const v=Number.isFinite(el.valueAsNumber)?el.valueAsNumber:Number(String(el.value||"").replace(/,/g,"."));return Number.isFinite(v)?v:fallback;}
 function getColorPreset(){const key=$("colorMap")&&$("colorMap").value?$("colorMap").value:"viridis";return COLOR_PRESETS[key]||COLOR_PRESETS.viridis;}
@@ -874,7 +891,7 @@ const r=filterParsedByElements(state.rmc,getIncludedElements()),h=axis(Number($(
 if(!Number.isFinite(limit)||limit<1)throw new Error("Grid safety limit must be positive");
 const useWebgpuChunking=backend==="webgpu_fft"&&grid>limit;
 if(backend!=="webgpu_fft"&&grid>limit){const rec=Math.ceil(grid*1.1);throw new Error(`Grid ${grid} exceeds limit ${limit}. Set Grid safety limit >= ${rec} (or choose WebGPU preset).`);}
-$("run").disabled=true;$("saveDat").disabled=true;$("saveJson").disabled=true;$("axis").disabled=true;$("idx").disabled=true;$("scale").disabled=true;$("render3d").disabled=true;$("openSliceWin").disabled=true;$("sliceMode").disabled=true;$("planeMove").disabled=true;$("planeApply").disabled=true;
+$("run").disabled=true;$("saveDat").disabled=true;$("saveJson").disabled=true;$("saveVtk").disabled=true;$("saveSliceSvg").disabled=true;$("saveSliceCsv").disabled=true;$("savePlaneSvg").disabled=true;$("saveIsoSvg").disabled=true;$("savePlaneHtml").disabled=true;$("saveIsoHtml").disabled=true;$("axis").disabled=true;$("idx").disabled=true;$("scale").disabled=true;$("render3d").disabled=true;$("openSliceWin").disabled=true;$("sliceMode").disabled=true;$("planeMove").disabled=true;$("planeApply").disabled=true;
 const opts={tol:Number($("tol").value),upsampfac:Number($("upsamp").value)},sub=$("subAvg").value==="1",smoothEnabled=$("smooth3d").value==="1",smoothType=$("smoothType").value,chebDb=Number.isFinite(Number($("chebDb").value))?Number($("chebDb").value):100,smoothScale=Math.max(1,Math.floor(Number($("smoothScale").value)||1)),t0=performance.now(),timings={prepare:0,a:0,aavg:0,adelta:0,finalize:0,smooth:0,webgpu:{}};
 const onStageTiming=(stage,dt)=>{timings.webgpu[stage]=(timings.webgpu[stage]||0)+dt;};
 status(`Preparing grid ${shape[0]}×${shape[1]}×${shape[2]} (${grid}) for ${scatteringCfg.type} ...`);await new Promise(r=>setTimeout(r,0));
@@ -992,7 +1009,7 @@ function draw(opts){
 const cv=$("heatmap"),ctx=cv.getContext("2d",{willReadFrequently:true});
 if(!ctx)return;
 if(!state.res){
-ctx.fillStyle="#0b1321";ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle="#cbd5e1";ctx.font="16px Consolas";ctx.fillText("No result yet.",20,36);$("sliceStats").textContent="No result yet.";state.lastBar=null;const info=$("levelInfo");if(info)info.textContent="Display levels: auto";return;
+ctx.fillStyle="#0b1321";ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle="#cbd5e1";ctx.font="16px Consolas";ctx.fillText("No result yet.",20,36);$("sliceStats").textContent="No result yet.";state.lastBar=null;state.lastSlice=null;const info=$("levelInfo");if(info)info.textContent="Display levels: auto";return;
 }
 const o=opts||{},planeResOverride=Number.isFinite(o.planeResOverride)?Math.max(32,Math.min(600,Math.floor(o.planeResOverride))):null;
 updateSliceVal();
@@ -1088,6 +1105,7 @@ const validMsg=sm==="plane"?` | valid=${sl.validCount||0}/${sl.rows*sl.cols}`:""
 const uvMsg=sm==="plane"?" | uv: u->right, v->up":"";
 const mapMsg=(Array.isArray(sl.xQVec)&&Array.isArray(sl.yQVec))?" | map=Q-cart":"";
 $("sliceStats").textContent=`${sl.plane} | display=${mode} | slice min=${mn.toExponential(5)} | slice max=${mx.toExponential(5)} | shown [${dmin.toExponential(3)}, ${dmax.toExponential(3)}]${validMsg}${uvMsg}${mapMsg} | ${sl.x} | ${sl.y}`;
+state.lastSlice={sliceMode:sm,displayMode:mode,slice:sl};
 pushSliceWindow();
 }
 
@@ -1095,6 +1113,121 @@ function base(){const m=$("baseName").value.trim();if(m)return m;return state.rm
 function saveText(name,text,mime){const b=new Blob([text],{type:mime}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);} 
 function saveDat(){if(!state.res)return;const r=state.res,[nh,nk,nl]=r.shape,out=["# h k l intensity"];for(let i=0;i<nh;i++)for(let j=0;j<nk;j++)for(let m=0;m<nl;m++){out.push(`${r.h[i]} ${r.k[j]} ${r.l[m]} ${r.I[idx(r.shape,i,j,m)]}`);}saveText(`${base()}.dat`,out.join("\n"),"text/plain;charset=utf-8");}
 function saveJson(){if(!state.res||!state.rmc)return;const r=state.res,p={sourceFile:state.rmc.file,atoms:state.rmc.atoms,supercell:state.rmc.super,cellDeg:state.rmc.cellDeg,shape:r.shape,hAxis:r.h,kAxis:r.k,lAxis:r.l,Bq:r.Bq,Bp:r.Bp,hklToQ:"Q = [h,k,l] * Bq",minI:r.min,maxI:r.max,backend:r.backend,options:r.opts,timings:r.timings||null,intensity:Array.from(r.I)};saveText(`${base()}.json`,JSON.stringify(p),"application/json;charset=utf-8");}
+function fmtNum(v){return Number.isFinite(v)?Number(v).toPrecision(12):"NaN";}
+function downloadDataUrl(name,dataUrl){const a=document.createElement("a");a.href=dataUrl;a.download=name;document.body.appendChild(a);a.click();a.remove();}
+function axisUniformInfo(arr){
+if(!Array.isArray(arr)||!arr.length)return{origin:0,step:1,maxDev:0,tol:1e-12,uniform:true};
+if(arr.length===1)return{origin:Number(arr[0])||0,step:1,maxDev:0,tol:1e-12,uniform:true};
+const origin=Number(arr[0])||0,step=((Number(arr[arr.length-1])||origin)-origin)/(arr.length-1);
+let maxDev=0;
+for(let i=1;i<arr.length;i++){
+const d=(Number(arr[i])||0)-(Number(arr[i-1])||0),dev=Math.abs(d-step);
+if(dev>maxDev)maxDev=dev;
+}
+const tol=Math.max(1e-12,1e-9*Math.max(1,Math.abs(step)));
+return{origin,step:Math.abs(step)>1e-30?step:1,maxDev,tol,uniform:maxDev<=tol};
+}
+async function saveSinglePlotSvg(plotId,tag){
+if(!state.res){status("Compute diffuse first.","warn");return;}
+try{
+await render3d(true);
+const plotly=await ensurePlotly(),gd=$(plotId);
+if(!gd||!Array.isArray(gd.data)||gd.data.length<1)throw new Error("Target 3D plot is empty.");
+const uri=await plotly.toImage(gd,{format:"svg",width:1920,height:1080,scale:1});
+downloadDataUrl(`${base()}_${tag}.svg`,uri);
+status(`Saved ${tag} SVG.`,"ok");
+}catch(err){status(`SVG export failed: ${err.message}`,"err");}
+}
+function toPlainJson(value,seen){
+if(value===null||value===undefined)return value;
+const t=typeof value;
+if(t==="number"||t==="string"||t==="boolean")return value;
+if(t==="function")return undefined;
+if(ArrayBuffer.isView(value))return Array.from(value);
+if(Array.isArray(value)){const out=[];for(const v of value){const vv=toPlainJson(v,seen);if(vv!==undefined)out.push(vv);}return out;}
+if(t==="object"){
+if(seen.has(value))return undefined;
+seen.add(value);
+const out={};
+for(const k of Object.keys(value)){
+if(k.startsWith("_"))continue;
+const vv=toPlainJson(value[k],seen);
+if(vv!==undefined)out[k]=vv;
+}
+seen.delete(value);
+return out;
+}
+return undefined;
+}
+function exportPlotFigure(plotId){
+const gd=$(plotId);
+if(!gd||!Array.isArray(gd.data)||gd.data.length<1)return null;
+const data=toPlainJson(gd.data,new WeakSet())||[],layout=toPlainJson(gd.layout,new WeakSet())||{};
+if(layout.template)delete layout.template;
+return{data,layout};
+}
+async function saveSinglePlotHtml(plotId,tag,title){
+if(!state.res){status("Compute diffuse first.","warn");return;}
+try{
+await render3d(true);
+const fig=exportPlotFigure(plotId);
+if(!fig||!Array.isArray(fig.data)||!fig.data.length)throw new Error("Target 3D plot is empty.");
+const payloadText=JSON.stringify({fig,title,createdAt:new Date().toISOString()}).replace(/</g,"\\u003c");
+const html=`<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><script src="${PLOTLY_CDN}"><\/script><style>body{margin:0;background:#0b1321;color:#dbeafe;font-family:Segoe UI,Tahoma,sans-serif}main{padding:12px;display:grid;gap:10px}#plot{min-height:640px;border:1px solid #263244;border-radius:8px;overflow:hidden;background:#070b12}pre{margin:0;padding:8px;border:1px solid #334155;border-radius:8px;background:#0b1321;white-space:pre-wrap}</style></head><body><main><h2 style="margin:0">${title}</h2><div id="plot"></div><pre id="meta"></pre></main><script>const payload=${payloadText};Plotly.newPlot("plot",(payload.fig&&payload.fig.data)||[],(payload.fig&&payload.fig.layout)||{},{responsive:true,displaylogo:false});document.getElementById("meta").textContent=\`Exported: \${payload.createdAt||""}\`;<\/script></body></html>`;
+saveText(`${base()}_${tag}.html`,html,"text/html;charset=utf-8");
+status(`Saved ${tag} HTML.`,"ok");
+}catch(err){status(`HTML export failed: ${err.message}`,"err");}
+}
+function saveVtk(){
+if(!state.res){status("Compute diffuse first.","warn");return;}
+const r=state.res,[nh,nk,nl]=r.shape,ah=axisUniformInfo(r.h),ak=axisUniformInfo(r.k),al=axisUniformInfo(r.l);
+if(!ah.uniform||!ak.uniform||!al.uniform){status(`ParaView VTK export expects uniform axes; max deviation h=${ah.maxDev.toExponential(2)}, k=${ak.maxDev.toExponential(2)}, l=${al.maxDev.toExponential(2)}.`,"warn");return;}
+const out=["# vtk DataFile Version 3.0","RMC diffuse intensity (HKL grid)","ASCII","DATASET STRUCTURED_POINTS",`DIMENSIONS ${nh} ${nk} ${nl}`,`ORIGIN ${fmtNum(ah.origin)} ${fmtNum(ak.origin)} ${fmtNum(al.origin)}`,`SPACING ${fmtNum(ah.step)} ${fmtNum(ak.step)} ${fmtNum(al.step)}`,`POINT_DATA ${nh*nk*nl}`,"SCALARS intensity float 1","LOOKUP_TABLE default"];
+let row=[];
+for(let il=0;il<nl;il++)for(let ik=0;ik<nk;ik++)for(let ih=0;ih<nh;ih++){
+row.push(fmtNum(r.I[idx(r.shape,ih,ik,il)]));
+if(row.length>=6){out.push(row.join(" "));row=[];}
+}
+if(row.length)out.push(row.join(" "));
+saveText(`${base()}_volume_hkl.vtk`,out.join("\n"),"text/plain;charset=utf-8");
+status("Saved ParaView volume (.vtk, structured HKL grid).","ok");
+}
+function xmlEsc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;").replace(/'/g,"&apos;");}
+function saveSliceSvg(){
+if(!state.res){status("Compute diffuse first.","warn");return;}
+const cv=$("heatmap");
+if(!cv||!cv.width||!cv.height){status("2D slice map is unavailable.","warn");return;}
+const w=cv.width,h=cv.height,png=cv.toDataURL("image/png"),title=xmlEsc($("sliceVal").textContent||"2D Slice Map"),desc=xmlEsc($("sliceStats").textContent||"");
+const svg=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><title>${title}</title><desc>${desc}</desc><image x="0" y="0" width="${w}" height="${h}" href="${png}" xlink:href="${png}" preserveAspectRatio="none"/></svg>`;
+saveText(`${base()}_slice2d.svg`,svg,"image/svg+xml;charset=utf-8");
+status("Saved 2D slice SVG.","ok");
+}
+function saveSliceCsv(){
+if(!state.res){status("Compute diffuse first.","warn");return;}
+const r=state.res,sm=getSliceMode();
+if(sm==="plane"){
+const sl=buildNormalPlaneSlice(r,"linear",true),du=sl.cols>1?(sl.xMax-sl.xMin)/(sl.cols-1):0,dv=sl.rows>1?(sl.yMax-sl.yMin)/(sl.rows-1):0,out=["u,v,h,k,l,intensity"];
+for(let rr=0;rr<sl.rows;rr++)for(let cc=0;cc<sl.cols;cc++){
+const h=sl.x3&&sl.x3[rr]?sl.x3[rr][cc]:NaN,k=sl.y3&&sl.y3[rr]?sl.y3[rr][cc]:NaN,l=sl.z3&&sl.z3[rr]?sl.z3[rr][cc]:NaN,val=sl.c3&&sl.c3[rr]?sl.c3[rr][cc]:NaN;
+if(!(Number.isFinite(h)&&Number.isFinite(k)&&Number.isFinite(l)&&Number.isFinite(val)))continue;
+const u=sl.xMin+cc*du,v=sl.yMin+rr*dv;
+out.push(`${fmtNum(u)},${fmtNum(v)},${fmtNum(h)},${fmtNum(k)},${fmtNum(l)},${fmtNum(val)}`);
+}
+saveText(`${base()}_slice_plane.csv`,out.join("\n"),"text/csv;charset=utf-8");
+status("Saved plane slice CSV (ParaView Table input).","ok");
+return;
+}
+const axisName=$("axis").value,fix=Math.max(0,Math.min(Number($("idx").value)||0,(axisName==="h"?r.shape[0]-1:axisName==="k"?r.shape[1]-1:r.shape[2]-1))),sl=slice(r,axisName,fix),out=["h,k,l,intensity"];
+for(let rr=0;rr<sl.rows;rr++)for(let cc=0;cc<sl.cols;cc++){
+let h,k,l;
+if(axisName==="h"){h=r.h[fix];k=r.k[rr];l=r.l[cc];}
+else if(axisName==="k"){h=r.h[rr];k=r.k[fix];l=r.l[cc];}
+else{h=r.h[rr];k=r.k[cc];l=r.l[fix];}
+out.push(`${fmtNum(h)},${fmtNum(k)},${fmtNum(l)},${fmtNum(sl.d[rr*sl.cols+cc])}`);
+}
+saveText(`${base()}_slice_${axisName}${fix}.csv`,out.join("\n"),"text/csv;charset=utf-8");
+status("Saved axis slice CSV (ParaView Table input).","ok");
+}
 
 async function onFile(f){if(!f)return;status(`Reading ${f.name} ...`);const txt=await f.text(),parsed=parseRMC(f.name,txt);state.rmc=parsed;state.res=null;state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeMoving=false;state.planeMoveCameraLock=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};meta(parsed);buildElementCheckboxes(parsed.present);syncResultControls();draw();setPlot3dStatus("3D view is idle.");if(parsed.unknown.length)status(`Loaded ${f.name}. Unknown elements: ${parsed.unknown.join(", ")} -> fca=10.0.`,`warn`);else status(`Loaded ${f.name}. Ready to compute.`,`ok`);}
 
@@ -1184,6 +1317,13 @@ $("scatterModel").addEventListener("change",updateScatteringUi);
 $("smooth3d").addEventListener("change",updateSmoothUi);$("smoothType").addEventListener("change",updateSmoothUi);
 $("run").addEventListener("click",()=>compute().catch(err=>{$("run").disabled=false;syncResultControls();status(`Compute failed: ${err.message}`,"err");}));
 $("saveDat").addEventListener("click",saveDat);$("saveJson").addEventListener("click",saveJson);
+$("savePlaneSvg").addEventListener("click",()=>saveSinglePlotSvg("plot3dPlane","plane3d"));
+$("saveIsoSvg").addEventListener("click",()=>saveSinglePlotSvg("plot3dIso","iso3d"));
+$("savePlaneHtml").addEventListener("click",()=>saveSinglePlotHtml("plot3dPlane","plane3d","Diffuse 3D Plane Slice"));
+$("saveIsoHtml").addEventListener("click",()=>saveSinglePlotHtml("plot3dIso","iso3d","Diffuse 3D Isosurface"));
+$("saveVtk").addEventListener("click",saveVtk);
+$("saveSliceSvg").addEventListener("click",saveSliceSvg);
+$("saveSliceCsv").addEventListener("click",saveSliceCsv);
 $("sliceMode").addEventListener("change",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;updateSliceUI();resetDisplayLevels();draw();schedule3dRender(false,180);});
 $("axis").addEventListener("change",()=>{updateSliceUI();draw();schedule3dRender(false,140);});
 $("idx").addEventListener("input",()=>{draw();schedule3dRender(false,140);});
