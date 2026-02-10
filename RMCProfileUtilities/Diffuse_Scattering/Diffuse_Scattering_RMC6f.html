@@ -340,10 +340,13 @@ function norm3(v){const n=Math.hypot(v[0],v[1],v[2]);if(!(n>1e-12))return[1,0,0]
 function projOnPlane(axis,n){const d=axis[0]*n[0]+axis[1]*n[1]+axis[2]*n[2];return[axis[0]-d*n[0],axis[1]-d*n[1],axis[2]-d*n[2]];}
 function planeBasisFromNormal(n){
 const nx=n[0],ny=n[1],nz=n[2],ax=Math.abs(nx),ay=Math.abs(ny),az=Math.abs(nz),axisTol=1e-6;
-// Axis-locked planes: keep canonical in-plane directions so slice never appears transposed.
-if(ax>1-axisTol&&ay<axisTol&&az<axisTol)return{u:[0,1,0],v:[0,0,1]}; // H-normal -> K right, L up
-if(ay>1-axisTol&&ax<axisTol&&az<axisTol)return{u:[1,0,0],v:[0,0,1]}; // K-normal -> H right, L up
-if(az>1-axisTol&&ax<axisTol&&ay<axisTol)return{u:[1,0,0],v:[0,1,0]}; // L-normal -> H right, K up
+// Axis-locked planes: match makeAxisAlignedInterpolatedPlaneTrace row/col convention.
+// H-constant: rows=K, cols=L -> x=L, y=K
+if(ax>1-axisTol&&ay<axisTol&&az<axisTol)return{u:[0,0,1],v:[0,1,0]};
+// K-constant: rows=H, cols=L -> x=L, y=H
+if(ay>1-axisTol&&ax<axisTol&&az<axisTol)return{u:[0,0,1],v:[1,0,0]};
+// L-constant: rows=H, cols=K -> x=K, y=H
+if(az>1-axisTol&&ax<axisTol&&ay<axisTol)return{u:[0,1,0],v:[1,0,0]};
 const axes=[[1,0,0],[0,1,0],[0,0,1]];
 function pickProjected(order){
 for(const i of order){
@@ -990,7 +993,7 @@ let Xmin=Infinity,Xmax=-Infinity,Ymin=Infinity,Ymax=-Infinity;
 for(const c of corners){const Xm=ax*c[0]+bx2*c[1],Ym=by2*c[1];if(Xm<Xmin)Xmin=Xm;if(Xm>Xmax)Xmax=Xm;if(Ym<Ymin)Ymin=Ym;if(Ym>Ymax)Ymax=Ym;}
 const spanXm=Math.max(1e-12,Xmax-Xmin),spanYm=Math.max(1e-12,Ymax-Ymin),s=0.9*Math.min(mapW/spanXm,mapH/spanYm);
 drawW=Math.max(1,Math.floor(spanXm*s));drawH=Math.max(1,Math.floor(spanYm*s));drawX=mapX+Math.floor((mapW-drawW)/2);drawY=mapY+Math.floor((mapH-drawH)/2);
-const denU=Math.max(1,srcW-1),denV=Math.max(1,srcH-1),xA=(visXMax-visXMin)/denU,yA=-(visYMax-visYMin)/denV,x0=visXMin,y0=visYMax;
+const denU=Math.max(1,srcW-1),denV=Math.max(1,srcH-1),xA=(visXMax-visXMin)/denU,yA=(visYMax-visYMin)/denV,x0=visXMin,y0=visYMin;
 const A=s*ax*xA,B=0,C=s*bx2*yA,D=-s*by2*yA,E=drawX-s*Xmin+s*(ax*x0+bx2*y0),F=drawY+s*Ymax-s*(by2*y0);
 ctx.save();ctx.transform(A,B,C,D,E,F);ctx.drawImage(off,srcX,srcY,srcW,srcH,0,0,srcW,srcH);ctx.restore();
 mapXY=(xv,yv)=>{const Xm=ax*xv+bx2*yv,Ym=by2*yv;return[drawX+s*(Xm-Xmin),drawY+s*(Ymax-Ym)];};
