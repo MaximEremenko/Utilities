@@ -258,7 +258,7 @@ function status(msg,kind=""){const e=$("status");e.textContent=msg;e.className=k
 function fmtMs(ms){if(!Number.isFinite(ms)||ms<0)return"0 ms";if(ms>=1000)return`${(ms/1000).toFixed(2)} s`;return`${ms.toFixed(0)} ms`;}
 function hasWebgpuFftApi(){return typeof window.webgpufft==="object"&&(typeof window.webgpufft.createPlan==="function"||typeof window.webgpufft.createFftPlan==="function");}
 function invalidatePlaneSliceCache(){state.planeSliceCache=null;}
-function fastPlaneRes(){const full=Math.max(32,Math.min(600,Math.floor(Number($("pRes").value)||200)));return Math.max(56,Math.min(160,Math.floor(full*0.7)));}
+function fastPlaneRes(){const full=Math.max(32,Math.min(600,Math.floor(readNumberInput("pRes",200))));return Math.max(56,Math.min(160,Math.floor(full*0.7)));}
 const SCRIPT_LOADS={};
 function loadScriptOnce(src){if(SCRIPT_LOADS[src])return SCRIPT_LOADS[src];SCRIPT_LOADS[src]=new Promise((resolve,reject)=>{const s=document.createElement("script");s.src=src;s.async=true;s.onload=()=>resolve();s.onerror=()=>reject(new Error(`Failed to load script ${src}`));document.head.appendChild(s);});return SCRIPT_LOADS[src];}
 async function ensureWebgpuFftApi(){
@@ -299,10 +299,49 @@ function applyBackendDefaults(backend,announce=false){const p=BACKEND_PRESETS[ba
 function formatWebgpuStageTotals(stages){const parts=[];for(const k of WEBGPU_STAGE_ORDER){const v=stages[k]||0;if(v>0)parts.push(`${WEBGPU_STAGE_LABEL[k]||k}=${fmtMs(v)}`);}return parts.join(", ");}
 function syncResultControls(){const has=!!state.res,planeMode=$("sliceMode").value==="plane";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("axis").disabled=!has||planeMode;$("idx").disabled=!has||planeMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("levelMode").disabled=!has;$("levelWindowPct").disabled=!has||$("levelMode").value!=="both";$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale","planeApply","planeReset"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
 function clamp01(v){return v<0?0:(v>1?1:v);}function lerp(a,b,t){return a+(b-a)*t;}
+function readNumberInput(id,fallback){const el=$(id);if(!el)return fallback;const v=Number.isFinite(el.valueAsNumber)?el.valueAsNumber:Number(String(el.value||"").replace(/,/g,"."));return Number.isFinite(v)?v:fallback;}
 function getColorPreset(){const key=$("colorMap")&&$("colorMap").value?$("colorMap").value:"viridis";return COLOR_PRESETS[key]||COLOR_PRESETS.viridis;}
 function rgbFromStops(stops,t){const u=clamp01(t);for(let i=0;i<stops.length-1;i++){const a=stops[i],b=stops[i+1];if(u>=a[0]&&u<=b[0]){const tt=(u-a[0])/((b[0]-a[0])||1);return[Math.round(lerp(a[1][0],b[1][0],tt)),Math.round(lerp(a[1][1],b[1][1],tt)),Math.round(lerp(a[1][2],b[1][2],tt))];}}return stops[stops.length-1][1];}
 function getSliceMode(){return $("sliceMode")&&$("sliceMode").value==="plane"?"plane":"axis";}
 function norm3(v){const n=Math.hypot(v[0],v[1],v[2]);if(!(n>1e-12))return[1,0,0];return[v[0]/n,v[1]/n,v[2]/n];}
+function projOnPlane(axis,n){const d=axis[0]*n[0]+axis[1]*n[1]+axis[2]*n[2];return[axis[0]-d*n[0],axis[1]-d*n[1],axis[2]-d*n[2]];}
+function planeBasisFromNormal(n){
+const nx=n[0],ny=n[1],nz=n[2],ax=Math.abs(nx),ay=Math.abs(ny),az=Math.abs(nz),axisTol=1e-6;
+// Axis-locked planes: keep canonical in-plane directions so slice never appears transposed.
+if(ax>1-axisTol&&ay<axisTol&&az<axisTol)return{u:[0,1,0],v:[0,0,1]}; // H-normal -> K right, L up
+if(ay>1-axisTol&&ax<axisTol&&az<axisTol)return{u:[1,0,0],v:[0,0,1]}; // K-normal -> H right, L up
+if(az>1-axisTol&&ax<axisTol&&ay<axisTol)return{u:[1,0,0],v:[0,1,0]}; // L-normal -> H right, K up
+const axes=[[1,0,0],[0,1,0],[0,0,1]];
+function pickProjected(order){
+for(const i of order){
+const p=projOnPlane(axes[i],n),ln=Math.hypot(p[0],p[1],p[2]);
+if(ln>1e-10)return{axis:i,vec:[p[0]/ln,p[1]/ln,p[2]/ln]};
+}
+return null;
+}
+// Prefer L-up on the plane, then K, then H.
+const vPick=pickProjected([2,1,0]);
+if(vPick){
+let v=vPick.vec.slice();
+let u=norm3(cross(v,n));
+if(Math.hypot(u[0],u[1],u[2])<=1e-10){
+const ref=Math.abs(n[0])>0.9?[0,1,0]:[1,0,0];
+u=norm3(cross(ref,n));
+v=norm3(cross(n,u));
+}else{
+v=norm3(cross(n,u));
+}
+// Stabilize horizontal sign: prefer +H then +K then +L.
+const uPick=pickProjected([0,1,2]);
+if(uPick&&dot(u,uPick.vec)<0){u=[-u[0],-u[1],-u[2]];v=[-v[0],-v[1],-v[2]];}
+// Keep vertical sign aligned to preferred v direction.
+if(dot(v,vPick.vec)<0){u=[-u[0],-u[1],-u[2]];v=[-v[0],-v[1],-v[2]];}
+return{u,v};
+}
+const ref=Math.abs(n[0])>0.9?[0,1,0]:[1,0,0];
+const u=norm3(cross(ref,n)),v=norm3(cross(n,u));
+return{u,v};
+}
 function getPlaneUnit(p){if(!p)return[1,0,0];if(Array.isArray(p.normalUnit)&&p.normalUnit.length===3)return p.normalUnit;const u=norm3(Array.isArray(p.normal)?p.normal:[1,0,0]);p.normalUnit=u;return u;}
 function add3(a,b){return[a[0]+b[0],a[1]+b[1],a[2]+b[2]];}
 function scale3(v,s){return[v[0]*s,v[1]*s,v[2]*s];}
@@ -314,7 +353,7 @@ function setPlaneUiFromState(){if(!state.res||!state.plane)return;const p=state.
 function movePlaneToSlider(idx){if(!state.plane)return;const p=state.plane;if(!p.sliderPositions.length){p.sliderPositions=[0];}const i=Math.max(0,Math.min(Math.floor(idx),p.sliderPositions.length-1));p.sliderIndex=i;const t=p.sliderPositions[i]||0,u=getPlaneUnit(p);p.center=add3(p.origin,scale3(u,t));invalidatePlaneSliceCache();setPlaneUiFromState();}
 function rebuildPlaneSlider(){if(!state.res||!state.plane)return;const p=state.plane,b=boundsRes(state.res),n=getPlaneUnit(p),tv=[];for(let i=0;i<3;i++){const ni=n[i];if(Math.abs(ni)>1e-9){tv.push((b.min[i]-p.origin[i])/ni,(b.max[i]-p.origin[i])/ni);}}if(tv.length===0)tv.push(-1,1);tv.sort((a,bv)=>a-bv);const t0=tv[0],t1=tv[tv.length-1],count=401;p.sliderPositions=Array.from({length:count},(_,i)=>t0+(t1-t0)*i/Math.max(1,count-1));let best=0,bestAbs=Infinity;for(let i=0;i<p.sliderPositions.length;i++){const av=Math.abs(p.sliderPositions[i]);if(av<bestAbs){bestAbs=av;best=i;}}movePlaneToSlider(best);}
 function ensurePlaneState(res){const sig=planeSig(res);if(state.plane&&state.plane.signature===sig)return state.plane;const b=boundsRes(res),mid=[0.5*(b.min[0]+b.max[0]),0.5*(b.min[1]+b.max[1]),0.5*(b.min[2]+b.max[2])];state.plane={signature:sig,normal:[1,0,0],normalUnit:[1,0,0],origin:mid.slice(),center:mid.slice(),sliderPositions:[0],sliderIndex:0};invalidatePlaneSliceCache();rebuildPlaneSlider();return state.plane;}
-function applyPlaneFromInputs(){if(!state.res)return;ensurePlaneState(state.res);const nx=Number($("pNX").value),ny=Number($("pNY").value),nz=Number($("pNZ").value),ox=Number($("pOX").value),oy=Number($("pOY").value),oz=Number($("pOZ").value),rawCandidate=[Number.isFinite(nx)?nx:1,Number.isFinite(ny)?ny:0,Number.isFinite(nz)?nz:0],raw=Math.hypot(rawCandidate[0],rawCandidate[1],rawCandidate[2])>1e-12?rawCandidate:[1,0,0];state.plane.normal=raw;state.plane.normalUnit=norm3(raw);state.plane.origin=[Number.isFinite(ox)?ox:0,Number.isFinite(oy)?oy:0,Number.isFinite(oz)?oz:0];invalidatePlaneSliceCache();rebuildPlaneSlider();}
+function applyPlaneFromInputs(){if(!state.res)return;ensurePlaneState(state.res);const nx=readNumberInput("pNX",1),ny=readNumberInput("pNY",0),nz=readNumberInput("pNZ",0),ox=readNumberInput("pOX",0),oy=readNumberInput("pOY",0),oz=readNumberInput("pOZ",0),rawCandidate=[Number.isFinite(nx)?nx:1,Number.isFinite(ny)?ny:0,Number.isFinite(nz)?nz:0],raw=Math.hypot(rawCandidate[0],rawCandidate[1],rawCandidate[2])>1e-12?rawCandidate:[1,0,0];state.plane.normal=raw;state.plane.normalUnit=norm3(raw);state.plane.origin=[Number.isFinite(ox)?ox:0,Number.isFinite(oy)?oy:0,Number.isFinite(oz)?oz:0];invalidatePlaneSliceCache();rebuildPlaneSlider();}
 function resetPlaneToolDefaults(){
 if(!state.res){
 $("sliceMode").value="plane";
@@ -338,31 +377,57 @@ applyPlaneFromInputs();
 resetDisplayLevels();
 updateSliceUI();
 draw();
-const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));
+const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));
 updatePlaneTraceFast(fullRes).catch(()=>{});
 }
 function sampleTrilinearPartialRenorm(vol,shape,fx,fy,fz){let i0=Math.floor(fx),j0=Math.floor(fy),k0=Math.floor(fz),rx=fx-i0,ry=fy-j0,rz=fz-k0,val=0,wSum=0;for(let dz=0;dz<=1;dz++)for(let dy=0;dy<=1;dy++)for(let dx=0;dx<=1;dx++){const ii=i0+dx,jj=j0+dy,kk=k0+dz;if(ii<0||jj<0||kk<0||ii>=shape[0]||jj>=shape[1]||kk>=shape[2])continue;const w=(dx?rx:1-rx)*(dy?ry:1-ry)*(dz?rz:1-rz),idxv=(ii*shape[1]+jj)*shape[2]+kk,valv=vol[idxv];if(!Number.isFinite(valv))continue;val+=valv*w;wSum+=w;}return wSum>0?val/wSum:NaN;}
-function buildNormalPlaneSlice(res,mode,wantMesh=false,resOverride){ensurePlaneState(res);const p=state.plane,n=getPlaneUnit(p),ref=Math.abs(n[0])>0.9?[0,1,0]:[1,0,0],u=norm3(cross(ref,n)),v=norm3(cross(n,u)),range=[res.h[res.h.length-1]-res.h[0],res.k[res.k.length-1]-res.k[0],res.l[res.l.length-1]-res.l[0]],planeScale=Math.max(0.2,Number($("pScale").value)||1.75),planeSize=Math.max(1e-6,Math.max(range[0],range[1],range[2])*planeScale),nRes=Math.max(32,Math.min(600,Math.floor(Number.isFinite(resOverride)?resOverride:(Number($("pRes").value)||200)))),c0=p.center,half=0.5*planeSize,step=nRes>1?planeSize/(nRes-1):0,key=`${planeSig(res)}|${mode}|${wantMesh?1:0}|${nRes}|${planeSize.toFixed(6)}|${n[0].toFixed(7)},${n[1].toFixed(7)},${n[2].toFixed(7)}|${c0[0].toFixed(7)},${c0[1].toFixed(7)},${c0[2].toFixed(7)}`;if(state.planeSliceCache&&state.planeSliceCache.key===key)return state.planeSliceCache.value;const h0=res.h[0],k0=res.k[0],l0=res.l[0],dh=stepRes(res.h),dk=stepRes(res.k),dl=stepRes(res.l),invDh=1/(Math.abs(dh)>1e-30?dh:1),invDk=1/(Math.abs(dk)>1e-30?dk:1),invDl=1/(Math.abs(dl)>1e-30?dl:1),rows=nRes,cols=nRes,data=new Float64Array(rows*cols),cx=c0[0],cy=c0[1],cz=c0[2],ux=u[0],uy=u[1],uz=u[2],vx=v[0],vy=v[1],vz=v[2],stepUx=ux*step,stepUy=uy*step,stepUz=uz*step;let valid=0;const X=wantMesh?new Array(rows):null,Y=wantMesh?new Array(rows):null,Z=wantMesh?new Array(rows):null,C=wantMesh?new Array(rows):null;for(let r=0;r<rows;r++){const rv=-half+r*step,base= r*cols;let px=cx+vx*rv-ux*half,py=cy+vy*rv-uy*half,pz=cz+vz*rv-uz*half;const rowX=wantMesh?new Array(cols):null,rowY=wantMesh?new Array(cols):null,rowZ=wantMesh?new Array(cols):null,rowC=wantMesh?new Array(cols):null;for(let c=0;c<cols;c++){const fx=(px-h0)*invDh,fy=(py-k0)*invDk,fz=(pz-l0)*invDl,val=sampleTrilinearPartialRenorm(res.I,res.shape,fx,fy,fz),vv=Number.isFinite(val)?scaledVal(val,mode):NaN;data[base+c]=vv;if(Number.isFinite(vv))valid++;if(wantMesh){if(Number.isFinite(vv)){rowX[c]=px;rowY[c]=py;rowZ[c]=pz;rowC[c]=vv;}else{rowX[c]=NaN;rowY[c]=NaN;rowZ[c]=NaN;rowC[c]=NaN;}}px+=stepUx;py+=stepUy;pz+=stepUz;}if(wantMesh){X[r]=rowX;Y[r]=rowY;Z[r]=rowZ;C[r]=rowC;}}const qU=mul(u,res.Bq),qV=mul(v,res.Bq),xScaleQ=Math.max(1e-12,normVec(qU)),yScaleQ=Math.max(1e-12,normVec(qV)),nr=p.normal||n,result={rows,cols,d:data,plane:`Plane n=(${nr[0].toFixed(3)},${nr[1].toFixed(3)},${nr[2].toFixed(3)}) c=(${c0[0].toFixed(4)},${c0[1].toFixed(4)},${c0[2].toFixed(4)})`,x:`u span ${(-half).toFixed(3)}..${half.toFixed(3)}`,y:`v span ${(-half).toFixed(3)}..${half.toFixed(3)}`,xLabel:"u",yLabel:"v",xMin:-half,xMax:half,yMin:-half,yMax:half,xScaleQ,yScaleQ,xQVec:qU,yQVec:qV,validCount:valid,x3:X,y3:Y,z3:Z,c3:C};state.planeSliceCache={key,value:result};return result;}
+function boundsIntervalAlongDir(c,d,b){let tMin=-Infinity,tMax=Infinity;for(let i=0;i<3;i++){const di=d[i],ci=c[i],lo=b.min[i],hi=b.max[i];if(Math.abs(di)<1e-12){if(ci<lo||ci>hi)return null;continue;}const a=(lo-ci)/di,bv=(hi-ci)/di,loT=Math.min(a,bv),hiT=Math.max(a,bv);if(loT>tMin)tMin=loT;if(hiT<tMax)tMax=hiT;if(tMin>tMax)return null;}return[tMin,tMax];}
+function maxPlaneHalfInside(c,u,v,b){let half=Infinity;for(const su of[-1,1])for(const sv of[-1,1]){const dir=[su*u[0]+sv*v[0],su*u[1]+sv*v[1],su*u[2]+sv*v[2]],iv=boundsIntervalAlongDir(c,dir,b);if(!iv)return 0;const tPos=iv[1];if(!(tPos>0))return 0;if(tPos<half)half=tPos;}return Number.isFinite(half)&&half>0?half:0;}
+function planeBoxUvBounds(c0,n,u,v,b){
+const mn=b.min,mx=b.max,corners=[[mn[0],mn[1],mn[2]],[mn[0],mn[1],mx[2]],[mn[0],mx[1],mn[2]],[mn[0],mx[1],mx[2]],[mx[0],mn[1],mn[2]],[mx[0],mn[1],mx[2]],[mx[0],mx[1],mn[2]],[mx[0],mx[1],mx[2]]],edges=[[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]],eps=1e-9,pts=[];
+function addPt(p){for(const q of pts){if(Math.abs(p[0]-q[0])<1e-7&&Math.abs(p[1]-q[1])<1e-7&&Math.abs(p[2]-q[2])<1e-7)return;}pts.push(p);}
+for(const e of edges){
+const a=corners[e[0]],b2=corners[e[1]],da=(a[0]-c0[0])*n[0]+(a[1]-c0[1])*n[1]+(a[2]-c0[2])*n[2],db=(b2[0]-c0[0])*n[0]+(b2[1]-c0[1])*n[1]+(b2[2]-c0[2])*n[2];
+if(Math.abs(da)<=eps&&Math.abs(db)<=eps){addPt(a.slice());addPt(b2.slice());continue;}
+if(da*db>0)continue;
+const den=da-db;if(Math.abs(den)<=eps)continue;
+const t=da/den;if(t<-eps||t>1+eps)continue;
+const tt=Math.max(0,Math.min(1,t));
+addPt([a[0]+(b2[0]-a[0])*tt,a[1]+(b2[1]-a[1])*tt,a[2]+(b2[2]-a[2])*tt]);
+}
+if(pts.length<2)return null;
+let uMin=Infinity,uMax=-Infinity,vMin=Infinity,vMax=-Infinity;
+for(const p of pts){
+const d=[p[0]-c0[0],p[1]-c0[1],p[2]-c0[2]],uu=d[0]*u[0]+d[1]*u[1]+d[2]*u[2],vv=d[0]*v[0]+d[1]*v[1]+d[2]*v[2];
+if(uu<uMin)uMin=uu;if(uu>uMax)uMax=uu;if(vv<vMin)vMin=vv;if(vv>vMax)vMax=vv;
+}
+if(!Number.isFinite(uMin)||!Number.isFinite(uMax)||!Number.isFinite(vMin)||!Number.isFinite(vMax))return null;
+return{uMin,uMax,vMin,vMax,count:pts.length,points:pts};
+}
+function buildNormalPlaneSlice(res,mode,wantMesh=false,resOverride){ensurePlaneState(res);const p=state.plane,n=getPlaneUnit(p),basis=planeBasisFromNormal(n),u=basis.u,v=basis.v,range=[res.h[res.h.length-1]-res.h[0],res.k[res.k.length-1]-res.k[0],res.l[res.l.length-1]-res.l[0]],planeScale=Math.max(0.2,readNumberInput("pScale",1.75)),nRes=Math.max(32,Math.min(600,Math.floor(Number.isFinite(resOverride)?resOverride:readNumberInput("pRes",200)))),c0=p.center,b=boundsRes(res),uvFull=planeBoxUvBounds(c0,n,u,v,b),useScale=Math.min(1,planeScale);let uMin,uMax,vMin,vMax;if(uvFull&&uvFull.uMax>uvFull.uMin+1e-9&&uvFull.vMax>uvFull.vMin+1e-9){const uMid=0.5*(uvFull.uMin+uvFull.uMax),vMid=0.5*(uvFull.vMin+uvFull.vMax),uHalf=0.5*(uvFull.uMax-uvFull.uMin)*useScale,vHalf=0.5*(uvFull.vMax-uvFull.vMin)*useScale;uMin=uMid-uHalf;uMax=uMid+uHalf;vMin=vMid-vHalf;vMax=vMid+vHalf;}else{const requestedSize=Math.max(1e-6,Math.max(range[0],range[1],range[2])*planeScale),halfLimit=maxPlaneHalfInside(c0,u,v,b),half=Math.max(1e-6,Math.min(0.5*requestedSize,Math.max(halfLimit,1e-6)));uMin=-half;uMax=half;vMin=-half;vMax=half;}const stepU=nRes>1?(uMax-uMin)/(nRes-1):0,stepV=nRes>1?(vMax-vMin)/(nRes-1):0,key=`${planeSig(res)}|${mode}|${wantMesh?1:0}|${nRes}|${uMin.toFixed(6)},${uMax.toFixed(6)}|${vMin.toFixed(6)},${vMax.toFixed(6)}|${n[0].toFixed(7)},${n[1].toFixed(7)},${n[2].toFixed(7)}|${c0[0].toFixed(7)},${c0[1].toFixed(7)},${c0[2].toFixed(7)}`;if(state.planeSliceCache&&state.planeSliceCache.key===key)return state.planeSliceCache.value;const h0=res.h[0],k0=res.k[0],l0=res.l[0],dh=stepRes(res.h),dk=stepRes(res.k),dl=stepRes(res.l),invDh=1/(Math.abs(dh)>1e-30?dh:1),invDk=1/(Math.abs(dk)>1e-30?dk:1),invDl=1/(Math.abs(dl)>1e-30?dl:1),rows=nRes,cols=nRes,data=new Float64Array(rows*cols),cx=c0[0],cy=c0[1],cz=c0[2],ux=u[0],uy=u[1],uz=u[2],vx=v[0],vy=v[1],vz=v[2],stepUx=ux*stepU,stepUy=uy*stepU,stepUz=uz*stepU;let valid=0;const X=wantMesh?new Array(rows):null,Y=wantMesh?new Array(rows):null,Z=wantMesh?new Array(rows):null,C=wantMesh?new Array(rows):null;for(let r=0;r<rows;r++){const rv=vMin+r*stepV,base= r*cols;let px=cx+vx*rv+ux*uMin,py=cy+vy*rv+uy*uMin,pz=cz+vz*rv+uz*uMin;const rowX=wantMesh?new Array(cols):null,rowY=wantMesh?new Array(cols):null,rowZ=wantMesh?new Array(cols):null,rowC=wantMesh?new Array(cols):null;for(let c=0;c<cols;c++){const fx=(px-h0)*invDh,fy=(py-k0)*invDk,fz=(pz-l0)*invDl,val=sampleTrilinearPartialRenorm(res.I,res.shape,fx,fy,fz),vv=Number.isFinite(val)?scaledVal(val,mode):NaN;data[base+c]=vv;if(Number.isFinite(vv))valid++;if(wantMesh){if(Number.isFinite(vv)){rowX[c]=px;rowY[c]=py;rowZ[c]=pz;rowC[c]=vv;}else{rowX[c]=NaN;rowY[c]=NaN;rowZ[c]=NaN;rowC[c]=NaN;}}px+=stepUx;py+=stepUy;pz+=stepUz;}if(wantMesh){X[r]=rowX;Y[r]=rowY;Z[r]=rowZ;C[r]=rowC;}}const qU=mul(u,res.Bq),qV=mul(v,res.Bq),xScaleQ=Math.max(1e-12,normVec(qU)),yScaleQ=Math.max(1e-12,normVec(qV)),nr=p.normal||n,result={rows,cols,d:data,plane:`Plane n=(${nr[0].toFixed(3)},${nr[1].toFixed(3)},${nr[2].toFixed(3)}) c=(${c0[0].toFixed(4)},${c0[1].toFixed(4)},${c0[2].toFixed(4)})`,x:`u span ${uMin.toFixed(3)}..${uMax.toFixed(3)}`,y:`v span ${vMin.toFixed(3)}..${vMax.toFixed(3)}`,xLabel:"u",yLabel:"v",xMin:uMin,xMax:uMax,yMin:vMin,yMax:vMax,xScaleQ,yScaleQ,xQVec:qU,yQVec:qV,validCount:valid,x3:X,y3:Y,z3:Z,c3:C};state.planeSliceCache={key,value:result};return result;}
 
 function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
 function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
 function col3(m,j){return[m[0][j],m[1][j],m[2][j]];}
 function inv3(m){const a=m[0][0],b=m[0][1],c=m[0][2],d=m[1][0],e=m[1][1],f=m[1][2],g=m[2][0],h=m[2][1],i=m[2][2];const A=e*i-f*h,B=-(d*i-f*g),C=d*h-e*g,D=-(b*i-c*h),E=a*i-c*g,F=-(a*h-b*g),G=b*f-c*e,H=-(a*f-c*d),I=a*e-b*d;const det=a*A+b*B+c*C;if(!Number.isFinite(det)||Math.abs(det)<1e-20)throw new Error("Singular matrix");const s=1/det;return[[A*s,D*s,G*s],[B*s,E*s,H*s],[C*s,F*s,I*s]];}
 function mul(v,m){return[v[0]*m[0][0]+v[1]*m[1][0]+v[2]*m[2][0],v[0]*m[0][1]+v[1]*m[1][1]+v[2]*m[2][1],v[0]*m[0][2]+v[1]*m[1][2]+v[2]*m[2][2]];}
+function hklToQ(h,k,l,Bq){if(!Array.isArray(Bq))return[h,k,l];return mul([h,k,l],Bq);}
+function hklVecToQ(v,Bq){if(!Array.isArray(Bq))return[v[0],v[1],v[2]];return mul(v,Bq);}
 function scaleCols(m,s){return[[m[0][0]*s[0],m[0][1]*s[1],m[0][2]*s[2]],[m[1][0]*s[0],m[1][1]*s[1],m[1][2]*s[2]],[m[2][0]*s[0],m[2][1]*s[1],m[2][2]*s[2]]];}
 function scaleMat(m,s){return[[m[0][0]*s,m[0][1]*s,m[0][2]*s],[m[1][0]*s,m[1][1]*s,m[1][2]*s],[m[2][0]*s,m[2][1]*s,m[2][2]*s]];}
 function normVec(v){return Math.hypot(v[0],v[1],v[2]);}
 function fmtTick(v){if(!Number.isFinite(v))return "";const a=Math.abs(v);if(a>=1000||a===0||a<1e-3)return v.toExponential(2);if(a>=100)return v.toFixed(0);if(a>=10)return v.toFixed(1);return v.toFixed(3);}
 function chooseTickValues(arr,maxTicks=7){if(!Array.isArray(arr)||!arr.length)return[];if(arr.length<=maxTicks)return arr.slice();const out=[];for(let i=0;i<maxTicks;i++){const j=Math.round(i*(arr.length-1)/Math.max(1,maxTicks-1));out.push(arr[j]);}const uniq=[];for(const v of out){if(!uniq.length||Math.abs(v-uniq[uniq.length-1])>1e-12)uniq.push(v);}return uniq;}
 function sanitizeAxisTicks(vals,txt,min,max){const rows=[];for(let i=0;i<vals.length;i++){const v=vals[i],t=txt[i];if(!Number.isFinite(v)||v<min-1e-9||v>max+1e-9)continue;rows.push({v,t:String(t)});}rows.sort((a,b)=>a.v-b.v);const outV=[],outT=[];for(const r of rows){if(outV.length&&Math.abs(r.v-outV[outV.length-1])<=1e-9)continue;outV.push(r.v);outT.push(r.t);}return{tickvals:outV,ticktext:outT};}
+function chooseAxisRef(min,max){if(min<=0&&max>=0)return 0;return Math.abs(min)<=Math.abs(max)?min:max;}
 function buildVirtualHklTicks(res,qxRange,qyRange,qzRange){
 if(!res||!Array.isArray(res.Bq))return null;
-const hRef=0.5*(res.h[0]+res.h[res.h.length-1]),kRef=0.5*(res.k[0]+res.k[res.k.length-1]),lRef=0.5*(res.l[0]+res.l[res.l.length-1]);
+const hRef=chooseAxisRef(res.h[0],res.h[res.h.length-1]),kRef=chooseAxisRef(res.k[0],res.k[res.k.length-1]),lRef=chooseAxisRef(res.l[0],res.l[res.l.length-1]);
 const hTicks=chooseTickValues(res.h),kTicks=chooseTickValues(res.k),lTicks=chooseTickValues(res.l);
 const xVals=[],xTxt=[],yVals=[],yTxt=[],zVals=[],zTxt=[];
-for(const h of hTicks){const q=mul([h,kRef,lRef],res.Bq);xVals.push(q[0]);xTxt.push(fmtTick(h));}
-for(const k of kTicks){const q=mul([hRef,k,lRef],res.Bq);yVals.push(q[1]);yTxt.push(fmtTick(k));}
-for(const l of lTicks){const q=mul([hRef,kRef,l],res.Bq);zVals.push(q[2]);zTxt.push(fmtTick(l));}
+for(const h of hTicks){const q=hklToQ(h,kRef,lRef,res.Bq);xVals.push(q[0]);xTxt.push(fmtTick(h));}
+for(const k of kTicks){const q=hklToQ(hRef,k,lRef,res.Bq);yVals.push(q[1]);yTxt.push(fmtTick(k));}
+for(const l of lTicks){const q=hklToQ(hRef,kRef,l,res.Bq);zVals.push(q[2]);zTxt.push(fmtTick(l));}
 return{x:sanitizeAxisTicks(xVals,xTxt,qxRange[0],qxRange[1]),y:sanitizeAxisTicks(yVals,yTxt,qyRange[0],qyRange[1]),z:sanitizeAxisTicks(zVals,zTxt,qzRange[0],qzRange[1])};
 }
 function chooseHklTickStep(arr,targetTicks=7){
@@ -385,17 +450,18 @@ return out;
 function makeHklAxesOverlayTraces(res){
 if(!res||!Array.isArray(res.Bq))return[];
 const hMin=res.h[0],hMax=res.h[res.h.length-1],kMin=res.k[0],kMax=res.k[res.k.length-1],lMin=res.l[0],lMax=res.l[res.l.length-1];
+const hRef=chooseAxisRef(hMin,hMax),kRef=chooseAxisRef(kMin,kMax),lRef=chooseAxisRef(lMin,lMax);
 const ranges=[Math.max(1e-9,Math.abs(hMax-hMin)),Math.max(1e-9,Math.abs(kMax-kMin)),Math.max(1e-9,Math.abs(lMax-lMin))];
 const tickLen=0.035*Math.max(ranges[0],ranges[1],ranges[2]);
 const axisH=[],axisK=[],axisL=[],gridH=[],gridK=[],gridL=[],edgeH=[],edgeK=[],edgeL=[];
 function addSeg(dstH,dstK,dstL,a,b){
-const qa=mul(a,res.Bq),qb=mul(b,res.Bq);
+const qa=hklVecToQ(a,res.Bq),qb=hklVecToQ(b,res.Bq);
 dstH.push(qa[0],qb[0],NaN);dstK.push(qa[1],qb[1],NaN);dstL.push(qa[2],qb[2],NaN);
 }
-// Main HKL axes in Cartesian-Q view (full HKL range)
-addSeg(axisH,axisK,axisL,[hMin,0,0],[hMax,0,0]);
-addSeg(axisH,axisK,axisL,[0,kMin,0],[0,kMax,0]);
-addSeg(axisH,axisK,axisL,[0,0,lMin],[0,0,lMax]);
+// Main HKL axes in Cartesian-Q view, anchored near HKL origin.
+addSeg(axisH,axisK,axisL,[hMin,kRef,lRef],[hMax,kRef,lRef]);
+addSeg(axisH,axisK,axisL,[hRef,kMin,lRef],[hRef,kMax,lRef]);
+addSeg(axisH,axisK,axisL,[hRef,kRef,lMin],[hRef,kRef,lMax]);
 // Box edges and face grid lines (Dash-style overlay)
 const hs=[hMin,hMax],ks=[kMin,kMax],ls=[lMin,lMax],hStep=chooseHklTickStep(res.h,9),kStep=chooseHklTickStep(res.k,9),lStep=chooseHklTickStep(res.l,9),hTicks=hklAxisTicks(hMin,hMax,hStep),kTicks=hklAxisTicks(kMin,kMax,kStep),lTicks=hklAxisTicks(lMin,lMax,lStep);
 for(const h of hs){for(const k of kTicks)addSeg(gridH,gridK,gridL,[h,k,lMin],[h,k,lMax]);for(const l of lTicks)addSeg(gridH,gridK,gridL,[h,kMin,l],[h,kMax,l]);}
@@ -404,23 +470,22 @@ for(const l of ls){for(const h of hTicks)addSeg(gridH,gridK,gridL,[h,kMin,l],[h,
 const corners=[[hMin,kMin,lMin],[hMin,kMin,lMax],[hMin,kMax,lMin],[hMin,kMax,lMax],[hMax,kMin,lMin],[hMax,kMin,lMax],[hMax,kMax,lMin],[hMax,kMax,lMax]],edges=[[0,1],[0,2],[0,4],[7,6],[7,5],[7,3],[1,3],[1,5],[2,3],[2,6],[4,5],[4,6]];
 for(const e of edges){addSeg(edgeH,edgeK,edgeL,corners[e[0]],corners[e[1]]);}
 const txtX=[],txtY=[],txtZ=[],txt=[];
-function addTicks(axis,min,max,step){
+function addTicks(axis,min,max,step,anchor){
 const ticks=hklAxisTicks(min,max,step),perp=(axis+1)%3;
 for(const t of ticks){
-const a=[0,0,0],b=[0,0,0],lab=[0,0,0];
+const a=anchor.slice(),b=anchor.slice(),lab=anchor.slice();
 a[axis]=t;b[axis]=t;lab[axis]=t;
-a[perp]=-tickLen*0.5;b[perp]=tickLen*0.5;lab[perp]=tickLen*0.9;
+a[perp]-=tickLen*0.5;b[perp]+=tickLen*0.5;lab[perp]+=tickLen*0.9;
 addSeg(axisH,axisK,axisL,a,b);
-const q=mul(lab,res.Bq);txtX.push(q[0]);txtY.push(q[1]);txtZ.push(q[2]);txt.push(String(Math.round(t)));
+const q=hklVecToQ(lab,res.Bq);txtX.push(q[0]);txtY.push(q[1]);txtZ.push(q[2]);txt.push(fmtTick(t));
 }
-const name=[0,0,0],off=[0,0,0];
-name[axis]=max;off[perp]=tickLen*1.6;
-const qn=mul([name[0]+off[0],name[1]+off[1],name[2]+off[2]],res.Bq);
-txtX.push(qn[0]);txtY.push(qn[1]);txtZ.push(qn[2]);txt.push(axis===0?"H":axis===1?"K":"L");
+const off=anchor.slice();off[axis]=max;off[perp]+=tickLen*1.6;
+const qn=hklVecToQ(off,res.Bq);
+  txtX.push(qn[0]);txtY.push(qn[1]);txtZ.push(qn[2]);txt.push(axis===0?"H (r.l.u)":axis===1?"K (r.l.u)":"L (r.l.u)");
 }
-addTicks(0,hMin,hMax,chooseHklTickStep(res.h,8));
-addTicks(1,kMin,kMax,chooseHklTickStep(res.k,8));
-addTicks(2,lMin,lMax,chooseHklTickStep(res.l,8));
+addTicks(0,hMin,hMax,chooseHklTickStep(res.h,8),[hRef,kRef,lRef]);
+addTicks(1,kMin,kMax,chooseHklTickStep(res.k,8),[hRef,kRef,lRef]);
+addTicks(2,lMin,lMax,chooseHklTickStep(res.l,8),[hRef,kRef,lRef]);
 return[
 {type:"scatter3d",mode:"lines",x:gridH,y:gridK,z:gridL,hoverinfo:"skip",showlegend:false,line:{color:"#27415a",width:1}},
 {type:"scatter3d",mode:"lines",x:edgeH,y:edgeK,z:edgeL,hoverinfo:"skip",showlegend:false,line:{color:"#425f82",width:2}},
@@ -437,11 +502,31 @@ out[r]=row;
 }
 return out;
 }
+function makeSurfaceHklQCustom(H,K,L,QX,QY,QZ){
+const rows=H.length,out=new Array(rows);
+for(let r=0;r<rows;r++){
+const rowH=H[r],rowK=K[r],rowL=L[r],rowQX=QX[r],rowQY=QY[r],rowQZ=QZ[r],cols=rowH.length,row=new Array(cols);
+for(let c=0;c<cols;c++)row[c]=[rowH[c],rowK[c],rowL[c],rowQX[c],rowQY[c],rowQZ[c]];
+out[r]=row;
+}
+return out;
+}
+function hoverNum(v){if(!Number.isFinite(v))return"NaN";const a=Math.abs(v);if(a>=1e4||a===0||a<1e-4)return v.toExponential(4);return v.toFixed(4);}
+function makeSurfaceHoverText(H,K,L,QX,QY,QZ,C){
+const rows=H.length,out=new Array(rows);
+for(let r=0;r<rows;r++){
+const rowH=H[r],rowK=K[r],rowL=L[r],rowQX=QX[r],rowQY=QY[r],rowQZ=QZ[r],rowC=C[r],cols=rowH.length,row=new Array(cols);
+for(let c=0;c<cols;c++)row[c]=`H=${hoverNum(rowH[c])}<br>K=${hoverNum(rowK[c])}<br>L=${hoverNum(rowL[c])}<br>Qx=${hoverNum(rowQX[c])}<br>Qy=${hoverNum(rowQY[c])}<br>Qz=${hoverNum(rowQZ[c])}<br>V=${hoverNum(rowC[c])}`;
+out[r]=row;
+}
+return out;
+}
+function getActiveColorLevelWindow(){if(!state.lastBar)return null;const cmin=Number(state.lastBar.dispMin),cmax=Number(state.lastBar.dispMax);if(!(Number.isFinite(cmin)&&Number.isFinite(cmax)&&cmax>cmin))return null;return{cmin,cmax};}
 function qBoundsFromRes(res){
 if(!res||!Array.isArray(res.Bq))return{min:[res.h[0],res.k[0],res.l[0]],max:[res.h[res.h.length-1],res.k[res.k.length-1],res.l[res.l.length-1]]};
 const hs=[res.h[0],res.h[res.h.length-1]],ks=[res.k[0],res.k[res.k.length-1]],ls=[res.l[0],res.l[res.l.length-1]];
 const mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity];
-for(const h of hs)for(const k of ks)for(const l of ls){const q=mul([h,k,l],res.Bq);for(let i=0;i<3;i++){if(q[i]<mn[i])mn[i]=q[i];if(q[i]>mx[i])mx[i]=q[i];}}
+for(const h of hs)for(const k of ks)for(const l of ls){const q=hklToQ(h,k,l,res.Bq);for(let i=0;i<3;i++){if(q[i]<mn[i])mn[i]=q[i];if(q[i]>mx[i])mx[i]=q[i];}}
 return{min:mn,max:mx};
 }
 function transformSurfaceHklToQ(H,K,L,Bq){
@@ -452,7 +537,7 @@ const rowH=H[r],rowK=K[r],rowL=L[r],cols=rowH.length,rowX=new Array(cols),rowY=n
 for(let c=0;c<cols;c++){
 const h=rowH[c],k=rowK[c],l=rowL[c];
 if(!Number.isFinite(h)||!Number.isFinite(k)||!Number.isFinite(l)){rowX[c]=NaN;rowY[c]=NaN;rowZ[c]=NaN;continue;}
-const q=mul([h,k,l],Bq);rowX[c]=q[0];rowY[c]=q[1];rowZ[c]=q[2];
+const q=hklToQ(h,k,l,Bq);rowX[c]=q[0];rowY[c]=q[1];rowZ[c]=q[2];
 }
 QX[r]=rowX;QY[r]=rowY;QZ[r]=rowZ;
 }
@@ -499,13 +584,106 @@ function scaledVal(v,mode){return mode==="log"?Math.log10(Math.max(0,v)+EPS):v;}
 function downsampleIndices(n,step){const out=[];for(let i=0;i<n;i+=step)out.push(i);if(out.length===0||out[out.length-1]!==n-1)out.push(n-1);return out;}
 function chooseStrides(shape,maxVox){const nh=shape[0],nk=shape[1],nl=shape[2],limit=Math.max(5000,Math.floor(maxVox||220000));let sh=1,sk=1,sl=1;while(Math.ceil(nh/sh)*Math.ceil(nk/sk)*Math.ceil(nl/sl)>limit){const ah=Math.ceil(nh/sh),ak=Math.ceil(nk/sk),al=Math.ceil(nl/sl);if(ah>=ak&&ah>=al)sh++;else if(ak>=ah&&ak>=al)sk++;else sl++;}return[sh,sk,sl];}
 function percentileSorted(sorted,pct){if(!sorted.length)return 0;const p=Math.max(0,Math.min(100,pct)),q=(p/100)*(sorted.length-1),i0=Math.floor(q),i1=Math.ceil(q),t=q-i0;return sorted[i0]*(1-t)+sorted[i1]*t;}
-function buildVolumeSample(res,maxVox,mode){const [sh,sk,sl]=chooseStrides(res.shape,maxVox),hs=downsampleIndices(res.shape[0],sh),ks=downsampleIndices(res.shape[1],sk),ls=downsampleIndices(res.shape[2],sl),total=hs.length*ks.length*ls.length,x=new Float32Array(total),y=new Float32Array(total),z=new Float32Array(total),hklH=new Float32Array(total),hklK=new Float32Array(total),hklL=new Float32Array(total),v=new Float32Array(total),hasQ=Array.isArray(res.Bq);let p=0,mn=Infinity,mx=-Infinity;for(const ih of hs)for(const ik of ks)for(const il of ls){const h=res.h[ih],k=res.k[ik],l=res.l[il],q=hasQ?mul([h,k,l],res.Bq):[h,k,l],sv=scaledVal(res.I[idx(res.shape,ih,ik,il)],mode);x[p]=q[0];y[p]=q[1];z[p]=q[2];hklH[p]=h;hklK[p]=k;hklL[p]=l;v[p]=Number.isFinite(sv)?sv:0;if(v[p]<mn)mn=v[p];if(v[p]>mx)mx=v[p];p++;}if(!Number.isFinite(mn)||!Number.isFinite(mx)){mn=0;mx=1;}return{x,y,z,hklH,hklK,hklL,v,min:mn,max:mx,count:total,strides:[sh,sk,sl]};}
+function buildVolumeSample(res,maxVox,mode){const [sh,sk,sl]=chooseStrides(res.shape,maxVox),hs=downsampleIndices(res.shape[0],sh),ks=downsampleIndices(res.shape[1],sk),ls=downsampleIndices(res.shape[2],sl),total=hs.length*ks.length*ls.length,x=new Float32Array(total),y=new Float32Array(total),z=new Float32Array(total),hklH=new Float32Array(total),hklK=new Float32Array(total),hklL=new Float32Array(total),v=new Float32Array(total);let p=0,mn=Infinity,mx=-Infinity;for(const ih of hs)for(const ik of ks)for(const il of ls){const h=res.h[ih],k=res.k[ik],l=res.l[il],q=hklToQ(h,k,l,res.Bq),sv=scaledVal(res.I[idx(res.shape,ih,ik,il)],mode);x[p]=q[0];y[p]=q[1];z[p]=q[2];hklH[p]=h;hklK[p]=k;hklL[p]=l;v[p]=Number.isFinite(sv)?sv:0;if(v[p]<mn)mn=v[p];if(v[p]>mx)mx=v[p];p++;}if(!Number.isFinite(mn)||!Number.isFinite(mx)){mn=0;mx=1;}return{x,y,z,hklH,hklK,hklL,v,min:mn,max:mx,count:total,strides:[sh,sk,sl]};}
 function getVolumeSample(res,maxVox,mode){const key=[res.shape.join("x"),res.min,res.max,maxVox,mode].join("|");if(state.volCache&&state.volCache.key===key)return state.volCache;const sampled=buildVolumeSample(res,maxVox,mode);sampled.sorted=Array.from(sampled.v).sort((a,b)=>a-b);state.volCache={key,...sampled};return state.volCache;}
 function isNonOrthBq(Bq){if(!Array.isArray(Bq))return false;const a=mul([1,0,0],Bq),b=mul([0,1,0],Bq),c=mul([0,0,1],Bq),na=normVec(a),nb=normVec(b),nc=normVec(c);if(!(na>1e-12&&nb>1e-12&&nc>1e-12))return false;const ab=Math.abs(dot(a,b)/(na*nb)),ac=Math.abs(dot(a,c)/(na*nc)),bc=Math.abs(dot(b,c)/(nb*nc));return ab>1e-3||ac>1e-3||bc>1e-3;}
 function sampleHklCustom(sample){const cd=new Array(sample.count);for(let i=0;i<sample.count;i++)cd[i]=[sample.hklH[i],sample.hklK[i],sample.hklL[i]];return cd;}
 function makeIsoFallbackTrace(sample,isoMin){const keep=[];for(let i=0;i<sample.count;i++)if(sample.v[i]>=isoMin)keep.push(i);if(!keep.length)return null;const maxPts=120000,stride=Math.max(1,Math.ceil(keep.length/maxPts)),n=Math.max(1,Math.ceil(keep.length/stride)),x=new Float32Array(n),y=new Float32Array(n),z=new Float32Array(n),val=new Float32Array(n),cd=new Array(n);let p=0;for(let i=0;i<keep.length;i+=stride){const j=keep[i];x[p]=sample.x[j];y[p]=sample.y[j];z[p]=sample.z[j];val[p]=sample.v[j];cd[p]=[sample.hklH[j],sample.hklK[j],sample.hklL[j]];p++;if(p>=n)break;}return{type:"scatter3d",mode:"markers",x,y,z,customdata:cd,marker:{size:2.2,opacity:0.26,color:val,colorscale:getColorPreset().plotly,cmin:sample.min,cmax:sample.max},name:"Iso fallback cloud",hovertemplate:"H=%{customdata[0]:.5g}<br>K=%{customdata[1]:.5g}<br>L=%{customdata[2]:.5g}<br>Qx=%{x:.5g}<br>Qy=%{y:.5g}<br>Qz=%{z:.5g}<br>V=%{marker.color:.5g}<extra></extra>"};}
-function makePlaneTrace(res,axis,fix,mode){let H=[],K=[],L=[],c=[];if(axis==="l"){for(let ih=0;ih<res.shape[0];ih++){const hr=[],kr=[],lr=[],cr=[];for(let ik=0;ik<res.shape[1];ik++){const h=res.h[ih],k=res.k[ik],l=res.l[fix];hr.push(h);kr.push(k);lr.push(l);cr.push(scaledVal(res.I[idx(res.shape,ih,ik,fix)],mode));}H.push(hr);K.push(kr);L.push(lr);c.push(cr);}}else if(axis==="h"){for(let ik=0;ik<res.shape[1];ik++){const hr=[],kr=[],lr=[],cr=[];for(let il=0;il<res.shape[2];il++){const h=res.h[fix],k=res.k[ik],l=res.l[il];hr.push(h);kr.push(k);lr.push(l);cr.push(scaledVal(res.I[idx(res.shape,fix,ik,il)],mode));}H.push(hr);K.push(kr);L.push(lr);c.push(cr);}}else{for(let ih=0;ih<res.shape[0];ih++){const hr=[],kr=[],lr=[],cr=[];for(let il=0;il<res.shape[2];il++){const h=res.h[ih],k=res.k[fix],l=res.l[il];hr.push(h);kr.push(k);lr.push(l);cr.push(scaledVal(res.I[idx(res.shape,ih,fix,il)],mode));}H.push(hr);K.push(kr);L.push(lr);c.push(cr);}}const q=transformSurfaceHklToQ(H,K,L,res.Bq),custom=makeSurfaceHklCustom(H,K,L);return{type:"surface",x:q.x,y:q.y,z:q.z,customdata:custom,surfacecolor:c,showscale:false,opacity:0.86,colorscale:getColorPreset().plotly,name:`Slice plane ${axis.toUpperCase()}=${fix}`,hovertemplate:"H=%{customdata[0]:.5g}<br>K=%{customdata[1]:.5g}<br>L=%{customdata[2]:.5g}<br>Qx=%{x:.5g}<br>Qy=%{y:.5g}<br>Qz=%{z:.5g}<br>V=%{surfacecolor:.5g}<extra></extra>"};}
-function makeNormalPlaneTrace(res,mode,resOverride){const planeRes=Math.max(40,Math.min(180,Math.floor(Number.isFinite(resOverride)?resOverride:Math.floor((Number($("pRes").value)||200)*0.55)))),plane=buildNormalPlaneSlice(res,mode,true,planeRes),q=transformSurfaceHklToQ(plane.x3,plane.y3,plane.z3,res.Bq),custom=makeSurfaceHklCustom(plane.x3,plane.y3,plane.z3);return{type:"surface",x:q.x,y:q.y,z:q.z,customdata:custom,surfacecolor:plane.c3,showscale:false,opacity:0.86,colorscale:getColorPreset().plotly,name:"Normal plane slice",hovertemplate:"H=%{customdata[0]:.5g}<br>K=%{customdata[1]:.5g}<br>L=%{customdata[2]:.5g}<br>Qx=%{x:.5g}<br>Qy=%{y:.5g}<br>Qz=%{z:.5g}<br>V=%{surfacecolor:.5g}<extra></extra>"};}
+function makePlaneTrace(res,axis,fix,mode){let H=[],K=[],L=[],c=[];if(axis==="l"){for(let ih=0;ih<res.shape[0];ih++){const hr=[],kr=[],lr=[],cr=[];for(let ik=0;ik<res.shape[1];ik++){const h=res.h[ih],k=res.k[ik],l=res.l[fix];hr.push(h);kr.push(k);lr.push(l);cr.push(scaledVal(res.I[idx(res.shape,ih,ik,fix)],mode));}H.push(hr);K.push(kr);L.push(lr);c.push(cr);}}else if(axis==="h"){for(let ik=0;ik<res.shape[1];ik++){const hr=[],kr=[],lr=[],cr=[];for(let il=0;il<res.shape[2];il++){const h=res.h[fix],k=res.k[ik],l=res.l[il];hr.push(h);kr.push(k);lr.push(l);cr.push(scaledVal(res.I[idx(res.shape,fix,ik,il)],mode));}H.push(hr);K.push(kr);L.push(lr);c.push(cr);}}else{for(let ih=0;ih<res.shape[0];ih++){const hr=[],kr=[],lr=[],cr=[];for(let il=0;il<res.shape[2];il++){const h=res.h[ih],k=res.k[fix],l=res.l[il];hr.push(h);kr.push(k);lr.push(l);cr.push(scaledVal(res.I[idx(res.shape,ih,fix,il)],mode));}H.push(hr);K.push(kr);L.push(lr);c.push(cr);}}const q=transformSurfaceHklToQ(H,K,L,res.Bq),custom=makeSurfaceHklQCustom(H,K,L,q.x,q.y,q.z),hover=makeSurfaceHoverText(H,K,L,q.x,q.y,q.z,c),trace={type:"surface",x:q.x,y:q.y,z:q.z,customdata:custom,hovertext:hover,hoverinfo:"text",surfacecolor:c,showscale:false,opacity:0.86,colorscale:getColorPreset().plotly,name:`Slice plane ${axis.toUpperCase()}=${fix}`};const lv=getActiveColorLevelWindow();if(lv){trace.cauto=false;trace.cmin=lv.cmin;trace.cmax=lv.cmax;}return trace;}
+function makeAxisAlignedInterpolatedPlaneTrace(res,axis,coord,mode){
+const h0=res.h[0],k0=res.k[0],l0=res.l[0],dh=stepRes(res.h),dk=stepRes(res.k),dl=stepRes(res.l),invDh=1/(Math.abs(dh)>1e-30?dh:1),invDk=1/(Math.abs(dk)>1e-30?dk:1),invDl=1/(Math.abs(dl)>1e-30?dl:1),H=[],K=[],L=[],c=[];
+if(axis==="h"){
+const hVal=Math.max(res.h[0],Math.min(res.h[res.h.length-1],coord)),fx=(hVal-h0)*invDh;
+for(let ik=0;ik<res.shape[1];ik++){
+const kVal=res.k[ik],fy=(kVal-k0)*invDk,rowH=[],rowK=[],rowL=[],rowC=[];
+for(let il=0;il<res.shape[2];il++){
+const lVal=res.l[il],fz=(lVal-l0)*invDl,val=sampleTrilinearPartialRenorm(res.I,res.shape,fx,fy,fz);
+rowH.push(hVal);rowK.push(kVal);rowL.push(lVal);rowC.push(Number.isFinite(val)?scaledVal(val,mode):NaN);
+}
+H.push(rowH);K.push(rowK);L.push(rowL);c.push(rowC);
+}
+}else if(axis==="k"){
+const kVal=Math.max(res.k[0],Math.min(res.k[res.k.length-1],coord)),fy=(kVal-k0)*invDk;
+for(let ih=0;ih<res.shape[0];ih++){
+const hVal=res.h[ih],fx=(hVal-h0)*invDh,rowH=[],rowK=[],rowL=[],rowC=[];
+for(let il=0;il<res.shape[2];il++){
+const lVal=res.l[il],fz=(lVal-l0)*invDl,val=sampleTrilinearPartialRenorm(res.I,res.shape,fx,fy,fz);
+rowH.push(hVal);rowK.push(kVal);rowL.push(lVal);rowC.push(Number.isFinite(val)?scaledVal(val,mode):NaN);
+}
+H.push(rowH);K.push(rowK);L.push(rowL);c.push(rowC);
+}
+}else{
+const lVal=Math.max(res.l[0],Math.min(res.l[res.l.length-1],coord)),fz=(lVal-l0)*invDl;
+for(let ih=0;ih<res.shape[0];ih++){
+const hVal=res.h[ih],fx=(hVal-h0)*invDh,rowH=[],rowK=[],rowL=[],rowC=[];
+for(let ik=0;ik<res.shape[1];ik++){
+const kVal=res.k[ik],fy=(kVal-k0)*invDk,val=sampleTrilinearPartialRenorm(res.I,res.shape,fx,fy,fz);
+rowH.push(hVal);rowK.push(kVal);rowL.push(lVal);rowC.push(Number.isFinite(val)?scaledVal(val,mode):NaN);
+}
+H.push(rowH);K.push(rowK);L.push(rowL);c.push(rowC);
+}
+}
+const q=transformSurfaceHklToQ(H,K,L,res.Bq),custom=makeSurfaceHklQCustom(H,K,L,q.x,q.y,q.z),hover=makeSurfaceHoverText(H,K,L,q.x,q.y,q.z,c),trace={type:"surface",x:q.x,y:q.y,z:q.z,customdata:custom,hovertext:hover,hoverinfo:"text",surfacecolor:c,showscale:false,opacity:0.86,colorscale:getColorPreset().plotly,name:"Normal plane slice"};
+const lv=getActiveColorLevelWindow();if(lv){trace.cauto=false;trace.cmin=lv.cmin;trace.cmax=lv.cmax;}
+return trace;
+}
+function buildNormalPlaneMeshFor3d(res,mode,resOverride){
+ensurePlaneState(res);
+const p=state.plane,n=getPlaneUnit(p),c0=p.center,b=boundsRes(res),mins=[b.min[0],b.min[1],b.min[2]],maxs=[b.max[0],b.max[1],b.max[2]],absN=[Math.abs(n[0]),Math.abs(n[1]),Math.abs(n[2])];
+let solve=0;
+if(absN[1]>absN[solve])solve=1;
+if(absN[2]>absN[solve])solve=2;
+if(!(absN[solve]>1e-12))return null;
+const free=[0,1,2].filter(i=>i!==solve),uIdx=free[0],vIdx=free[1],planeScale=Math.max(0.2,readNumberInput("pScale",1.75)),useScale=Math.min(1,planeScale),rows=Math.max(40,Math.min(260,Math.floor(Number.isFinite(resOverride)?resOverride:Math.floor(readNumberInput("pRes",200)*0.55)))),cols=rows;
+let uMin=mins[uIdx],uMax=maxs[uIdx],vMin=mins[vIdx],vMax=maxs[vIdx];
+const basis=planeBasisFromNormal(n),inter=planeBoxUvBounds(c0,n,basis.u,basis.v,b);
+if(inter&&Array.isArray(inter.points)&&inter.points.length>=2){
+let pMinU=Infinity,pMaxU=-Infinity,pMinV=Infinity,pMaxV=-Infinity;
+for(const q of inter.points){
+const uu=q[uIdx],vv=q[vIdx];
+if(uu<pMinU)pMinU=uu;if(uu>pMaxU)pMaxU=uu;
+if(vv<pMinV)pMinV=vv;if(vv>pMaxV)pMaxV=vv;
+}
+if(Number.isFinite(pMinU)&&Number.isFinite(pMaxU)&&pMaxU>pMinU+1e-12){uMin=pMinU;uMax=pMaxU;}
+if(Number.isFinite(pMinV)&&Number.isFinite(pMaxV)&&pMaxV>pMinV+1e-12){vMin=pMinV;vMax=pMaxV;}
+}
+const uMid=0.5*(uMin+uMax),vMid=0.5*(vMin+vMax),uHalf=0.5*(uMax-uMin)*useScale,vHalf=0.5*(vMax-vMin)*useScale;
+uMin=Math.max(mins[uIdx],uMid-uHalf);uMax=Math.min(maxs[uIdx],uMid+uHalf);
+vMin=Math.max(mins[vIdx],vMid-vHalf);vMax=Math.min(maxs[vIdx],vMid+vHalf);
+const stepU=rows>1?(uMax-uMin)/(rows-1):0,stepV=cols>1?(vMax-vMin)/(cols-1):0,h0=res.h[0],k0=res.k[0],l0=res.l[0],dh=stepRes(res.h),dk=stepRes(res.k),dl=stepRes(res.l),invDh=1/(Math.abs(dh)>1e-30?dh:1),invDk=1/(Math.abs(dk)>1e-30?dk:1),invDl=1/(Math.abs(dl)>1e-30?dl:1),eps=Math.max(1e-9,1e-6*Math.max(maxs[solve]-mins[solve],1));
+const H=new Array(rows),K=new Array(rows),L=new Array(rows),C=new Array(rows);
+for(let r=0;r<rows;r++){
+const uu=uMin+r*stepU,rowH=new Array(cols),rowK=new Array(cols),rowL=new Array(cols),rowC=new Array(cols);
+for(let c=0;c<cols;c++){
+const vv=vMin+c*stepV,hkl=[0,0,0];
+hkl[uIdx]=uu;hkl[vIdx]=vv;
+const solved=c0[solve]-((uu-c0[uIdx])*n[uIdx]+(vv-c0[vIdx])*n[vIdx])/n[solve];
+if(solved<mins[solve]-eps||solved>maxs[solve]+eps){rowH[c]=NaN;rowK[c]=NaN;rowL[c]=NaN;rowC[c]=NaN;continue;}
+hkl[solve]=Math.max(mins[solve],Math.min(maxs[solve],solved));
+const fx=(hkl[0]-h0)*invDh,fy=(hkl[1]-k0)*invDk,fz=(hkl[2]-l0)*invDl,val=sampleTrilinearPartialRenorm(res.I,res.shape,fx,fy,fz);
+rowH[c]=hkl[0];rowK[c]=hkl[1];rowL[c]=hkl[2];rowC[c]=Number.isFinite(val)?scaledVal(val,mode):NaN;
+}
+H[r]=rowH;K[r]=rowK;L[r]=rowL;C[r]=rowC;
+}
+return{H,K,L,C};
+}
+function makeNormalPlaneTrace(res,mode,resOverride){
+if(state.plane){
+const n=getPlaneUnit(state.plane),ax=Math.abs(n[0]),ay=Math.abs(n[1]),az=Math.abs(n[2]),tol=1e-6;
+if(ax>1-tol&&ay<tol&&az<tol)return makeAxisAlignedInterpolatedPlaneTrace(res,"h",state.plane.center[0],mode);
+if(ay>1-tol&&ax<tol&&az<tol)return makeAxisAlignedInterpolatedPlaneTrace(res,"k",state.plane.center[1],mode);
+if(az>1-tol&&ax<tol&&ay<tol)return makeAxisAlignedInterpolatedPlaneTrace(res,"l",state.plane.center[2],mode);
+}
+const mesh=buildNormalPlaneMeshFor3d(res,mode,resOverride);
+if(!mesh){
+const planeRes=Math.max(40,Math.min(180,Math.floor(Number.isFinite(resOverride)?resOverride:Math.floor(readNumberInput("pRes",200)*0.55)))),plane=buildNormalPlaneSlice(res,mode,true,planeRes),q0=transformSurfaceHklToQ(plane.x3,plane.y3,plane.z3,res.Bq),custom0=makeSurfaceHklQCustom(plane.x3,plane.y3,plane.z3,q0.x,q0.y,q0.z),hover0=makeSurfaceHoverText(plane.x3,plane.y3,plane.z3,q0.x,q0.y,q0.z,plane.c3),trace0={type:"surface",x:q0.x,y:q0.y,z:q0.z,customdata:custom0,hovertext:hover0,hoverinfo:"text",surfacecolor:plane.c3,showscale:false,opacity:0.86,colorscale:getColorPreset().plotly,name:"Normal plane slice"};
+const lv0=getActiveColorLevelWindow();if(lv0){trace0.cauto=false;trace0.cmin=lv0.cmin;trace0.cmax=lv0.cmax;}
+return trace0;
+}
+const q=transformSurfaceHklToQ(mesh.H,mesh.K,mesh.L,res.Bq),custom=makeSurfaceHklQCustom(mesh.H,mesh.K,mesh.L,q.x,q.y,q.z),hover=makeSurfaceHoverText(mesh.H,mesh.K,mesh.L,q.x,q.y,q.z,mesh.C),trace={type:"surface",x:q.x,y:q.y,z:q.z,customdata:custom,hovertext:hover,hoverinfo:"text",surfacecolor:mesh.C,showscale:false,opacity:0.86,colorscale:getColorPreset().plotly,name:"Normal plane slice"};
+const lv=getActiveColorLevelWindow();if(lv){trace.cauto=false;trace.cmin=lv.cmin;trace.cmax=lv.cmax;}
+return trace;
+}
 async function updatePlaneTraceFast(resHint){
 if(!state.res||$("showPlane3d").value!=="1"||getSliceMode()!=="plane")return;
 state.planeTraceReqId++;
@@ -530,9 +708,9 @@ if(liveCam)state.planeMoveCameraLock=cloneCamera(liveCam);
 keepCam=state.planeMoveCameraLock?cloneCamera(state.planeMoveCameraLock):null;
 }
 if(keepCam){
-await plotly.update(gd,{x:[tr.x],y:[tr.y],z:[tr.z],customdata:[tr.customdata],surfacecolor:[tr.surfacecolor],colorscale:[tr.colorscale],opacity:[tr.opacity],hovertemplate:[tr.hovertemplate]},{"scene.camera":keepCam},[0]);
+await plotly.update(gd,{x:[tr.x],y:[tr.y],z:[tr.z],customdata:[tr.customdata],hovertext:[tr.hovertext],hoverinfo:[tr.hoverinfo||"text"],surfacecolor:[tr.surfacecolor],colorscale:[tr.colorscale],opacity:[tr.opacity],cauto:[tr.cauto===false?false:true],cmin:[Number.isFinite(tr.cmin)?tr.cmin:null],cmax:[Number.isFinite(tr.cmax)?tr.cmax:null]},{"scene.camera":keepCam},[0]);
 }else{
-await plotly.restyle(gd,{x:[tr.x],y:[tr.y],z:[tr.z],customdata:[tr.customdata],surfacecolor:[tr.surfacecolor],colorscale:[tr.colorscale],opacity:[tr.opacity],hovertemplate:[tr.hovertemplate]},0);
+await plotly.restyle(gd,{x:[tr.x],y:[tr.y],z:[tr.z],customdata:[tr.customdata],hovertext:[tr.hovertext],hoverinfo:[tr.hoverinfo||"text"],surfacecolor:[tr.surfacecolor],colorscale:[tr.colorscale],opacity:[tr.opacity],cauto:[tr.cauto===false?false:true],cmin:[Number.isFinite(tr.cmin)?tr.cmin:null],cmax:[Number.isFinite(tr.cmax)?tr.cmax:null]},0);
 }
 if(!keepCam){captureSceneCamera("plot3dPlane","plane");}
 if(state.planeTraceQueued===null)break;
@@ -572,7 +750,14 @@ else{const a=$("axis").value,fix=Math.max(0,Math.min(Number($("idx").value)||0,(
 }
 const axisOverlay=makeHklAxesOverlayTraces(res),qb=qBoundsFromRes(res),qxRange=[qb.min[0],qb.max[0]],qyRange=[qb.min[1],qb.max[1]],qzRange=[qb.min[2],qb.max[2]],spanQx=Math.max(1e-9,Math.abs(qxRange[1]-qxRange[0])),spanQy=Math.max(1e-9,Math.abs(qyRange[1]-qyRange[0])),spanQz=Math.max(1e-9,Math.abs(qzRange[1]-qzRange[0])),spanMax=Math.max(spanQx,spanQy,spanQz,1e-9),sceneRev=`${res.file||"res"}|${res.shape.join("x")}`;
 if(renderEpoch!==state.render3dEpoch||(!force&&state.planeMoving&&getSliceMode()==="plane"))return;
-const sceneBase={aspectmode:"manual",aspectratio:{x:spanQx/spanMax,y:spanQy/spanMax,z:spanQz/spanMax},uirevision:sceneRev,xaxis:{visible:false,range:qxRange,autorange:false,backgroundcolor:"#0f172a",gridcolor:"#2b3647",zerolinecolor:"#44526b",color:"#dbeafe"},yaxis:{visible:false,range:qyRange,autorange:false,backgroundcolor:"#0f172a",gridcolor:"#2b3647",zerolinecolor:"#44526b",color:"#dbeafe"},zaxis:{visible:false,range:qzRange,autorange:false,backgroundcolor:"#0f172a",gridcolor:"#2b3647",zerolinecolor:"#44526b",color:"#dbeafe"}};
+const sceneBase={
+aspectmode:"manual",
+aspectratio:{x:spanQx/spanMax,y:spanQy/spanMax,z:spanQz/spanMax},
+uirevision:sceneRev,
+xaxis:{range:qxRange,autorange:false,visible:false,showgrid:false,zeroline:false,showbackground:false,showline:false,showticklabels:false,ticks:"",title:{text:""}},
+yaxis:{range:qyRange,autorange:false,visible:false,showgrid:false,zeroline:false,showbackground:false,showline:false,showticklabels:false,ticks:"",title:{text:""}},
+zaxis:{range:qzRange,autorange:false,visible:false,showgrid:false,zeroline:false,showbackground:false,showline:false,showticklabels:false,ticks:"",title:{text:""}}
+};
 const sceneIso={...sceneBase,xaxis:{...sceneBase.xaxis},yaxis:{...sceneBase.yaxis},zaxis:{...sceneBase.zaxis}},scenePlane={...sceneBase,xaxis:{...sceneBase.xaxis},yaxis:{...sceneBase.yaxis},zaxis:{...sceneBase.zaxis}};
 const isoGd=$("plot3dIso"),planeGd=$("plot3dPlane"),hasIsoPlot=!!(isoGd&&Array.isArray(isoGd.data)&&isoGd.data.length),hasPlanePlot=!!(planeGd&&Array.isArray(planeGd.data)&&planeGd.data.length),liveIsoCam=readSceneCamera("plot3dIso"),livePlaneCam=readSceneCamera("plot3dPlane"),keepIsoCam=liveIsoCam||(state.sceneCamera.iso?cloneCamera(state.sceneCamera.iso):null),keepPlaneCam=livePlaneCam||(state.sceneCamera.plane?cloneCamera(state.sceneCamera.plane):null);
 if(!hasIsoPlot&&!liveIsoCam&&keepIsoCam)sceneIso.camera=keepIsoCam;
@@ -873,11 +1058,11 @@ $("colorMap").addEventListener("change",()=>{draw();schedule3dRender(false,120);
 $("levelMode").addEventListener("change",()=>{const on=$("levelMode").value==="both";$("levelWindowPct").disabled=!state.res||!on;});
 $("levelWindowPct").addEventListener("change",()=>{if($("levelMode").value==="both"&&state.sliceLevels)draw();});
 $("resetLevels").addEventListener("click",()=>{resetDisplayLevels();draw();});
-$("planeApply").addEventListener("click",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");applyPlaneFromInputs();resetDisplayLevels();draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
+$("planeApply").addEventListener("click",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");applyPlaneFromInputs();resetDisplayLevels();draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
 $("planeReset").addEventListener("click",()=>{resetPlaneToolDefaults();});
 $("planeMove").addEventListener("input",()=>{if(!state.planeMoving){const liveCam=readSceneCamera("plot3dPlane");state.planeMoveCameraLock=liveCam?cloneCamera(liveCam):null;}state.planeMoving=true;state.render3dEpoch++;if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}movePlaneToSlider(Number($("planeMove").value));if(state.planeMoveRaf){cancelAnimationFrame(state.planeMoveRaf);}state.planeMoveRaf=requestAnimationFrame(()=>{state.planeMoveRaf=0;draw({planeResOverride:fastPlaneRes()});updatePlaneTraceFast().catch(()=>{});});});
-$("planeMove").addEventListener("change",async()=>{try{draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));await updatePlaneTraceFast(fullRes);}else{schedule3dRender(false,220);}}finally{state.planeMoving=false;const liveCam=readSceneCamera("plot3dPlane");if(liveCam)state.sceneCamera.plane=cloneCamera(liveCam);state.planeMoveCameraLock=null;}});
-for(const id of ["pRes","pScale"]){$(id).addEventListener("change",()=>{if(getSliceMode()==="plane"){invalidatePlaneSliceCache();resetDisplayLevels();draw();const fullRes=Math.max(64,Math.min(260,Math.floor(Number($("pRes").value)||200)));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});}
+$("planeMove").addEventListener("change",async()=>{try{draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));await updatePlaneTraceFast(fullRes);}else{schedule3dRender(false,220);}}finally{state.planeMoving=false;const liveCam=readSceneCamera("plot3dPlane");if(liveCam)state.sceneCamera.plane=cloneCamera(liveCam);state.planeMoveCameraLock=null;}});
+for(const id of ["pRes","pScale"]){$(id).addEventListener("change",()=>{if(getSliceMode()==="plane"){invalidatePlaneSliceCache();resetDisplayLevels();draw();const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});}
 $("heatmap").addEventListener("click",onHeatmapClick);
 $("render3d").addEventListener("click",()=>render3d(true).catch(err=>setPlot3dStatus(`3D render failed: ${err.message}`)));
 $("openSliceWin").addEventListener("click",()=>{try{openSliceWindow();}catch(err){status(`Slice window failed: ${err.message}`,"err");}});
