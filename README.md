@@ -13,7 +13,7 @@ Access live demos via GitHub Pages:
 - **PCA SDE Tool:** [PCA SDE Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/PCA_SDE/PCA_SDE_rmcdisplacements.html)  
   *(Tool for performing Surface Density Estimation as part of the RMC analysis)*
 - **Diffuse Scattering Tool (Client-side):** [RMC6f Diffuse Scattering Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/Diffuse_Scattering/Diffuse_Scattering_RMC6f.html)  
-  *(Compute/visualize/save diffuse scattering I(h,k,l) in-browser from RMC6f input using Type-3 NUFFT JS backend)*
+  *(Compute/visualize/save diffuse scattering I(h,k,l) in-browser from RMC6f input using Type-3 NUFFT CPU/WebGPU backends and selectable neutron/X-ray/electron scattering models)*
 - **Slice Diffuse 3D RMCProfile Tool:** [RMC Diffuse 3DSlice Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/RMCDiffuse3DSlice/SliceDiffuse3DRMC.html)
 - **Background Remover:** [Background Remover Tool](https://maximeremenko.github.io/Utilities/RMCProfileUtilities/Background_Remover/Background_Remover.html)  
   *(Interactive tool to remove white or near-white backgrounds from PNG, JPEG, and TIFF images. Useful for preprocessing images in RMC analysis and visualization workflows.)*
@@ -23,22 +23,18 @@ Access live demos via GitHub Pages:
 - **Utilities/**  
   The root of the repository.
 
+- **Utilities/docs/**  
+  GitHub Pages documentation entry point.
+
 - **Utilities/RMCProfileUtilities/**  
   Contains tools related to RMC profile analysis.
-  - **Select_Subvolume/**  
-    - Contains the source code for the RMC6f Select Subvolume App.
-
-- **PCA_KDE/**  
-  Contains the PCA KDE analysis tools for RMC6f files.
-
-- **PCA_SDE/**  
-  Contains the PCA SDE analysis tools for RMC6f files.
-- **Diffuse_Scattering/**  
-  Contains the in-browser diffuse scattering calculator for RMC6f files.
-- **Slice Diffuse 3D RMCProfile Tool/**  
-  Contains the Tool to make slices of RMCProfile Diffuse 3D dat files.
-- **index.html**  
-  The landing page for GitHub Pages that links to live demos.
+  - **Select_Subvolume/** - Source code for the RMC6f Select Subvolume App.
+  - **PCA_KDE/** - PCA KDE analysis tools for RMC6f files.
+  - **PCA_SDE/** - PCA SDE analysis tools for RMC6f files.
+  - **Diffuse_Scattering/** - In-browser diffuse scattering calculator for RMC6f files.
+  - **Diffuse_Scattering/js/** - Modular scripts: RMC6f reader, diffuse core math, amplitude engine, and scattering coefficient sources/database.
+  - **RMCDiffuse3DSlice/** - Utility to slice RMCProfile diffuse 3D DAT files.
+  - **Background_Remover/** - Utility to remove near-white image backgrounds.
 
 ## Analysis Tools for RMC6f Files
 
@@ -54,7 +50,7 @@ This repository includes several utilities designed to help analyze RMC6f files:
   Utilizes Surface Density Estimation (SDE) as part of the RMC analysis.
 
 - **Diffuse Scattering Tool (Client-side):**  
-  Computes diffuse scattering from RMC6f configurations in the browser, visualizes slices, and saves `.dat`/`.json` outputs.
+  Computes diffuse scattering from RMC6f configurations in the browser, visualizes 3D + 2D slices, and saves `.dat`/`.json` outputs. Supports neutron/X-ray/electron scattering options and CPU/WebGPU NUFFT paths.
 
 - **Slice Diffuse 3D RMCProfile Tool:**  
   Tool to make slices of RMCProfile Diffuse 3D dat files.

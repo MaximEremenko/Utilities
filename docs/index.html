@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -12,7 +12,7 @@
       color: #333;
     }
     header, main, footer {
-      max-width: 800px;
+      max-width: 900px;
       margin: 0 auto;
     }
     header {
@@ -39,95 +39,106 @@
     section {
       margin-bottom: 2rem;
     }
+    code {
+      background: #f4f4f4;
+      border-radius: 4px;
+      padding: 0 4px;
+    }
   </style>
 </head>
 <body>
   <header>
     <h1>Utilities Repository</h1>
-    <p>Welcome to the Utilities Repository by Maxim Eremenko.</p>
-    <p>This repository contains a collection of useful utilities and analysis tools for working with RMC6f files.</p>
+    <p>Welcome to the Utilities repository by Maxim Eremenko.</p>
+    <p>This project contains client-side tools for RMC6f workflows, diffuse scattering analysis, and visualization.</p>
   </header>
   <main>
     <section>
       <h2>Live Demos</h2>
       <ul>
         <li>
+          <strong>Home Page:</strong>
+          <a href="../" target="_blank">Utilities Home</a>
+        </li>
+        <li>
           <strong>Select Subvolume App:</strong>
-          <a href="RMCProfileUtilities/Select_Subvolume/RMC6f_Select_Subvolume_App.html" target="_blank">
+          <a href="../RMCProfileUtilities/Select_Subvolume/RMC6f_Select_Subvolume_App.html" target="_blank">
             RMC6f Select Subvolume App
           </a>
         </li>
         <li>
           <strong>PCA KDE Tool:</strong>
-          <a href="RMCProfileUtilities/PCA_KDE/PCA_KDE_rmcdisplacements.html" target="_blank">
+          <a href="../RMCProfileUtilities/PCA_KDE/PCA_KDE_rmcdisplacements.html" target="_blank">
             PCA KDE Tool
           </a>
           <br>
-          <em>(Tool for performing Kernel Density Estimation and PCA analysis)</em>
+          <em>(Kernel Density Estimation + PCA analysis)</em>
         </li>
         <li>
           <strong>PCA SDE Tool:</strong>
-          <a href="RMCProfileUtilities/PCA_SDE/PCA_SDE_rmcdisplacements.html" target="_blank">
+          <a href="../RMCProfileUtilities/PCA_SDE/PCA_SDE_rmcdisplacements.html" target="_blank">
             PCA SDE Tool
           </a>
           <br>
-          <em>(Tool for performing Surface Density Estimation and PCA analysis)</em>
+          <em>(Surface Density Estimation + PCA analysis)</em>
         </li>
         <li>
           <strong>Diffuse Scattering Tool (Client-side):</strong>
-          <a href="RMCProfileUtilities/Diffuse_Scattering/Diffuse_Scattering_RMC6f.html" target="_blank">
+          <a href="../RMCProfileUtilities/Diffuse_Scattering/Diffuse_Scattering_RMC6f.html" target="_blank">
             RMC6f Diffuse Scattering Tool
           </a>
           <br>
-          <em>(Compute/visualize/save diffuse scattering I(h,k,l) in-browser from RMC6f input)</em>
+          <em>(Computes/visualizes/saves diffuse scattering <code>I(h,k,l)</code> in-browser with Type-3 NUFFT CPU/WebGPU backends)</em>
+        </li>
+        <li>
+          <strong>Slice Diffuse 3D Tool:</strong>
+          <a href="../RMCProfileUtilities/RMCDiffuse3DSlice/SliceDiffuse3DRMC.html" target="_blank">
+            RMC Diffuse 3DSlice Tool
+          </a>
+        </li>
+        <li>
+          <strong>Background Remover:</strong>
+          <a href="../RMCProfileUtilities/Background_Remover/Background_Remover.html" target="_blank">
+            Background Remover Tool
+          </a>
         </li>
       </ul>
     </section>
+
     <section>
       <h2>Repository Structure</h2>
       <ul>
-        <li><strong>Utilities/</strong> - The root of the repository.</li>
-        <li>
-          <strong>Utilities/RMCProfileUtilities/</strong> - Contains tools related to RMC profile analysis.
-          <ul>
-            <li><strong>Select_Subvolume/</strong> - Contains the source code for the RMC6f Select Subvolume App.</li>
-          </ul>
-        </li>
-        <li><strong>PCA_KDE/</strong> - Contains the PCA KDE analysis tools for RMC6f files.</li>
-        <li><strong>PCA_SDE/</strong> - Contains the PCA SDE analysis tools for RMC6f files.</li>
-        <li><strong>Diffuse_Scattering/</strong> - Contains the in-browser diffuse scattering calculator for RMC6f files.</li>
-        <li><strong>index.html</strong> - This landing page linking to live demos.</li>
+        <li><strong>Utilities/</strong> - Repository root.</li>
+        <li><strong>Utilities/docs/</strong> - GitHub Pages documentation entry.</li>
+        <li><strong>Utilities/RMCProfileUtilities/</strong> - Main tools collection.</li>
+        <li><strong>Utilities/RMCProfileUtilities/Select_Subvolume/</strong> - RMC6f subvolume selector.</li>
+        <li><strong>Utilities/RMCProfileUtilities/PCA_KDE/</strong> - KDE + PCA analysis.</li>
+        <li><strong>Utilities/RMCProfileUtilities/PCA_SDE/</strong> - SDE + PCA analysis.</li>
+        <li><strong>Utilities/RMCProfileUtilities/Diffuse_Scattering/</strong> - Diffuse scattering app.</li>
+        <li><strong>Utilities/RMCProfileUtilities/Diffuse_Scattering/js/</strong> - Modular reader/core/amplitude/scattering-coeff scripts.</li>
+        <li><strong>Utilities/RMCProfileUtilities/RMCDiffuse3DSlice/</strong> - Slice viewer for diffuse 3D DAT files.</li>
+        <li><strong>Utilities/RMCProfileUtilities/Background_Remover/</strong> - Image background utility.</li>
       </ul>
     </section>
+
     <section>
-      <h2>Analysis Tools for RMC6f Files</h2>
+      <h2>Diffuse Scattering Tool Notes</h2>
       <ul>
-        <li>
-          <strong>Select Subvolume App:</strong> A tool for selecting subvolumes within RMC6f files.
-        </li>
-        <li>
-          <strong>PCA KDE Tool:</strong> Utilizes Kernel Density Estimation (KDE) as part of the RMC analysis.
-        </li>
-        <li>
-          <strong>PCA SDE Tool:</strong> Utilizes Surface Density Estimation (SDE) as part of the RMC analysis.
-        </li>
-        <li>
-          <strong>Diffuse Scattering Tool (Client-side):</strong> Computes diffuse scattering from RMC6f, visualizes slices, and exports DAT/JSON.
-        </li>
+        <li><strong>Input:</strong> RMC6f configuration files.</li>
+        <li><strong>Output:</strong> Diffuse volume and slice views, plus <code>.dat</code>/<code>.json</code> export.</li>
+        <li><strong>Backends:</strong> Type-3 NUFFT CPU and WebGPU paths (WebGPU-NUFFT CDN integration).</li>
+        <li><strong>Scattering models:</strong> neutron, X-ray, and electron with table/model selection in UI.</li>
       </ul>
     </section>
+
     <section>
       <h2>How to Contribute</h2>
-      <p>
-        Feel free to open issues or submit pull requests if you have improvements or bug fixes.
-      </p>
-      <p>
-        For any questions or support, please contact Maxim Eremenko.
-      </p>
+      <p>Open an issue or submit a pull request for bug fixes and improvements.</p>
+      <p>For support, contact Maxim Eremenko.</p>
     </section>
   </main>
   <footer>
-    <p>&copy; 2025 Maxim Eremenko</p>
+    <p>&copy; 2026 Maxim Eremenko</p>
   </footer>
 </body>
 </html>
