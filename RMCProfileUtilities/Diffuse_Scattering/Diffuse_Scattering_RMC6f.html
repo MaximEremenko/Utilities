@@ -649,7 +649,7 @@ html[data-theme="light"] .topbar-chip{background:#3a4d66;color:#c8d5e2}
           <summary><h3>Slice Tool</h3></summary>
           <div class="toolBoxBody">
             <div class="planeHeader">
-              <label>Slice mode<select id="sliceMode" disabled><option value="axis">Axis</option><option value="plane" selected>Normal plane</option></select></label>
+              <label>Slice mode<select id="sliceMode" disabled><option value="axis">Axis</option><option value="plane" selected>Normal plane</option><option value="avgvol">Volume average</option></select></label>
               <label>Scale<select id="scale" disabled><option value="log">log10</option><option value="linear">linear</option></select></label>
               <button id="planeApply" class="alt" disabled>Set Plane</button>
               <button id="planeReset" class="alt" disabled>Reset Tool</button>
@@ -683,6 +683,31 @@ html[data-theme="light"] .topbar-chip{background:#3a4d66;color:#c8d5e2}
                 <label>Slice index<input id="idx" type="range" min="0" max="0" value="0" disabled></label>
               </div>
               <div id="sliceVal">Slice: -</div>
+            </div>
+            <div id="avgVolControls" class="hidden">
+              <div class="vec3">
+                <label>nH<input id="avNX" type="number" value="1.00" step="0.1" disabled></label>
+                <label>nK<input id="avNY" type="number" value="0.00" step="0.1" disabled></label>
+                <label>nL<input id="avNZ" type="number" value="0.00" step="0.1" disabled></label>
+              </div>
+              <div class="vec3">
+                <label>oH<input id="avOX" type="number" value="0.00" step="0.01" disabled></label>
+                <label>oK<input id="avOY" type="number" value="0.00" step="0.01" disabled></label>
+                <label>oL<input id="avOZ" type="number" value="0.00" step="0.01" disabled></label>
+              </div>
+              <div class="vec3">
+                <label>cH<input id="avCX" type="number" value="0.00" step="0.001" readonly disabled></label>
+                <label>cK<input id="avCY" type="number" value="0.00" step="0.001" readonly disabled></label>
+                <label>cL<input id="avCZ" type="number" value="0.00" step="0.001" readonly disabled></label>
+              </div>
+              <label>Move Along Normal<input id="avgVolMove" type="range" min="0" max="100" step="1" value="50" disabled></label>
+              <div id="avgVolMoveVal">Center: -</div>
+              <div class="planeMetaRow">
+                <label>Plane res<input id="avRes" type="number" value="200" min="32" max="600" step="1" disabled></label>
+                <label>Plane scale<input id="avScale" type="number" value="1.75" min="0.2" max="8" step="0.05" disabled></label>
+                <label>Slab &plusmn;<input id="slabWidth" type="number" value="0.5" min="0.05" max="10" step="0.05" disabled title="Half-thickness in HKL units"></label>
+              </div>
+              <div id="avgVolVal" class="mono fine">Volume avg: -</div>
             </div>
           </div>
         </details>
@@ -789,7 +814,7 @@ html[data-theme="light"] .topbar-chip{background:#3a4d66;color:#c8d5e2}
       <div class="mst-section">
         <h2 class="sb-heading">Slice Tool</h2>
         <div class="planeHeader">
-          <label>Slice mode<select id="mSliceMode" disabled><option value="axis">Axis</option><option value="plane" selected>Normal plane</option></select></label>
+          <label>Slice mode<select id="mSliceMode" disabled><option value="axis">Axis</option><option value="plane" selected>Normal plane</option><option value="avgvol">Volume average</option></select></label>
           <label>Scale<select id="mScale" disabled><option value="log">log10</option><option value="linear">linear</option></select></label>
         </div>
         <div class="btns">
@@ -818,6 +843,24 @@ html[data-theme="light"] .topbar-chip{background:#3a4d66;color:#c8d5e2}
           <div class="axisRow">
             <label>Axis<select id="mAxis" disabled><option value="l" selected>Fix L, show H&times;K</option><option value="h">Fix H, show K&times;L</option><option value="k">Fix K, show H&times;L</option></select></label>
             <label>Slice index<input id="mIdx" type="range" min="0" max="0" value="0" disabled></label>
+          </div>
+        </div>
+        <div id="mAvgVolControls" class="hidden">
+          <div class="vec3">
+            <label>nH<input id="mAvNX" type="number" value="1.00" step="0.1" disabled></label>
+            <label>nK<input id="mAvNY" type="number" value="0.00" step="0.1" disabled></label>
+            <label>nL<input id="mAvNZ" type="number" value="0.00" step="0.1" disabled></label>
+          </div>
+          <div class="vec3">
+            <label>oH<input id="mAvOX" type="number" value="0.00" step="0.01" disabled></label>
+            <label>oK<input id="mAvOY" type="number" value="0.00" step="0.01" disabled></label>
+            <label>oL<input id="mAvOZ" type="number" value="0.00" step="0.01" disabled></label>
+          </div>
+          <label>Move Along Normal<input id="mAvgVolMove" type="range" min="0" max="100" step="1" value="50" disabled></label>
+          <div class="planeMetaRow">
+            <label>Res<input id="mAvRes" type="number" value="200" min="32" max="600" step="1" disabled></label>
+            <label>Scale<input id="mAvScale" type="number" value="1.75" min="0.2" max="8" step="0.05" disabled></label>
+            <label>Slab &plusmn;<input id="mSlabWidth" type="number" value="0.5" min="0.05" max="10" step="0.05" disabled></label>
           </div>
         </div>
       </div>
@@ -990,7 +1033,7 @@ throw new Error(`webgpufft API missing.${serveHint} ${errs.join(" | ")}`.trim())
 async function ensurePlotly(){if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;const errs=[];try{await loadScriptOnce(PLOTLY_CDN);}catch(e){errs.push(e&&e.message?e.message:String(e));}if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;throw new Error(`Plotly is unavailable${errs.length?`: ${errs.join(" | ")}`:""}.`);}
 function applyBackendDefaults(backend,announce=false){const p=BACKEND_PRESETS[backend];if(!p)return;let changed=false;if($("tol").value!==p.tol){$("tol").value=p.tol;changed=true;}if($("upsamp").value!==p.upsamp){$("upsamp").value=p.upsamp;changed=true;}if($("gridLimit").value!==p.gridLimit){$("gridLimit").value=p.gridLimit;changed=true;}if(announce&&changed){const n=backend==="webgpu_fft"?"WebGPU":"CPU";status(`Applied ${n} preset: tol=${p.tol}, upsamp=${p.upsamp}, grid limit=${p.gridLimit}.`,"ok");}}
 function formatWebgpuStageTotals(stages){const parts=[];for(const k of WEBGPU_STAGE_ORDER){const v=stages[k]||0;if(v>0)parts.push(`${WEBGPU_STAGE_LABEL[k]||k}=${fmtMs(v)}`);}return parts.join(", ");}
-function syncResultControls(){const has=!!state.res,planeMode=$("sliceMode").value==="plane";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("saveVtk").disabled=!has;$("saveCube").disabled=!has;$("saveSliceSvg").disabled=!has;$("saveSliceCsv").disabled=!has;$("savePlaneSvg").disabled=!has;$("saveIsoSvg").disabled=!has;$("savePlaneHtml").disabled=!has;$("saveIsoHtml").disabled=!has;$("axis").disabled=!has||planeMode;$("idx").disabled=!has||planeMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale","planeApply","planeReset"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
+function syncResultControls(){const has=!!state.res,sm=getSliceMode(),planeMode=sm==="plane",avgMode=sm==="avgvol";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("saveVtk").disabled=!has;$("saveCube").disabled=!has;$("saveSliceSvg").disabled=!has;$("saveSliceCsv").disabled=!has;$("savePlaneSvg").disabled=!has;$("saveIsoSvg").disabled=!has;$("savePlaneHtml").disabled=!has;$("saveIsoHtml").disabled=!has;$("axis").disabled=!has||planeMode||avgMode;$("idx").disabled=!has||planeMode||avgMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("planeApply").disabled=!has||(!planeMode&&!avgMode);$("planeReset").disabled=!has||(!planeMode&&!avgMode);for(const id of["avNX","avNY","avNZ","avOX","avOY","avOZ","avCX","avCY","avCZ","avRes","avScale","slabWidth"]){const el=$(id);if(el)el.disabled=!has||!avgMode;}const avMove=$("avgVolMove");if(avMove)avMove.disabled=!has||!avgMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
 function clamp01(v){return v<0?0:(v>1?1:v);}function lerp(a,b,t){return a+(b-a)*t;}
 function readNumberInput(id,fallback){const el=$(id);if(!el)return fallback;const v=Number.isFinite(el.valueAsNumber)?el.valueAsNumber:Number(String(el.value||"").replace(/,/g,"."));return Number.isFinite(v)?v:fallback;}
 function getColorPreset(){const key=$("colorMap")&&$("colorMap").value?$("colorMap").value:"viridis";return COLOR_PRESETS[key]||COLOR_PRESETS.viridis;}
@@ -1031,7 +1074,7 @@ ctx.strokeStyle=active?"#ffffff":"#94a3b8";
 ctx.stroke();
 }
 function scheduleLevelSync3d(immediate=false){if(state.level3dSyncTimer){clearTimeout(state.level3dSyncTimer);state.level3dSyncTimer=null;}const delay=immediate?0:120;state.level3dSyncTimer=setTimeout(()=>{state.level3dSyncTimer=null;schedule3dRender(true,0);},delay);}
-function getSliceMode(){return $("sliceMode")&&$("sliceMode").value==="plane"?"plane":"axis";}
+function getSliceMode(){const v=$("sliceMode")&&$("sliceMode").value;return v==="plane"?"plane":v==="avgvol"?"avgvol":"axis";}
 function norm3(v){const n=Math.hypot(v[0],v[1],v[2]);if(!(n>1e-12))return[1,0,0];return[v[0]/n,v[1]/n,v[2]/n];}
 function projOnPlane(axis,n){const d=axis[0]*n[0]+axis[1]*n[1]+axis[2]*n[2];return[axis[0]-d*n[0],axis[1]-d*n[1],axis[2]-d*n[2]];}
 function planeBasisFromNormal(n){
@@ -1112,6 +1155,16 @@ draw();
 const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));
 updatePlaneTraceFast(fullRes).catch(()=>{});
 }
+/* --- Volume Average mode --- */
+function ensureAvgVolState(res){const sig=planeSig(res);if(state.avgvol&&state.avgvol.signature===sig)return state.avgvol;const b=boundsRes(res),mid=[0.5*(b.min[0]+b.max[0]),0.5*(b.min[1]+b.max[1]),0.5*(b.min[2]+b.max[2])];state.avgvol={signature:sig,normal:[1,0,0],normalUnit:[1,0,0],origin:mid.slice(),center:mid.slice(),sliderPositions:[0],sliderIndex:0};invalidatePlaneSliceCache();rebuildAvgVolSlider();return state.avgvol;}
+function rebuildAvgVolSlider(){if(!state.res||!state.avgvol)return;const p=state.avgvol,b=boundsRes(state.res),n=getPlaneUnit(p),tv=[];for(let i=0;i<3;i++){const ni=n[i];if(Math.abs(ni)>1e-9){tv.push((b.min[i]-p.origin[i])/ni,(b.max[i]-p.origin[i])/ni);}}if(tv.length===0)tv.push(-1,1);tv.sort((a,bv)=>a-bv);const t0=tv[0],t1=tv[tv.length-1],count=401;p.sliderPositions=Array.from({length:count},(_,i)=>t0+(t1-t0)*i/Math.max(1,count-1));let best=0,bestAbs=Infinity;for(let i=0;i<p.sliderPositions.length;i++){const av=Math.abs(p.sliderPositions[i]);if(av<bestAbs){bestAbs=av;best=i;}}moveAvgVolToSlider(best);}
+function moveAvgVolToSlider(idx){if(!state.avgvol)return;const p=state.avgvol;if(!p.sliderPositions.length){p.sliderPositions=[0];}const i=Math.max(0,Math.min(Math.floor(idx),p.sliderPositions.length-1));p.sliderIndex=i;const t=p.sliderPositions[i]||0,u=getPlaneUnit(p);p.center=add3(p.origin,scale3(u,t));invalidatePlaneSliceCache();setAvgVolUiFromState();}
+function setAvgVolUiFromState(){if(!state.res||!state.avgvol)return;const p=state.avgvol;$("avNX").value=p.normal[0].toFixed(2);$("avNY").value=p.normal[1].toFixed(2);$("avNZ").value=p.normal[2].toFixed(2);$("avOX").value=p.origin[0].toFixed(2);$("avOY").value=p.origin[1].toFixed(2);$("avOZ").value=p.origin[2].toFixed(2);const s=$("avgVolMove");s.min="0";s.max=String(Math.max(0,p.sliderPositions.length-1));s.value=String(Math.max(0,Math.min(p.sliderIndex,p.sliderPositions.length-1)));updateAvgVolMoveLabel();}
+function updateAvgVolMoveLabel(){if(!state.res||!state.avgvol){$("avgVolMoveVal").textContent="Center: -";for(const id of["avCX","avCY","avCZ"]){const e=$(id);if(e)e.value="";}return;}const p=state.avgvol,c=p.center,sw=readNumberInput("slabWidth",0.5);$("avgVolMoveVal").textContent=`Center: (${c[0].toFixed(4)}, ${c[1].toFixed(4)}, ${c[2].toFixed(4)}) | slab=\u00b1${sw.toFixed(2)}`;if($("avCX"))$("avCX").value=c[0].toFixed(2);if($("avCY"))$("avCY").value=c[1].toFixed(2);if($("avCZ"))$("avCZ").value=c[2].toFixed(2);}
+function applyAvgVolFromInputs(){if(!state.res)return;ensureAvgVolState(state.res);const nx=readNumberInput("avNX",1),ny=readNumberInput("avNY",0),nz=readNumberInput("avNZ",0),ox=readNumberInput("avOX",0),oy=readNumberInput("avOY",0),oz=readNumberInput("avOZ",0),rawCandidate=[Number.isFinite(nx)?nx:1,Number.isFinite(ny)?ny:0,Number.isFinite(nz)?nz:0],raw=Math.hypot(rawCandidate[0],rawCandidate[1],rawCandidate[2])>1e-12?rawCandidate:[1,0,0];state.avgvol.normal=raw;state.avgvol.normalUnit=norm3(raw);state.avgvol.origin=[Number.isFinite(ox)?ox:0,Number.isFinite(oy)?oy:0,Number.isFinite(oz)?oz:0];invalidatePlaneSliceCache();rebuildAvgVolSlider();}
+function buildAvgVolSlice(res,mode,wantMesh,resOverride){ensureAvgVolState(res);const p=state.avgvol,n=getPlaneUnit(p),basis=planeBasisFromNormal(n),u=basis.u,v=basis.v,range=[res.h[res.h.length-1]-res.h[0],res.k[res.k.length-1]-res.k[0],res.l[res.l.length-1]-res.l[0]],planeScale=Math.max(0.2,readNumberInput("avScale",1.75)),nRes=Math.max(32,Math.min(600,Math.floor(Number.isFinite(resOverride)?resOverride:readNumberInput("avRes",200)))),c0=p.center,b=boundsRes(res),uvFull=planeBoxUvBounds(c0,n,u,v,b),useScale=Math.min(1,planeScale);let uMin,uMax,vMin,vMax;if(uvFull&&uvFull.uMax>uvFull.uMin+1e-9&&uvFull.vMax>uvFull.vMin+1e-9){const uMid=0.5*(uvFull.uMin+uvFull.uMax),vMid=0.5*(uvFull.vMin+uvFull.vMax),uHalf=0.5*(uvFull.uMax-uvFull.uMin)*useScale,vHalf=0.5*(uvFull.vMax-uvFull.vMin)*useScale;uMin=uMid-uHalf;uMax=uMid+uHalf;vMin=vMid-vHalf;vMax=vMid+vHalf;}else{const requestedSize=Math.max(1e-6,Math.max(range[0],range[1],range[2])*planeScale),halfLimit=maxPlaneHalfInside(c0,u,v,b),half=Math.max(1e-6,Math.min(0.5*requestedSize,Math.max(halfLimit,1e-6)));uMin=-half;uMax=half;vMin=-half;vMax=half;}
+const slabHalf=Math.max(0.01,readNumberInput("slabWidth",0.5)),nSlab=Math.max(3,Math.round(slabHalf*6)+1|1),slabStep=2*slabHalf/(nSlab-1);
+const stepU=nRes>1?(uMax-uMin)/(nRes-1):0,stepV=nRes>1?(vMax-vMin)/(nRes-1):0,key=`avgvol|${planeSig(res)}|${mode}|${wantMesh?1:0}|${nRes}|${uMin.toFixed(6)},${uMax.toFixed(6)}|${vMin.toFixed(6)},${vMax.toFixed(6)}|${n[0].toFixed(7)},${n[1].toFixed(7)},${n[2].toFixed(7)}|${c0[0].toFixed(7)},${c0[1].toFixed(7)},${c0[2].toFixed(7)}|slab${slabHalf.toFixed(4)}`;if(state.planeSliceCache&&state.planeSliceCache.key===key)return state.planeSliceCache.value;const h0=res.h[0],k0=res.k[0],l0=res.l[0],dh=stepRes(res.h),dk=stepRes(res.k),dl=stepRes(res.l),invDh=1/(Math.abs(dh)>1e-30?dh:1),invDk=1/(Math.abs(dk)>1e-30?dk:1),invDl=1/(Math.abs(dl)>1e-30?dl:1),rows=nRes,cols=nRes,data=new Float64Array(rows*cols),cx=c0[0],cy=c0[1],cz=c0[2],ux=u[0],uy=u[1],uz=u[2],vx=v[0],vy=v[1],vz=v[2],nx2=n[0],ny2=n[1],nz2=n[2],stepUx=ux*stepU,stepUy=uy*stepU,stepUz=uz*stepU;let valid=0;const X=wantMesh?new Array(rows):null,Y=wantMesh?new Array(rows):null,Z=wantMesh?new Array(rows):null,C=wantMesh?new Array(rows):null;for(let r=0;r<rows;r++){const rv=vMin+r*stepV,base=r*cols;let px=cx+vx*rv+ux*uMin,py=cy+vy*rv+uy*uMin,pz=cz+vz*rv+uz*uMin;const rowX=wantMesh?new Array(cols):null,rowY=wantMesh?new Array(cols):null,rowZ=wantMesh?new Array(cols):null,rowC=wantMesh?new Array(cols):null;for(let c=0;c<cols;c++){let sum=0,cnt=0;for(let si=0;si<nSlab;si++){const t=-slabHalf+si*slabStep,sx=px+nx2*t,sy=py+ny2*t,sz=pz+nz2*t,fx=(sx-h0)*invDh,fy=(sy-k0)*invDk,fz=(sz-l0)*invDl,val=sampleTrilinearPartialRenorm(res.I,res.shape,fx,fy,fz);if(Number.isFinite(val)){sum+=scaledVal(val,mode);cnt++;}}const vv=cnt>0?sum/cnt:NaN;data[base+c]=vv;if(Number.isFinite(vv))valid++;if(wantMesh){if(Number.isFinite(vv)){rowX[c]=px;rowY[c]=py;rowZ[c]=pz;rowC[c]=vv;}else{rowX[c]=NaN;rowY[c]=NaN;rowZ[c]=NaN;rowC[c]=NaN;}}px+=stepUx;py+=stepUy;pz+=stepUz;}if(wantMesh){X[r]=rowX;Y[r]=rowY;Z[r]=rowZ;C[r]=rowC;}}const qU=mul(u,res.Bq),qV=mul(v,res.Bq),xScaleQ=Math.max(1e-12,normVec(qU)),yScaleQ=Math.max(1e-12,normVec(qV)),nr=p.normal||n,result={rows,cols,d:data,plane:`VolAvg n=(${nr[0].toFixed(3)},${nr[1].toFixed(3)},${nr[2].toFixed(3)}) c=(${c0[0].toFixed(4)},${c0[1].toFixed(4)},${c0[2].toFixed(4)}) slab=\u00b1${slabHalf.toFixed(2)} (${nSlab}pt)`,x:`u span ${uMin.toFixed(3)}..${uMax.toFixed(3)}`,y:`v span ${vMin.toFixed(3)}..${vMax.toFixed(3)}`,xLabel:"u",yLabel:"v",xMin:uMin,xMax:uMax,yMin:vMin,yMax:vMax,xScaleQ,yScaleQ,xQVec:qU,yQVec:qV,validCount:valid,x3:X,y3:Y,z3:Z,c3:C};state.planeSliceCache={key,value:result};return result;}
 function sampleTrilinearPartialRenorm(vol,shape,fx,fy,fz){let i0=Math.floor(fx),j0=Math.floor(fy),k0=Math.floor(fz),rx=fx-i0,ry=fy-j0,rz=fz-k0,val=0,wSum=0;for(let dz=0;dz<=1;dz++)for(let dy=0;dy<=1;dy++)for(let dx=0;dx<=1;dx++){const ii=i0+dx,jj=j0+dy,kk=k0+dz;if(ii<0||jj<0||kk<0||ii>=shape[0]||jj>=shape[1]||kk>=shape[2])continue;const w=(dx?rx:1-rx)*(dy?ry:1-ry)*(dz?rz:1-rz),idxv=(ii*shape[1]+jj)*shape[2]+kk,valv=vol[idxv];if(!Number.isFinite(valv))continue;val+=valv*w;wSum+=w;}return wSum>0?val/wSum:NaN;}
 function boundsIntervalAlongDir(c,d,b){let tMin=-Infinity,tMax=Infinity;for(let i=0;i<3;i++){const di=d[i],ci=c[i],lo=b.min[i],hi=b.max[i];if(Math.abs(di)<1e-12){if(ci<lo||ci>hi)return null;continue;}const a=(lo-ci)/di,bv=(hi-ci)/di,loT=Math.min(a,bv),hiT=Math.max(a,bv);if(loT>tMin)tMin=loT;if(hiT<tMax)tMax=hiT;if(tMin>tMax)return null;}return[tMin,tMax];}
 function maxPlaneHalfInside(c,u,v,b){let half=Infinity;for(const su of[-1,1])for(const sv of[-1,1]){const dir=[su*u[0]+sv*v[0],su*u[1]+sv*v[1],su*u[2]+sv*v[2]],iv=boundsIntervalAlongDir(c,dir,b);if(!iv)return 0;const tPos=iv[1];if(!(tPos>0))return 0;if(tPos<half)half=tPos;}return Number.isFinite(half)&&half>0?half:0;}
@@ -1564,7 +1617,7 @@ const lv=getActiveColorLevelWindow();if(lv){trace.cauto=false;trace.cmin=lv.cmin
 return trace;
 }
 async function updatePlaneTraceFast(resHint){
-if(!state.res||$("showPlane3d").value!=="1"||getSliceMode()!=="plane")return;
+const _sm=getSliceMode();if(!state.res||$("showPlane3d").value!=="1"||(_sm!=="plane"&&_sm!=="avgvol"))return;
 state.planeTraceReqId++;
 const reqId=state.planeTraceReqId;
 state.planeTraceQueued=Number.isFinite(resHint)?Math.max(40,Math.min(260,Math.floor(resHint))):null;
@@ -1573,13 +1626,13 @@ state.planeTraceBusy=true;
 try{
 const plotly=await ensurePlotly();
 while(true){
-if(!state.res||$("showPlane3d").value!=="1"||getSliceMode()!=="plane")break;
+if(!state.res||$("showPlane3d").value!=="1"||(getSliceMode()!=="plane"&&getSliceMode()!=="avgvol"))break;
 const gd=$("plot3dPlane");
 if(!gd||!Array.isArray(gd.data)||gd.data.length<1)break;
 const queued=state.planeTraceQueued;
 state.planeTraceQueued=null;
 const planeRes=Number.isFinite(queued)?queued:Math.max(48,Math.min(140,fastPlaneRes()));
-const tr=makeNormalPlaneTrace(state.res,$("scale").value,planeRes);
+let tr;if(getSliceMode()==="avgvol"){const _sp=state.plane;state.plane=state.avgvol;try{tr=makeNormalPlaneTrace(state.res,$("scale").value,planeRes);}finally{state.plane=_sp;}}else{tr=makeNormalPlaneTrace(state.res,$("scale").value,planeRes);}
 let keepCam=null;
 if(state.planeMoving){
 const liveCam=readSceneCamera("plot3dPlane");
@@ -1625,6 +1678,7 @@ isoMsg=`iso=on (P${isoPct.toFixed(2)}, sampled=${sample.count}, strides=${sample
 const planeTraces=[];
 if(showPlane){
 if(getSliceMode()==="plane"){planeTraces.push(makeNormalPlaneTrace(res,mode));}
+else if(getSliceMode()==="avgvol"){const savedPlane=state.plane;state.plane=state.avgvol;try{planeTraces.push(makeNormalPlaneTrace(res,mode));}finally{state.plane=savedPlane;}}
 else{const a=$("axis").value,fix=Math.max(0,Math.min(Number($("idx").value)||0,(a==="h"?res.shape[0]-1:a==="k"?res.shape[1]-1:res.shape[2]-1)));planeTraces.push(makePlaneTrace(res,a,fix,mode));}
 }
 const axisOverlay=makeHklAxesOverlayTraces(res),qb=qBoundsFromRes(res);
@@ -1764,9 +1818,9 @@ $("scale").value=$("defScale").value;syncResultControls();updateSliceUI();draw()
 function slice(res,axisName,fix){const [nh,nk,nl]=res.shape,qH=mul([1,0,0],res.Bq),qK=mul([0,1,0],res.Bq),qL=mul([0,0,1],res.Bq);if(axisName==="h"){const rows=nk,cols=nl,d=new Float64Array(rows*cols);for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)d[r*cols+c]=res.I[idx(res.shape,fix,r,c)];return{rows,cols,d,plane:`H=${res.h[fix]}`,x:`L ${res.l[0]}..${res.l[nl-1]}`,y:`K ${res.k[0]}..${res.k[nk-1]}`,xLabel:"L",yLabel:"K",xMin:res.l[0],xMax:res.l[nl-1],yMin:res.k[0],yMax:res.k[nk-1],xScaleQ:Math.max(1e-12,normVec(qL)),yScaleQ:Math.max(1e-12,normVec(qK)),xQVec:qL,yQVec:qK};}
 if(axisName==="k"){const rows=nh,cols=nl,d=new Float64Array(rows*cols);for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)d[r*cols+c]=res.I[idx(res.shape,r,fix,c)];return{rows,cols,d,plane:`K=${res.k[fix]}`,x:`L ${res.l[0]}..${res.l[nl-1]}`,y:`H ${res.h[0]}..${res.h[nh-1]}`,xLabel:"L",yLabel:"H",xMin:res.l[0],xMax:res.l[nl-1],yMin:res.h[0],yMax:res.h[nh-1],xScaleQ:Math.max(1e-12,normVec(qL)),yScaleQ:Math.max(1e-12,normVec(qH)),xQVec:qL,yQVec:qH};}
 const rows=nh,cols=nk,d=new Float64Array(rows*cols);for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)d[r*cols+c]=res.I[idx(res.shape,r,c,fix)];return{rows,cols,d,plane:`L=${res.l[fix]}`,x:`K ${res.k[0]}..${res.k[nk-1]}`,y:`H ${res.h[0]}..${res.h[nh-1]}`,xLabel:"K",yLabel:"H",xMin:res.k[0],xMax:res.k[nk-1],yMin:res.h[0],yMax:res.h[nh-1],xScaleQ:Math.max(1e-12,normVec(qK)),yScaleQ:Math.max(1e-12,normVec(qH)),xQVec:qK,yQVec:qH};}
-function updateSliceModePanels(){const planeMode=getSliceMode()==="plane",axisBox=$("axisToolBox"),planeCtl=$("planeControls");if(axisBox)axisBox.classList.toggle("hidden",planeMode);if(planeCtl)planeCtl.classList.toggle("hidden",!planeMode);}
+function updateSliceModePanels(){const sm=getSliceMode(),axisBox=$("axisToolBox"),planeCtl=$("planeControls"),avgCtl=$("avgVolControls"),mAvgCtl=$("mAvgVolControls");if(axisBox)axisBox.classList.toggle("hidden",sm!=="axis");if(planeCtl)planeCtl.classList.toggle("hidden",sm!=="plane");if(avgCtl)avgCtl.classList.toggle("hidden",sm!=="avgvol");if(mAvgCtl)mAvgCtl.classList.toggle("hidden",sm!=="avgvol");}
 function update2dVisibility(){const p=$("slice2dPanel"),show=!$("show2d")||$("show2d").value==="1";if(p)p.classList.toggle("hidden",!show);}
-function updateSliceUI(){updateSliceModePanels();if(!state.res){syncResultControls();$("sliceVal").textContent="Slice: -";$("planeMoveVal").textContent="Plane center: -";for(const id of["pCX","pCY","pCZ"]){if($(id))$(id).value="";}return;}if(getSliceMode()==="plane"){ensurePlaneState(state.res);setPlaneUiFromState();}else{const a=$("axis").value,[nh,nk,nl]=state.res.shape,max=a==="h"?nh-1:a==="k"?nk-1:nl-1;$("idx").max=String(Math.max(0,max));$("idx").value=String(Math.min(Number($("idx").value),max));}syncResultControls();updateSliceVal();}
+function updateSliceUI(){updateSliceModePanels();if(!state.res){syncResultControls();$("sliceVal").textContent="Slice: -";$("planeMoveVal").textContent="Plane center: -";for(const id of["pCX","pCY","pCZ"]){if($(id))$(id).value="";}return;}const sm=getSliceMode();if(sm==="plane"){ensurePlaneState(state.res);setPlaneUiFromState();}else if(sm==="avgvol"){ensureAvgVolState(state.res);setAvgVolUiFromState();}else{const a=$("axis").value,[nh,nk,nl]=state.res.shape,max=a==="h"?nh-1:a==="k"?nk-1:nl-1;$("idx").max=String(Math.max(0,max));$("idx").value=String(Math.min(Number($("idx").value),max));}syncResultControls();updateSliceVal();}
 function updateSliceVal(){if(!state.res){$("sliceVal").textContent="Slice: -";return;}if(getSliceMode()==="plane"){ensurePlaneState(state.res);const c=state.plane.center,n=state.plane.normal;$("sliceVal").textContent=`Plane c=(${c[0].toFixed(4)}, ${c[1].toFixed(4)}, ${c[2].toFixed(4)}) n=(${n[0].toFixed(3)}, ${n[1].toFixed(3)}, ${n[2].toFixed(3)})`;return;}const a=$("axis").value,i=Number($("idx").value),v=a==="h"?state.res.h[i]:a==="k"?state.res.k[i]:state.res.l[i];$("sliceVal").textContent=`Slice ${a.toUpperCase()}[${i}] = ${v}`;}
 function resetDisplayLevels(){state.sliceLevels=null;state.lastBar=null;state.levelDrag=null;state.levelClickSuppress=false;const info=$("levelInfo");if(info)info.textContent="Display levels: auto";}
 function onHeatmapClick(ev){
@@ -1840,9 +1894,9 @@ return;
 }
 const o=opts||{},planeResOverride=Number.isFinite(o.planeResOverride)?Math.max(32,Math.min(600,Math.floor(o.planeResOverride))):null;
 updateSliceVal();
-const sm=getSliceMode(),mode=$("scale").value,sl=sm==="plane"?buildNormalPlaneSlice(state.res,mode,false,planeResOverride):slice(state.res,$("axis").value,Number($("idx").value)),stops=getColorPreset().stops,t=new Float64Array(sl.d.length);
+const sm=getSliceMode(),mode=$("scale").value,sl=sm==="plane"?buildNormalPlaneSlice(state.res,mode,false,planeResOverride):sm==="avgvol"?buildAvgVolSlice(state.res,mode,false,planeResOverride):slice(state.res,$("axis").value,Number($("idx").value)),stops=getColorPreset().stops,t=new Float64Array(sl.d.length);
 let mn=Infinity,mx=-Infinity;
-for(let i=0;i<sl.d.length;i++){const rv=sl.d[i],v=sm==="plane"?rv:scaledVal(rv,mode);t[i]=v;if(Number.isFinite(v)&&v<mn)mn=v;if(Number.isFinite(v)&&v>mx)mx=v;}
+for(let i=0;i<sl.d.length;i++){const rv=sl.d[i],v=(sm==="plane"||sm==="avgvol")?rv:scaledVal(rv,mode);t[i]=v;if(Number.isFinite(v)&&v<mn)mn=v;if(Number.isFinite(v)&&v>mx)mx=v;}
 if(!Number.isFinite(mn)||!Number.isFinite(mx)){mn=0;mx=1;}
 if(Math.abs(mx-mn)<1e-30)mx=mn+1;
 const globalBounds=getGlobalDisplayBounds(mode),gmin=globalBounds.min,gmax=globalBounds.max;
@@ -2198,11 +2252,14 @@ $("idx").addEventListener("input",()=>{draw();schedule3dRender(false,140);});
 $("scale").addEventListener("change",()=>{resetDisplayLevels();draw();schedule3dRender(false,160);});
 $("colorMap").addEventListener("change",()=>{draw();var cs=getColorPreset().plotly;if(window.Plotly){var isoGd=$("plot3dIso"),planeGd=$("plot3dPlane");if(isoGd&&Array.isArray(isoGd.data)&&isoGd.data.length){var t0=isoGd.data[0];if(t0&&t0.type==="scatter3d")Plotly.restyle(isoGd,{"marker.colorscale":[cs]},0);else Plotly.restyle(isoGd,{colorscale:[cs]},0);}if(planeGd&&Array.isArray(planeGd.data)&&planeGd.data.length)Plotly.restyle(planeGd,{colorscale:[cs]},0);}});
 $("resetLevels").addEventListener("click",()=>{resetDisplayLevels();draw();scheduleLevelSync3d(true);});
-$("planeApply").addEventListener("click",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");applyPlaneFromInputs();draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
+$("planeApply").addEventListener("click",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");const sm=getSliceMode();if(sm==="avgvol"){applyAvgVolFromInputs();}else{applyPlaneFromInputs();}draw();if(sm==="plane"||sm==="avgvol"){const resId=sm==="avgvol"?"avRes":"pRes";const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput(resId,200))));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
 $("planeReset").addEventListener("click",()=>{resetPlaneToolDefaults();});
 $("planeMove").addEventListener("input",()=>{if(!state.planeMoving){const liveCam=readSceneCamera("plot3dPlane");state.planeMoveCameraLock=liveCam?cloneCamera(liveCam):null;}state.planeMoving=true;state.render3dEpoch++;if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}movePlaneToSlider(Number($("planeMove").value));if(state.planeMoveRaf){cancelAnimationFrame(state.planeMoveRaf);}state.planeMoveRaf=requestAnimationFrame(()=>{state.planeMoveRaf=0;draw({planeResOverride:fastPlaneRes()});updatePlaneTraceFast().catch(()=>{});});});
 $("planeMove").addEventListener("change",async()=>{try{draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));await updatePlaneTraceFast(fullRes);}else{schedule3dRender(false,220);}}finally{state.planeMoving=false;const liveCam=readSceneCamera("plot3dPlane");if(liveCam)state.sceneCamera.plane=cloneCamera(liveCam);state.planeMoveCameraLock=null;}});
 for(const id of ["pRes","pScale"]){$(id).addEventListener("change",()=>{if(getSliceMode()==="plane"){invalidatePlaneSliceCache();draw();const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});}
+$("avgVolMove").addEventListener("input",()=>{state.render3dEpoch++;if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}moveAvgVolToSlider(Number($("avgVolMove").value));if(state.planeMoveRaf){cancelAnimationFrame(state.planeMoveRaf);}state.planeMoveRaf=requestAnimationFrame(()=>{state.planeMoveRaf=0;draw();});});
+$("avgVolMove").addEventListener("change",()=>{draw();});
+for(const id of ["avRes","avScale","slabWidth"]){$(id).addEventListener("change",()=>{if(getSliceMode()==="avgvol"){invalidatePlaneSliceCache();draw();}});}
 $("heatmap").addEventListener("click",onHeatmapClick);
 $("heatmap").addEventListener("pointerdown",onHeatmapPointerDown);
 $("heatmap").addEventListener("pointermove",onHeatmapPointerMove);
@@ -2351,13 +2408,16 @@ bind();draw();
     mPNX:'pNX', mPNY:'pNY', mPNZ:'pNZ',
     mPOX:'pOX', mPOY:'pOY', mPOZ:'pOZ',
     mPRes:'pRes', mPScale:'pScale',
+    mAvNX:'avNX', mAvNY:'avNY', mAvNZ:'avNZ',
+    mAvOX:'avOX', mAvOY:'avOY', mAvOZ:'avOZ',
+    mAvRes:'avRes', mAvScale:'avScale', mSlabWidth:'slabWidth',
     mAxis:'axis', mColorMap:'colorMap',
     mIsoPct:'isoPct', mIsoCount:'isoCount',
     mShowIso3d:'showIso3d', mShowPlane3d:'showPlane3d',
     mShow2d:'show2d', mAuto3d:'auto3d'
   };
   /* Range inputs need special handling */
-  var RANGE_MAP={mPlaneMove:'planeMove',mIdx:'idx'};
+  var RANGE_MAP={mPlaneMove:'planeMove',mIdx:'idx',mAvgVolMove:'avgVolMove'};
   /* Button maps: mobile button -> sidebar button to click */
   var BTN_MAP={
     mPlaneApply:'planeApply', mPlaneReset:'planeReset',
