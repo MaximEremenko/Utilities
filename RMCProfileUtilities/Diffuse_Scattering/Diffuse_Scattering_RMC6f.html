@@ -33,13 +33,14 @@ html{overflow-x:hidden}
   color:var(--topbar-text);
   display:flex;align-items:center;gap:12px;
   padding:0 16px;height:48px;min-height:48px;
+  min-width:0;overflow:hidden;
   z-index:100;
 }
 .topbar h1{margin:0;font-size:1rem;font-weight:600;white-space:nowrap}
 .topbar-title{display:flex;align-items:center;gap:8px}
 .topbar-logo{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;background:var(--brand);color:#fff;font-weight:700;font-size:.85rem;flex-shrink:0}
 .topbar-subtitle{font-weight:400;color:#8fa4b8;font-size:.85rem}
-.topbar-meta{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:.8rem}
+.topbar-meta{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:.8rem;min-width:0;overflow:hidden}
 .topbar-chip{background:#1e2e40;padding:3px 10px;border-radius:12px;color:#8fa4b8;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
 
 /* ===== Sidebar ===== */
