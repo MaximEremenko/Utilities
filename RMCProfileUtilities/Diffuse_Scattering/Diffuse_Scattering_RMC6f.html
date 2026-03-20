@@ -9,10 +9,11 @@
 :root{--bg:#f0f3f7;--card:#fff;--ink:#10223a;--muted:#5f6f86;--line:#ced9e8;--brand:#1a7aad;--brand2:#15648e;--panel:#f5f7fa;--ok:#166534;--warn:#92400e;--err:#991b1b;--gap:2px;--pad:clamp(10px,1.2vw,16px);--sb-bg:#1a2332;--sb-text:#c8d5e2;--sb-input-bg:#243042;--sb-border:#3a4d66;--topbar-bg:#0f1923;--topbar-text:#d4dfe9;--ws-bg:#f0f3f7;--plot-bg:#070b12;--ctrl-bg:#f5f7fa}
 *{box-sizing:border-box;margin:0}
 html,body{margin:0;padding:0;overflow:hidden;height:100%;font-family:"Segoe UI",Tahoma,sans-serif;color:var(--ink);background:#2a3a4e}
+html{overflow-x:hidden}
 
 /* ===== Dashboard Grid ===== */
 .dashboard{
-  width:100vw;height:100vh;overflow:hidden;
+  width:100%;max-width:100vw;height:100vh;overflow:hidden;
   display:grid;
   grid-template-areas:
     "topbar   topbar   topbar   topbar   topbar"
