@@ -5,251 +5,907 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>RMC6f Diffuse Scattering</title>
 <style>
-:root{--bg:#eaf0f8;--card:#fff;--ink:#10223a;--muted:#5f6f86;--line:#ced9e8;--brand:#0e5f88;--brand2:#134a6b;--panel:#f5f9ff;--ok:#166534;--warn:#92400e;--err:#991b1b}
-*{box-sizing:border-box}
-body{margin:0;font-family:"Segoe UI",Tahoma,sans-serif;background:radial-gradient(circle at top,#f8fbff,#e5edf7 60%,#dde7f3);color:var(--ink);padding:14px}
-.app{max-width:1480px;margin:0 auto;display:grid;gap:12px}
-.hero{background:linear-gradient(125deg,#0b172a,#1a2f45);color:#dbeafe;border-radius:12px;padding:14px 16px}
-.hero h1{margin:0 0 6px;font-size:1.2rem}.hero p{margin:0;color:#bfdbfe;font-size:.92rem}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 10px 24px rgba(20,35,60,.08)}
+/* ===== Dashboard CSS — Dark Chrome Frame ===== */
+:root{--bg:#f0f3f7;--card:#fff;--ink:#10223a;--muted:#5f6f86;--line:#ced9e8;--brand:#1a7aad;--brand2:#15648e;--panel:#f5f7fa;--ok:#166534;--warn:#92400e;--err:#991b1b;--gap:2px;--pad:clamp(10px,1.2vw,16px);--sb-bg:#1a2332;--sb-text:#c8d5e2;--sb-input-bg:#243042;--sb-border:#3a4d66;--topbar-bg:#0f1923;--topbar-text:#d4dfe9;--ws-bg:#f0f3f7;--plot-bg:#070b12;--ctrl-bg:#f5f7fa}
+*{box-sizing:border-box;margin:0}
+html,body{margin:0;padding:0;overflow:hidden;height:100%;font-family:"Segoe UI",Tahoma,sans-serif;color:var(--ink);background:#2a3a4e}
+
+/* ===== Dashboard Grid ===== */
+.dashboard{
+  width:100vw;height:100vh;overflow:hidden;
+  display:grid;
+  grid-template-areas:
+    "topbar   topbar   topbar   topbar   topbar"
+    "sidebar  sidebar  plane3d  controls export"
+    "sidebar  sidebar  slice2d  iso      iso";
+  grid-template-columns:324px 324px max(200px,40vw) minmax(120px,1fr) minmax(90px,.9fr);
+  grid-template-rows:48px minmax(0,1fr) minmax(0,1fr);
+  gap:var(--gap);
+  background:#2a3a4e;
+}
+
+/* ===== Top Bar ===== */
+.topbar{
+  grid-area:topbar;
+  background:var(--topbar-bg);
+  color:var(--topbar-text);
+  display:flex;align-items:center;gap:12px;
+  padding:0 16px;height:48px;min-height:48px;
+  z-index:100;
+}
+.topbar h1{margin:0;font-size:1rem;font-weight:600;white-space:nowrap}
+.topbar-title{display:flex;align-items:center;gap:8px}
+.topbar-logo{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;background:var(--brand);color:#fff;font-weight:700;font-size:.85rem;flex-shrink:0}
+.topbar-subtitle{font-weight:400;color:#8fa4b8;font-size:.85rem}
+.topbar-meta{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:.8rem}
+.topbar-chip{background:#1e2e40;padding:3px 10px;border-radius:12px;color:#8fa4b8;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+
+/* ===== Sidebar ===== */
+.sidebar{
+  grid-area:sidebar;
+  background:var(--sb-bg);
+  color:var(--sb-text);
+  overflow-y:auto;overflow-x:hidden;
+  min-width:0;min-height:0;
+}
+.sidebar-scroll{
+  padding:12px 10px 20px;
+  display:grid;grid-template-columns:1fr 1fr;gap:12px 12px;
+  align-content:start;
+}
+.sb-col{display:flex;flex-direction:column;gap:12px;min-width:0;overflow:hidden}
+.sidebar .drawer-close{grid-column:1/-1}
+.sb-section{display:flex;flex-direction:column;gap:8px;min-width:0}
+.sb-heading{margin:0 0 4px;font-size:.92rem;font-weight:600;color:#e0e8f0}
+.sb-divider{border:0;border-top:1px solid var(--sb-border);margin:4px 0}
+.sb-export-btns{margin-top:4px}
+
+/* Sidebar dark-themed inputs */
+.sidebar label{display:grid;gap:3px;font-size:.8rem;color:#8fa4b8}
+.sidebar input[type=number],.sidebar input[type=text],.sidebar select{
+  padding:5px 7px;border:1px solid var(--sb-border);border-radius:6px;
+  width:100%;min-width:0;background:var(--sb-input-bg);color:var(--sb-text);font:inherit;font-size:.84rem;
+}
+.sidebar input[readonly]{background:#1c2a3a;color:#6b8099}
+.sidebar input[type=range]{width:100%;accent-color:var(--brand)}
+.sidebar button{border:0;border-radius:6px;padding:7px 12px;background:var(--brand);color:#fff;cursor:pointer;font-weight:600;font:inherit;font-size:.84rem}
+.sidebar button:hover{background:var(--brand2)}
+.sidebar button.alt{background:#3b4a63}.sidebar button.alt:hover{background:#27354d}
+.sidebar button:disabled{opacity:.45;cursor:not-allowed}
+.sidebar .btn-compute{background:var(--brand);padding:10px 14px;font-size:.92rem;width:100%}
+.sidebar .drop{border:2px dashed #3d6080;background:#1e2e42;padding:16px 14px;border-radius:8px;text-align:center;cursor:pointer;color:var(--sb-text);font-size:.96rem;min-height:70px}
+.sidebar .drop.drag{border-color:var(--brand);background:#1a3650}
+.sidebar .meta{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;font-size:.92rem;padding:4px 0}
+.sidebar .meta .k{color:#6b8099}
+.sidebar .row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 0 6px}
+.sidebar .row4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 0 6px}
+.sidebar .row5{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:0 0 6px}
+.sidebar .row6{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:0 0 6px}
+.sidebar #status{padding:8px;border-radius:6px;background:#162230;min-height:32px;font-family:Consolas,monospace;font-size:.82rem;color:var(--sb-text)}
+.sidebar #status.ok{background:#0d2818;color:#4ade80}
+.sidebar #status.warn{background:#2a1d08;color:#fbbf24}
+.sidebar #status.err{background:#2a0a0a;color:#f87171}
+
+/* Sidebar collapsible details (dark variant) */
+.sidebar details.advancedSettings{border:1px solid var(--sb-border);border-radius:8px;background:#1e2e40;padding:0;margin:6px 0}
+.sidebar details.advancedSettings>summary{cursor:pointer;padding:8px 10px;font-size:.84rem;font-weight:600;color:var(--sb-text);list-style:none;display:flex;align-items:center;gap:6px;user-select:none;border-radius:8px}
+.sidebar details.advancedSettings>summary::-webkit-details-marker{display:none}
+.sidebar details.advancedSettings>summary::before{content:"";display:inline-block;width:0;height:0;border-left:5px solid #6b8099;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .2s ease;flex-shrink:0}
+.sidebar details.advancedSettings[open]>summary::before{transform:rotate(90deg)}
+.sidebar details.advancedSettings>summary:hover{background:rgba(26,122,173,.08)}
+.sidebar details.advancedSettings>.advancedContent{padding:0 10px 10px}
+.sidebar details.toolBox{border:1px solid var(--sb-border);border-radius:8px;padding:0;background:#1e2e40;overflow:hidden}
+.sidebar details.toolBox>summary{cursor:pointer;padding:10px;font-size:.88rem;font-weight:600;color:var(--sb-text);list-style:none;display:flex;align-items:center;gap:6px;user-select:none;margin:0}
+.sidebar details.toolBox>summary::-webkit-details-marker{display:none}
+.sidebar details.toolBox>summary::before{content:"";display:inline-block;width:0;height:0;border-left:5px solid #6b8099;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .2s ease;flex-shrink:0}
+.sidebar details.toolBox[open]>summary::before{transform:rotate(90deg)}
+.sidebar details.toolBox>summary:hover{background:rgba(26,122,173,.08)}
+.sidebar .toolBoxBody{padding:0 10px 10px}
+.sidebar details.toolBox h3{margin:0;font-size:.88rem;display:inline;color:var(--sb-text)}
+.sidebar .sectionDivider{border:0;border-top:1px solid var(--sb-border);margin:6px 0}
+.sidebar .fine{margin-top:4px;font-size:.78rem;color:#6b8099}
+.sidebar .mono{font-family:Consolas,monospace;font-size:.8rem}
+
+/* ===== Workspace Areas ===== */
+.area-plane3d{grid-area:plane3d;background:var(--plot-bg);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-width:0;min-height:0}
+.area-slice2d{grid-area:slice2d;background:var(--plot-bg);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-width:0;min-height:0}
+.area-controls{grid-area:controls;background:var(--ctrl-bg);padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-width:0;min-height:0}
+.area-export{grid-area:export;background:var(--ctrl-bg);padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-width:0;min-height:0}
+.area-iso{grid-area:iso;background:var(--plot-bg);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-width:0;min-height:0}
+
+.area-heading{margin:0 0 6px;font-size:.88rem;font-weight:600;color:var(--ink)}
+.area-divider{border:0;border-top:1px solid var(--line);margin:6px 0}
+
+/* Controls/Export area inputs */
+.area-controls label,.area-export label{display:grid;gap:3px;font-size:.8rem;color:var(--muted)}
+.area-controls input[type=number],.area-controls select,.area-export select{padding:5px 7px;border:1px solid #b8c8dc;border-radius:6px;width:100%;background:#fff;font:inherit;font-size:.84rem}
+.area-controls button,.area-export button{border:0;border-radius:6px;padding:7px 10px;background:#3b4a63;color:#fff;cursor:pointer;font-weight:600;font:inherit;font-size:.82rem;width:100%}
+.area-controls button:hover,.area-export button:hover{background:#27354d}
+.area-controls button:disabled,.area-export button:disabled{opacity:.45;cursor:not-allowed}
+
+/* ===== Plot containers ===== */
+.plot3dWrap{flex:1;min-height:0;overflow:hidden;background:var(--plot-bg);border-radius:0;position:relative}
+#plot3dIso,#plot3dPlane{width:100%;height:100%}
+#heatmap{display:block;width:100%;height:auto;aspect-ratio:7/4;background:#0b1321;touch-action:none}
+#heatmapOverlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;touch-action:none}
+.canvasWrap{flex:1;min-height:0;overflow:auto;background:var(--plot-bg);border-radius:0;position:relative}
+
+/* ===== Zoom Controls ===== */
+.zoom-controls{
+  position:absolute;display:flex;flex-direction:column;gap:3px;
+  z-index:20;pointer-events:auto;
+}
+.zoom-controls.bottom-right{bottom:8px;right:8px}
+.zoom-controls.top-right{top:8px;right:8px}
+.zoom-btn{
+  width:28px;height:28px;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid rgba(148,163,184,.4);border-radius:6px;
+  background:rgba(15,25,35,.82);color:#c8d5e2;
+  font-size:16px;font-weight:700;line-height:1;
+  cursor:pointer;user-select:none;
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+  transition:background .15s,border-color .15s;
+}
+.zoom-btn:hover{background:rgba(26,122,173,.55);border-color:rgba(26,122,173,.7)}
+.zoom-btn:active{background:rgba(26,122,173,.75)}
+.zoom-btn:disabled{opacity:.35;cursor:not-allowed}
+.zoom-btn .zoom-icon{font-size:14px;line-height:1}
+.area-plane3d .zoom-controls,.area-iso .zoom-controls,.area-slice2d .zoom-controls{bottom:8px;left:8px;right:auto}
+
+/* ===== Panel Head ===== */
+.panelHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.panelHead h3{margin:0;font-size:.88rem}
+
+/* ===== Shared utility classes ===== */
 h2{margin:0 0 10px;font-size:1rem}
 h3{margin:0 0 8px;font-size:.95rem}
-.drop{border:2px dashed #6ba8c2;background:#edf7fb;padding:14px;border-radius:10px;text-align:center;cursor:pointer;margin-bottom:10px}
-.drop.drag{border-color:var(--brand);background:#e3f2f8}
-.meta{display:grid;grid-template-columns:170px 1fr;gap:6px 10px;font-size:.9rem}.meta .k{color:var(--muted)}
-.row{display:grid;grid-template-columns:repeat(6,minmax(90px,1fr));gap:8px;margin:0 0 8px}
-.row4{display:grid;grid-template-columns:repeat(4,minmax(110px,1fr));gap:8px;margin:0 0 8px}
-.row5{display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:8px;margin:0 0 8px}
-.row6{display:grid;grid-template-columns:repeat(6,minmax(95px,1fr));gap:8px;margin:0 0 8px}
 label{display:grid;gap:4px;font-size:.82rem;color:var(--muted)}
 input,select,button{font:inherit}
 input[type=number],input[type=text],select{padding:6px 8px;border:1px solid #b8c8dc;border-radius:8px;width:100%;background:#fff}
 input[readonly]{background:#f3f7fd;color:#223a58}
-.btns{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.btns{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
 button{border:0;border-radius:8px;padding:8px 12px;background:var(--brand);color:#fff;cursor:pointer;font-weight:600}
 button:hover{background:var(--brand2)}
 button.alt{background:#3b4a63}button.alt:hover{background:#27354d}
 button:disabled{opacity:.45;cursor:not-allowed}
 #status{padding:8px;border-radius:8px;background:#edf2f9;min-height:36px;font-family:Consolas,monospace;font-size:.88rem}
 #status.ok{background:#e9f8ef;color:var(--ok)}#status.warn{background:#fff6e8;color:var(--warn)}#status.err{background:#fbeaea;color:var(--err)}
-
-.workspace{display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr);gap:12px;align-items:start}
-.workspace>*{min-width:0}
-.sidePanel{display:grid;gap:10px;min-width:0}
-.viewerMain{display:grid;gap:10px;min-width:0}
-.toolBox{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel);overflow:hidden}
-.planeHeader{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:end;margin-bottom:8px}
-.vec3{display:grid;grid-template-columns:repeat(3,minmax(70px,1fr));gap:8px;margin-bottom:8px}
-.planeMetaRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
-.axisRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
-.colorRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
-.colorRow2{display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:end;margin-top:8px}
-#planeMoveVal{font-family:Consolas,monospace;font-size:.84rem;color:var(--muted);margin-top:6px}
-#sliceVal{font-family:Consolas,monospace;font-size:.88rem;color:var(--muted);margin-top:8px}
-.canvasWrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0b1321}
-#heatmap{display:block;width:100%;height:auto;background:#0b1321}
-#sliceStats{margin-top:8px;font-family:Consolas,monospace;font-size:.88rem;color:#334155}
-.viewer3dCtl{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end;margin-bottom:8px}
-.viewer3dExport{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 8px}
-.panelHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
-.panelHead h3{margin:0}
-.panelActions{display:flex;align-items:center;gap:8px}
-.plotSplit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.plot3dWrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#070b12;min-width:0}
-#plot3dIso,#plot3dPlane{width:100%;height:520px}
+.sectionDivider{border:0;border-top:1px solid var(--line);margin:6px 0}
+.planeHeader{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-items:end;margin-bottom:6px}
+.vec3{display:grid;grid-template-columns:repeat(3,minmax(60px,1fr));gap:6px;margin-bottom:6px}
+.planeMetaRow{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.axisRow{display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:end}
+.colorRow{display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:end}
+.colorRow2{display:grid;grid-template-columns:1fr 130px;gap:6px;align-items:end;margin-top:6px}
+#planeMoveVal{font-family:Consolas,monospace;font-size:.8rem;color:#6b8099;margin-top:4px}
+#sliceVal{font-family:Consolas,monospace;font-size:.82rem;color:#6b8099;margin-top:6px}
+#sliceStats{margin-top:4px;padding:2px 8px;font-family:Consolas,monospace;font-size:clamp(.65rem,.7vw + .4rem,.82rem);color:#8fa4b8;line-height:1.3}
 .mono{font-family:Consolas,monospace}
 .fine{margin-top:6px;font-size:.82rem;color:var(--muted)}
-.elem-filter{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:2px}
-.elem-filter label{display:inline-flex;align-items:center;gap:3px;font-size:.85rem;color:var(--ink);cursor:pointer}
-.elem-filter input[type=checkbox]{width:15px;height:15px;margin:0;cursor:pointer}
-.elem-filter button{padding:3px 8px;font-size:.78rem;border-radius:6px;background:#3b4a63}
-.elem-warn{grid-column:1/-1;color:#b91c1c;font-size:.82rem;font-weight:700}
+#elemFilterDetails{grid-column:1/-1}
+.elem-filter{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px;margin-top:2px}
+.elem-filter label{display:inline-flex;align-items:center;gap:3px;font-size:.82rem;color:var(--sb-text);cursor:pointer}
+.elem-filter input[type=checkbox]{width:15px;height:15px;margin:0;cursor:pointer;accent-color:var(--brand)}
+.elem-filter button{padding:3px 8px;font-size:.76rem;border-radius:6px;background:#3b4a63}
+.elem-warn{grid-column:1/-1;color:#f87171;font-size:.78rem;font-weight:700}
 .hidden{display:none !important}
-@media (max-width:1180px){.grid{grid-template-columns:1fr}.workspace{grid-template-columns:1fr}.sidePanel{grid-template-columns:1fr 1fr}}
-@media (max-width:760px){.row{grid-template-columns:repeat(2,minmax(120px,1fr))}.row4{grid-template-columns:repeat(2,minmax(120px,1fr))}.row5{grid-template-columns:repeat(2,minmax(120px,1fr))}.row6{grid-template-columns:repeat(2,minmax(120px,1fr))}.meta{grid-template-columns:1fr}.sidePanel{grid-template-columns:1fr}.planeHeader,.axisRow,.colorRow,.colorRow2,.vec3,.planeMetaRow{grid-template-columns:1fr}.viewer3dCtl{grid-template-columns:repeat(2,minmax(120px,1fr))}.plotSplit{grid-template-columns:1fr}#plot3dIso,#plot3dPlane{height:380px}}
+
+/* ===== Drawer (mobile/tablet) ===== */
+.drawer-toggle,.drawer-close,.drawer-backdrop,.bottom-tabs{display:none}
+.drawer-toggle{background:none;border:none;color:var(--topbar-text);padding:4px;cursor:pointer;flex-shrink:0}
+.drawer-close{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--sb-text);padding:4px;cursor:pointer;z-index:10}
+.drawer-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;opacity:0;pointer-events:none;transition:opacity .2s ease;display:none}
+.drawer-open .drawer-backdrop{display:block;opacity:1;pointer-events:auto}
+
+/* ===== Floating Compute Button (mobile/tablet) ===== */
+.fab-compute{
+  display:none;
+  position:fixed;z-index:800;
+  bottom:72px;right:16px;
+  width:56px;height:56px;
+  border-radius:50%;border:none;
+  background:var(--brand);color:#fff;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);
+  cursor:pointer;
+  align-items:center;justify-content:center;
+  transition:transform .15s ease,background .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.fab-compute:hover{background:var(--brand2)}
+.fab-compute:active{transform:scale(.92)}
+.fab-compute:disabled{opacity:.45;cursor:not-allowed}
+.fab-compute svg{pointer-events:none}
+
+/* ===== Mobile Slice Tool Panel (visible below maps on tablet/phone) ===== */
+.mobile-slice-tool{
+  display:none;
+  grid-area:slicetool;
+  background:var(--sb-bg);color:var(--sb-text);
+  padding:12px;overflow-y:auto;
+  min-width:0;min-height:0;
+  max-height:clamp(300px,50vh,600px);
+}
+.mobile-slice-tool .mst-section{margin-bottom:10px}
+.mobile-slice-tool .sb-heading{margin:0 0 6px;font-size:.92rem;font-weight:600;color:#e0e8f0}
+.mobile-slice-tool label{display:grid;gap:3px;font-size:.8rem;color:#8fa4b8}
+.mobile-slice-tool input[type=number],.mobile-slice-tool input[type=text],.mobile-slice-tool select{
+  padding:5px 7px;border:1px solid var(--sb-border);border-radius:6px;
+  width:100%;min-width:0;background:var(--sb-input-bg);color:var(--sb-text);font:inherit;font-size:.84rem;
+}
+.mobile-slice-tool input[readonly]{background:#1c2a3a;color:#6b8099}
+.mobile-slice-tool input[type=range]{width:100%;accent-color:var(--brand)}
+.mobile-slice-tool button{border:0;border-radius:6px;padding:7px 12px;background:var(--brand);color:#fff;cursor:pointer;font-weight:600;font:inherit;font-size:.84rem}
+.mobile-slice-tool button:hover{background:var(--brand2)}
+.mobile-slice-tool button.alt{background:#3b4a63}.mobile-slice-tool button.alt:hover{background:#27354d}
+.mobile-slice-tool button:disabled{opacity:.45;cursor:not-allowed}
+.mobile-slice-tool .planeHeader{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-items:end;margin-bottom:6px}
+.mobile-slice-tool .vec3{display:grid;grid-template-columns:repeat(3,minmax(60px,1fr));gap:6px;margin-bottom:6px}
+.mobile-slice-tool .planeMetaRow{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.mobile-slice-tool .axisRow{display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:end}
+.mobile-slice-tool .colorRow{display:grid;grid-template-columns:1fr;gap:6px;align-items:end}
+.mobile-slice-tool .btns{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.mobile-slice-tool .mono{font-family:Consolas,monospace;font-size:.8rem}
+.mobile-slice-tool .fine{margin-top:4px;font-size:.78rem;color:#6b8099}
+.mobile-slice-tool .mst-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mobile-slice-tool .mst-full{grid-column:1/-1}
+html[data-theme="light"] .mobile-slice-tool{background:var(--sb-bg);color:var(--sb-text)}
+html[data-theme="light"] .mobile-slice-tool input,html[data-theme="light"] .mobile-slice-tool select{background:var(--sb-input-bg);color:var(--sb-text);border-color:var(--sb-border)}
+html[data-theme="light"] .mobile-slice-tool button{color:#fff}
+html[data-theme="light"] .mobile-slice-tool .sb-heading{color:#0f1923}
+html[data-theme="light"] .mobile-slice-tool label{color:#5a6b82}
+
+/* ===== Mobile Isosurface Collapsible ===== */
+.mobile-iso-details{display:none}
+.mobile-iso-details>summary{
+  cursor:pointer;padding:10px 14px;font-size:.88rem;font-weight:600;
+  color:#c8d5e2;background:var(--plot-bg);list-style:none;
+  display:flex;align-items:center;gap:8px;user-select:none;
+  border-top:1px solid #2a3a4e;
+}
+.mobile-iso-details>summary::-webkit-details-marker{display:none}
+.mobile-iso-details>summary::before{content:"";display:inline-block;width:0;height:0;border-left:6px solid #6b8099;border-top:5px solid transparent;border-bottom:5px solid transparent;transition:transform .2s ease;flex-shrink:0}
+.mobile-iso-details[open]>summary::before{transform:rotate(90deg)}
+.mobile-iso-details .mobile-iso-content{min-height:40vh}
+
+/* ===== Mobile Status Bar ===== */
+.mobile-status{
+  display:none;grid-area:mobstatus;
+  background:#162230;color:var(--sb-text);
+  padding:6px 12px;font-family:Consolas,monospace;font-size:.78rem;
+  min-height:28px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.mobile-status.ok{background:#0d2818;color:#4ade80}
+.mobile-status.warn{background:#2a1d08;color:#fbbf24}
+.mobile-status.err{background:#2a0a0a;color:#f87171}
+
+/* ===== Narrow Desktop (1200-1499px): prevent grid overflow ===== */
+@media (min-width:1200px) and (max-width:1499px){
+  .dashboard{
+    grid-template-areas:
+      "topbar   topbar   topbar   topbar"
+      "sidebar  plane3d  controls export"
+      "sidebar  slice2d  iso      iso";
+    grid-template-columns:minmax(280px,340px) minmax(200px,1fr) minmax(100px,180px) minmax(80px,140px);
+  }
+  .sidebar-scroll{grid-template-columns:1fr;gap:10px 8px;padding:10px 8px 18px}
+}
+
+/* ===== Aspect Ratio Media Queries ===== */
+@media (max-aspect-ratio: 5/4) and (min-width:1200px){
+  .dashboard{
+    grid-template-areas:
+      "topbar   topbar   topbar"
+      "sidebar  sidebar  plane3d"
+      "sidebar  sidebar  slice2d";
+    grid-template-columns:minmax(245px,280px) minmax(245px,280px) minmax(0,1fr);
+    grid-template-rows:48px minmax(0,1fr) minmax(0,1fr);
+  }
+  .area-controls,.area-export,.area-iso{display:none}
+}
+@media (min-aspect-ratio: 21/9) and (min-width:1200px){
+  .dashboard{
+    grid-template-columns:minmax(260px,320px) minmax(260px,320px) minmax(400px,1fr) minmax(260px,320px) minmax(180px,240px);
+  }
+}
+@media (min-aspect-ratio: 32/9) and (min-width:1200px){
+  .dashboard{max-width:3400px;margin:0 auto}
+}
+
+/* ===== 4K+ ===== */
+@media (min-width:3000px){
+  .dashboard{grid-template-columns:minmax(280px,360px) minmax(280px,360px) minmax(400px,1fr) minmax(300px,360px) minmax(220px,280px)}
+  body{font-size:1.05rem}
+  .sidebar label,.area-controls label,.area-export label{font-size:.88rem}
+  .sidebar-scroll{padding:16px 14px 24px}
+}
+
+/* ============================================================
+   TABLET (768px - 1199px)
+   - Sidebar = slide-out drawer
+   - 3D Plane + 2D Map stacked full width
+   - Slice Tool visible below maps (NOT in drawer)
+   - Isosurface collapsible
+   - Controls/Export hidden (in drawer)
+   ============================================================ */
+@media (max-width:1199px){
+  html,body{overflow:visible;overflow-y:auto;height:auto}
+  .drawer-toggle{display:flex}
+  .sidebar{
+    position:fixed;left:0;top:0;bottom:0;width:min(540px,94vw);
+    transform:translateX(-100%);
+    z-index:1000;transition:transform .25s ease;
+  }
+  .drawer-open .sidebar{transform:translateX(0)}
+  .drawer-open .drawer-backdrop{display:block;opacity:1;pointer-events:auto}
+  .drawer-close{display:flex}
+  .fab-compute{display:flex}
+  .mobile-slice-tool{display:block}
+  .mobile-status{display:block}
+  .area-controls,.area-export{display:none}
+  /* Isosurface wrapped in collapsible on mobile */
+  .mobile-iso-details{display:block;grid-area:iso}
+  .area-iso{grid-area:unset;min-height:clamp(200px,25vh,320px)}
+
+  /* Sticky topbar stays visible while scrolling */
+  .topbar{position:sticky;top:0;z-index:200}
+
+  /* Clamped plot heights: reasonable at any zoom, never consume whole viewport */
+  .area-plane3d{height:clamp(220px,34vh,420px)}
+  /* 2D map: constrained height, internal scroll for color bar access */
+  .area-slice2d{height:clamp(200px,38vh,440px);overflow-y:auto;overflow-x:hidden}
+
+  .dashboard{
+    grid-template-areas:
+      "topbar     topbar"
+      "plane3d    plane3d"
+      "slice2d    slice2d"
+      "mobstatus  mobstatus"
+      "slicetool  slicetool"
+      "iso        iso";
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:48px auto auto auto auto auto;
+    height:auto;min-height:100vh;overflow:visible;
+  }
+}
+/* Tablet landscape */
+@media (min-width:768px) and (max-width:1199px) and (orientation:landscape){
+  .area-plane3d{height:clamp(200px,38vh,460px)}
+}
+/* Tablet portrait */
+@media (min-width:768px) and (max-width:1199px) and (orientation:portrait){
+  .area-plane3d{height:clamp(240px,32vh,400px)}
+}
+
+/* ============================================================
+   PHONE (<768px)
+   - 3D Plane -> 2D Map -> Status -> Slice Tool always visible
+   - Floating compute button
+   - Bottom tab bar
+   - Isosurface collapsed by default
+   - Touch-friendly: min 44px targets
+   ============================================================ */
+@media (max-width:767px){
+  .drawer-toggle{display:flex}
+  .sidebar{
+    position:fixed;left:0;top:0;bottom:0;width:min(420px,92vw);
+    transform:translateX(-100%);
+    z-index:1000;transition:transform .25s ease;
+  }
+  .sidebar-scroll{grid-template-columns:1fr}
+  .drawer-open .sidebar{transform:translateX(0)}
+  .drawer-open .drawer-backdrop{display:block;opacity:1;pointer-events:auto}
+  .drawer-close{display:flex}
+  .fab-compute{display:flex}
+  .mobile-slice-tool{display:block;overflow-y:auto}
+  .mobile-status{display:block}
+  .bottom-tabs{display:flex}
+  .area-controls,.area-export{display:none}
+  .mobile-iso-details{display:block;grid-area:iso}
+  .area-iso{grid-area:unset;min-height:clamp(180px,22vh,280px)}
+
+  /* Sticky topbar on phone */
+  .topbar{position:sticky;top:0;z-index:200}
+
+  .dashboard{
+    grid-template-areas:
+      "topbar"
+      "plane3d"
+      "slice2d"
+      "mobstatus"
+      "slicetool"
+      "iso";
+    grid-template-columns:1fr;
+    grid-template-rows:48px auto auto auto auto auto;
+    height:auto;min-height:100vh;overflow:visible;
+    padding-bottom:56px; /* space for bottom tabs */
+  }
+  /* Clamped heights: fit viewport at any zoom */
+  .area-plane3d{height:clamp(200px,30vh,360px)}
+  .area-slice2d{height:clamp(180px,34vh,380px);overflow-y:auto;overflow-x:hidden}
+
+  /* Touch-friendly targets */
+  .sidebar input[type=number],.sidebar input[type=text],.sidebar select,.sidebar button{min-height:44px}
+  .mobile-slice-tool input[type=number],.mobile-slice-tool input[type=text],
+  .mobile-slice-tool select,.mobile-slice-tool button{min-height:44px}
+  input[type=range]{height:28px}
+  input[type=range]::-webkit-slider-thumb{width:28px;height:28px}
+
+  /* FAB position above bottom tabs */
+  .fab-compute{bottom:72px;right:16px}
+
+  /* Topbar: hide less important chips on very small screens */
+  .topbar-chip#tbAtoms,.topbar-chip#tbSuper{display:none}
+}
+
+/* Very short landscape (phone landscape) */
+@media (max-height:500px) and (orientation:landscape){
+  .dashboard{
+    grid-template-areas:
+      "topbar   topbar"
+      "plane3d  slice2d";
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:42px minmax(0,1fr);
+    overflow:hidden;height:100vh;min-height:unset;padding-bottom:0;
+  }
+  .mobile-slice-tool,.mobile-status,.mobile-iso-details,.area-iso,.area-controls,.area-export{display:none}
+  .topbar{height:42px;min-height:42px}
+  .fab-compute{bottom:16px;right:16px}
+  .bottom-tabs{display:none}
+}
+
+/* Very narrow phones */
+/* Phones ≤430px: single-column slice tool so nothing clips */
+@media (max-width:430px){
+  .mobile-slice-tool .mst-grid{grid-template-columns:1fr}
+}
+/* Very narrow phones */
+@media (max-width:374px){
+  .sidebar{width:100vw}
+  .sidebar .row{grid-template-columns:1fr}
+  .sidebar .row4{grid-template-columns:1fr 1fr}
+  .sidebar .vec3{grid-template-columns:1fr}
+  .mobile-slice-tool .vec3{grid-template-columns:1fr}
+}
+
+/* ===== Bottom Tab Bar ===== */
+.bottom-tabs{
+  position:fixed;bottom:0;left:0;right:0;
+  background:var(--topbar-bg);
+  border-top:1px solid #2a3a4e;
+  z-index:500;
+  justify-content:space-around;
+  padding:4px 0 max(4px,env(safe-area-inset-bottom));
+}
+.tab-btn{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:none;border:none;color:#6b8099;font-size:.65rem;
+  padding:6px 8px;cursor:pointer;min-width:48px;
+  min-height:44px;
+  -webkit-tap-highlight-color:transparent;
+}
+.tab-btn.active,.tab-btn:hover{color:var(--brand)}
+.tab-btn svg{flex-shrink:0}
+
+/* ===== Theme Toggle ===== */
+.theme-toggle{background:none;border:none;color:var(--topbar-text);cursor:pointer;padding:4px;display:flex;align-items:center}
+.theme-icon-dark{display:none}
+html[data-theme="light"] .theme-icon-light{display:none}
+html[data-theme="light"] .theme-icon-dark{display:inline}
+
+/* ===== 3D Slice Plane heading ===== */
+.area-plane3d .panelHead,.area-slice2d .panelHead{margin:0;padding:4px 8px;background:transparent}
+.area-plane3d .panelHead h3,.area-slice2d .panelHead h3{color:#c8d5e2;font-size:.82rem;font-weight:600;margin:0}
+
+/* ===== Light Theme ===== */
+html[data-theme="light"]{--sb-bg:#f0f3f7;--sb-text:#1a2332;--sb-input-bg:#ffffff;--sb-border:#c8d5e2;--topbar-bg:#2a3a4e;--topbar-text:#e8eff5}
+html[data-theme="light"] .sidebar{background:var(--sb-bg);color:var(--sb-text)}
+html[data-theme="light"] .sidebar input,html[data-theme="light"] .sidebar select{background:var(--sb-input-bg);color:var(--sb-text);border-color:var(--sb-border)}
+html[data-theme="light"] .sidebar button{color:#fff}
+html[data-theme="light"] .sidebar .sb-heading{color:#0f1923}
+html[data-theme="light"] .sidebar .drop{background:#e8eff5;border-color:#8fa4b8;color:#1a2332}
+html[data-theme="light"] .sidebar details.advancedSettings,html[data-theme="light"] .sidebar details.toolBox{background:#e8eff5;border-color:#c8d5e2}
+html[data-theme="light"] .sidebar details.advancedSettings>summary,html[data-theme="light"] .sidebar details.toolBox>summary{color:#1a2332}
+html[data-theme="light"] .sidebar .meta .k{color:#5a6b82}
+html[data-theme="light"] .sidebar label{color:#5a6b82}
+html[data-theme="light"] .sidebar #status{background:#e8eff5;color:#1a2332}
+html[data-theme="light"] .sidebar #status.ok{background:#e9f8ef;color:#166534}
+html[data-theme="light"] .sidebar #status.warn{background:#fff6e8;color:#92400e}
+html[data-theme="light"] .sidebar #status.err{background:#fbeaea;color:#991b1b}
+html[data-theme="light"] .sidebar input[readonly]{background:#e8eff5;color:#5a6b82}
+html[data-theme="light"] .sidebar details.advancedSettings>summary::before,html[data-theme="light"] .sidebar details.toolBox>summary::before{border-left-color:#5a6b82}
+html[data-theme="light"] .sidebar details.advancedSettings>summary:hover,html[data-theme="light"] .sidebar details.toolBox>summary:hover{background:rgba(26,122,173,.08)}
+html[data-theme="light"] .sidebar .fine{color:#5a6b82}
+html[data-theme="light"] .sidebar .mono{color:#1a2332}
+html[data-theme="light"] .sidebar .elem-filter label{color:#1a2332}
+html[data-theme="light"] .topbar-chip{background:#3a4d66;color:#c8d5e2}
 </style>
 </head>
 <body>
-<main class="app">
-  <section class="hero">
-    <h1>Diffuse Scattering From RMC6f (Client-side)</h1>
-    <p>Load <code>.rmc6f</code>, compute <code>I(h,k,l)=|A-Aavg|²</code> with Type-3 NUFFT JS, inspect slices, and export <code>.dat/.json/.vtk/.cube/.csv</code> plus per-plot SVG/HTML.</p>
-  </section>
+<main class="dashboard">
 
-  <section class="grid">
-    <div class="card">
-      <h2>1) Input</h2>
-      <div id="drop" class="drop" tabindex="0">Drop .rmc6f here or click<input id="file" type="file" accept=".rmc6f" hidden /></div>
-      <div class="meta">
-        <div class="k">File</div><div id="mFile">-</div>
-        <div class="k">Atoms</div><div id="mAtoms">-</div>
-        <div class="k">Supercell</div><div id="mSuper">-</div>
-        <div class="k">Cell (a,b,c; α,β,γ)</div><div id="mCell">-</div>
-        <div class="k">Elements</div><div id="mElem">-</div>
-        <div id="mElemFilter" class="elem-filter"></div>
-        <div class="elem-warn">Warning: Selective element option is experimental and requires testing.</div>
-      </div>
-      <div class="fine">Unknown elements use fallback scattering length <code>10.0</code>.</div>
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <button class="drawer-toggle" id="drawerToggle" aria-label="Open tools panel">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <div class="topbar-title">
+      <span class="topbar-logo">DS</span>
+      <h1>Diffuse Scattering <span class="topbar-subtitle">RMC6f</span></h1>
     </div>
-
-    <div class="card">
-      <h2>2) Compute</h2>
-      <div class="row">
-        <label>H min<input id="hMin" type="number" value="0.00" step="0.01"></label>
-        <label>H max<input id="hMax" type="number" value="4.00" step="0.01"></label>
-        <label>H step<input id="hStep" type="number" value="0.100" step="0.001"></label>
-        <label>K min<input id="kMin" type="number" value="0.00" step="0.01"></label>
-        <label>K max<input id="kMax" type="number" value="4.00" step="0.01"></label>
-        <label>K step<input id="kStep" type="number" value="0.100" step="0.001"></label>
-      </div>
-      <div class="row">
-        <label>L min<input id="lMin" type="number" value="0.00" step="0.01"></label>
-        <label>L max<input id="lMax" type="number" value="4.00" step="0.01"></label>
-        <label>L step<input id="lStep" type="number" value="0.100" step="0.001"></label>
-        <label>Backend<select id="backend"><option value="webgpu_fft">Type-3 + webgpufft (WebGPU)</option><option value="fft">type3NufftCpu (CPU FFT)</option><option value="direct">type3NufftCpuDirect</option></select></label>
-        <label>Tolerance<input id="tol" type="number" value="1e-9" step="1e-10"></label>
-        <label>Upsampling<input id="upsamp" type="number" value="2.0" step="0.1"></label>
-      </div>
-      <div class="row6">
-        <label>Subtract average<select id="subAvg"><option value="1">ON</option><option value="0">OFF</option></select></label>
-        <label>Aavg N<select id="avgNormN"><option value="included" selected>N included</option><option value="total">N total</option></select></label>
-        <label>Normalize by Nq<select id="normQ"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
-        <label>Default viewer scale<select id="defScale"><option value="log">log10</option><option value="linear">linear</option></select></label>
-        <label>Grid safety limit<input id="gridLimit" type="number" value="120000" step="1"></label>
-        <label>Base name<input id="baseName" type="text" value="diffuse_result"></label>
-      </div>
-      <div class="row4">
-        <label>Scattering type<select id="scatterType"><option value="neutron" selected>Neutron</option><option value="xray">X-ray</option><option value="electron">Electron</option></select></label>
-        <label>Model<select id="scatterModel"><option value="fast">Fast (neutron)</option><option value="grouped_exact">Grouped exact (neutron)</option></select></label>
-        <label>Table<select id="scatterTable" disabled><option value="0">0: Waasmaier</option><option value="1">1: Lobato</option><option value="2">2: Peng 0.4</option><option value="3">3: Doyle</option><option value="4">4: Weickenmeier</option><option value="5">5: Kirkland</option></select></label>
-        <label>Ion valence map<input id="ionValence" type="text" value="" placeholder="Fe:2,O:-2"></label>
-      </div>
-      <div class="row4">
-        <label>Smooth 3D<select id="smooth3d"><option value="0">OFF</option><option value="1" selected>ON</option></select></label>
-        <label>Filter<select id="smoothType"><option value="lanczos">Lanczos</option><option value="chebyshev" selected>Chebyshev</option></select></label>
-        <label>Chebyshev dB<input id="chebDb" type="number" value="100" step="1" min="20" max="200"></label>
-        <label>Smooth scale<input id="smoothScale" type="number" value="1" step="1" min="1"></label>
-      </div>
-      <div class="btns">
-        <button id="run">Compute Diffuse</button>
-        <button id="saveDat" class="alt" disabled>Save .dat</button>
-        <button id="saveJson" class="alt" disabled>Save .json</button>
-        <button id="saveVtk" class="alt" disabled>Save .vtk</button>
-        <button id="saveCube" class="alt" disabled>Save .cube</button>
-      </div>
-      <div id="status">Waiting for input file.</div>
+    <div class="topbar-meta">
+      <span class="topbar-chip" id="tbFile">No file</span>
+      <span class="topbar-chip" id="tbAtoms">-</span>
+      <span class="topbar-chip" id="tbSuper">-</span>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle light/dark mode">
+        <svg class="theme-icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg class="theme-icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </button>
     </div>
-  </section>
+  </header>
 
-  <section class="card">
-    <h2>3) Slice + 3D Workspace</h2>
-    <div class="workspace">
-      <aside class="sidePanel">
-        <div class="toolBox" id="modeToolBox">
-          <h3>Slice Mode + Plane Tool</h3>
-          <div class="planeHeader">
-            <label>Slice mode<select id="sliceMode" disabled><option value="axis">Axis</option><option value="plane" selected>Normal plane</option></select></label>
-            <label>Scale<select id="scale" disabled><option value="log">log10</option><option value="linear">linear</option></select></label>
-            <button id="planeApply" class="alt" disabled>Set Plane</button>
-            <button id="planeReset" class="alt" disabled>Reset Tool</button>
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-scroll">
+      <button class="drawer-close" id="drawerClose" aria-label="Close panel">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="4" x2="16" y2="16"/><line x1="16" y1="4" x2="4" y2="16"/>
+        </svg>
+      </button>
+
+      <!-- COLUMN 1: Setup & Compute -->
+      <div class="sb-col">
+        <section class="sb-section">
+          <h2 class="sb-heading">File Input</h2>
+          <div id="drop" class="drop" tabindex="0">Drop .rmc6f here or click<input id="file" type="file" accept=".rmc6f" hidden /></div>
+          <div class="meta">
+            <div class="k">File</div><div id="mFile">-</div>
+            <div class="k">Atoms</div><div id="mAtoms">-</div>
+            <div class="k">Supercell</div><div id="mSuper">-</div>
+            <div class="k">Cell</div><div id="mCell">-</div>
+            <div class="k">Elements</div><div id="mElem">-</div>
+            <details class="advancedSettings" id="elemFilterDetails" open>
+              <summary>Element Filter</summary>
+              <div class="advancedContent">
+                <div id="mElemFilter" class="elem-filter"></div>
+                <div class="elem-warn">Warning: Selective element option is experimental and requires testing.</div>
+              </div>
+            </details>
           </div>
-          <div id="planeControls">
-            <div class="vec3">
-              <label>nH<input id="pNX" type="number" value="1.00" step="0.1" disabled></label>
-              <label>nK<input id="pNY" type="number" value="0.00" step="0.1" disabled></label>
-              <label>nL<input id="pNZ" type="number" value="0.00" step="0.1" disabled></label>
+          <div class="fine">Unknown elements use fallback scattering length <code>10.0</code>.</div>
+        </section>
+
+        <section class="sb-section">
+          <h2 class="sb-heading">Grid Range</h2>
+          <div class="row">
+            <label>H min<input id="hMin" type="number" value="0.00" step="0.01"></label>
+            <label>H max<input id="hMax" type="number" value="4.00" step="0.01"></label>
+            <label>H step<input id="hStep" type="number" value="0.100" step="0.001"></label>
+          </div>
+          <div class="row">
+            <label>K min<input id="kMin" type="number" value="0.00" step="0.01"></label>
+            <label>K max<input id="kMax" type="number" value="4.00" step="0.01"></label>
+            <label>K step<input id="kStep" type="number" value="0.100" step="0.001"></label>
+          </div>
+          <div class="row">
+            <label>L min<input id="lMin" type="number" value="0.00" step="0.01"></label>
+            <label>L max<input id="lMax" type="number" value="4.00" step="0.01"></label>
+            <label>L step<input id="lStep" type="number" value="0.100" step="0.001"></label>
+          </div>
+          <div class="row">
+            <label>Backend<select id="backend"><option value="webgpu_fft">Type-3 + webgpufft (WebGPU)</option><option value="fft">type3NufftCpu (CPU FFT)</option><option value="direct">type3NufftCpuDirect</option></select></label>
+            <label>Tolerance<input id="tol" type="number" value="1e-9" step="1e-10"></label>
+            <label>Upsampling<input id="upsamp" type="number" value="2.0" step="0.1"></label>
+          </div>
+          <details class="advancedSettings" id="advancedSettingsBox">
+            <summary>Advanced Settings</summary>
+            <div class="advancedContent">
+              <div class="row">
+                <label>Subtract avg<select id="subAvg"><option value="1">ON</option><option value="0">OFF</option></select></label>
+                <label>Aavg N<select id="avgNormN"><option value="included" selected>N included</option><option value="total">N total</option></select></label>
+                <label>Normalize Nq<select id="normQ"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+              </div>
+              <div class="row">
+                <label>Viewer scale<select id="defScale"><option value="log">log10</option><option value="linear">linear</option></select></label>
+                <label>Grid limit<input id="gridLimit" type="number" value="120000" step="1"></label>
+                <label>Base name<input id="baseName" type="text" value="diffuse_result"></label>
+              </div>
+              <hr class="sectionDivider">
+              <h3>Scattering</h3>
+              <div class="row4">
+                <label>Type<select id="scatterType"><option value="neutron" selected>Neutron</option><option value="xray">X-ray</option><option value="electron">Electron</option></select></label>
+                <label>Model<select id="scatterModel"><option value="fast">Fast (neutron)</option><option value="grouped_exact">Grouped exact</option></select></label>
+                <label>Table<select id="scatterTable" disabled><option value="0">0: Waasmaier</option><option value="1">1: Lobato</option><option value="2">2: Peng 0.4</option><option value="3">3: Doyle</option><option value="4">4: Weickenmeier</option><option value="5">5: Kirkland</option></select></label>
+                <label>Ion valence<input id="ionValence" type="text" value="" placeholder="Fe:2,O:-2"></label>
+              </div>
+              <hr class="sectionDivider">
+              <h3>Smoothing</h3>
+              <div class="row4">
+                <label>Smooth 3D<select id="smooth3d"><option value="0">OFF</option><option value="1" selected>ON</option></select></label>
+                <label>Filter<select id="smoothType"><option value="lanczos">Lanczos</option><option value="chebyshev" selected>Chebyshev</option></select></label>
+                <label>Cheb dB<input id="chebDb" type="number" value="100" step="1" min="20" max="200"></label>
+                <label>Scale<input id="smoothScale" type="number" value="1" step="1" min="1"></label>
+              </div>
             </div>
-            <div class="vec3">
-              <label>oH<input id="pOX" type="number" value="0.00" step="0.01" disabled></label>
-              <label>oK<input id="pOY" type="number" value="0.00" step="0.01" disabled></label>
-              <label>oL<input id="pOZ" type="number" value="0.00" step="0.01" disabled></label>
+          </details>
+        </section>
+
+        <section class="sb-section">
+          <button id="run" class="btn-compute">Compute Diffuse</button>
+          <div id="status">Waiting for input file.</div>
+        </section>
+      </div>
+
+      <!-- COLUMN 2: Slice + 3D Workspace -->
+      <div class="sb-col">
+        <details class="toolBox" id="modeToolBox" open>
+          <summary><h3>Slice Tool</h3></summary>
+          <div class="toolBoxBody">
+            <div class="planeHeader">
+              <label>Slice mode<select id="sliceMode" disabled><option value="axis">Axis</option><option value="plane" selected>Normal plane</option></select></label>
+              <label>Scale<select id="scale" disabled><option value="log">log10</option><option value="linear">linear</option></select></label>
+              <button id="planeApply" class="alt" disabled>Set Plane</button>
+              <button id="planeReset" class="alt" disabled>Reset Tool</button>
             </div>
-            <div class="vec3">
-              <label>cH<input id="pCX" type="number" value="0.00" step="0.001" readonly disabled></label>
-              <label>cK<input id="pCY" type="number" value="0.00" step="0.001" readonly disabled></label>
-              <label>cL<input id="pCZ" type="number" value="0.00" step="0.001" readonly disabled></label>
+            <div id="planeControls">
+              <div class="vec3">
+                <label>nH<input id="pNX" type="number" value="1.00" step="0.1" disabled></label>
+                <label>nK<input id="pNY" type="number" value="0.00" step="0.1" disabled></label>
+                <label>nL<input id="pNZ" type="number" value="0.00" step="0.1" disabled></label>
+              </div>
+              <div class="vec3">
+                <label>oH<input id="pOX" type="number" value="0.00" step="0.01" disabled></label>
+                <label>oK<input id="pOY" type="number" value="0.00" step="0.01" disabled></label>
+                <label>oL<input id="pOZ" type="number" value="0.00" step="0.01" disabled></label>
+              </div>
+              <div class="vec3">
+                <label>cH<input id="pCX" type="number" value="0.00" step="0.001" readonly disabled></label>
+                <label>cK<input id="pCY" type="number" value="0.00" step="0.001" readonly disabled></label>
+                <label>cL<input id="pCZ" type="number" value="0.00" step="0.001" readonly disabled></label>
+              </div>
+              <label>Move Along Normal<input id="planeMove" type="range" min="0" max="100" step="1" value="50" disabled></label>
+              <div id="planeMoveVal">Plane center: -</div>
+              <div class="planeMetaRow">
+                <label>Plane res<input id="pRes" type="number" value="200" min="32" max="600" step="1" disabled></label>
+                <label>Plane scale<input id="pScale" type="number" value="1.75" min="0.2" max="8" step="0.05" disabled></label>
+              </div>
             </div>
-            <label>Move Along Normal<input id="planeMove" type="range" min="0" max="100" step="1" value="50" disabled></label>
-            <div id="planeMoveVal">Plane center: -</div>
-            <div class="planeMetaRow">
-              <label>Plane res<input id="pRes" type="number" value="200" min="32" max="600" step="1" disabled></label>
-              <label>Plane scale<input id="pScale" type="number" value="1.75" min="0.2" max="8" step="0.05" disabled></label>
+            <div id="axisToolBox">
+              <div class="axisRow">
+                <label>Axis<select id="axis" disabled><option value="l" selected>Fix L, show H&times;K</option><option value="h">Fix H, show K&times;L</option><option value="k">Fix K, show H&times;L</option></select></label>
+                <label>Slice index<input id="idx" type="range" min="0" max="0" value="0" disabled></label>
+              </div>
+              <div id="sliceVal">Slice: -</div>
             </div>
+          </div>
+        </details>
+
+        <details class="toolBox" id="colorLevelsBox" open>
+          <summary><h3>Color Levels</h3></summary>
+          <div class="toolBoxBody">
+            <div class="colorRow">
+              <label>Color map<select id="colorMap" disabled><option value="turbo">Turbo</option><option value="viridis" selected>Viridis</option><option value="inferno">Inferno</option><option value="plasma">Plasma</option><option value="magma">Magma</option><option value="gray">Gray</option></select></label>
+            </div>
+            <div class="colorRow2">
+              <button id="resetLevels" class="alt" disabled>Reset</button>
+            </div>
+            <div id="levelInfo" class="mono">Display levels: auto</div>
+          </div>
+        </details>
+
+        <details class="toolBox" id="sliceWinBox" open>
+          <summary><h3>Slice Window</h3></summary>
+          <div class="toolBoxBody">
+            <div class="btns">
+              <button id="openSliceWin" class="alt" disabled>Open Slice Window</button>
+              <button id="closeSliceWin" class="alt" disabled>Close Slice Window</button>
+            </div>
+            <div class="fine">Saved <code>.dat</code> can be used by <code>RMCDiffuse3DSlice</code> utility.</div>
+          </div>
+        </details>
+
+        <div class="btns sb-export-btns">
+          <button id="saveDat" class="alt" disabled>Save .dat</button>
+          <button id="saveJson" class="alt" disabled>Save .json</button>
+          <button id="saveVtk" class="alt" disabled>Save .vtk</button>
+          <button id="saveCube" class="alt" disabled>Save .cube</button>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- 3D SLICE PLANE (first column of workspace) -->
+  <div class="area-plane3d">
+    <div class="panelHead"><h3>3D Slice Plane</h3></div>
+    <div class="plot3dWrap">
+      <div id="plot3dPlane"></div>
+      <div class="zoom-controls bottom-right">
+        <button class="zoom-btn" id="planeZoomIn" title="Zoom in">+</button>
+        <button class="zoom-btn" id="planeZoomOut" title="Zoom out">&minus;</button>
+        <button class="zoom-btn" id="planeZoomReset" title="Reset zoom"><span class="zoom-icon">&#8634;</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTROLS (top-right) -->
+  <div class="area-controls">
+    <h3 class="area-heading">3D Render</h3>
+    <label>Iso percentile<input id="isoPct" type="number" value="95" min="50" max="99.99" step="0.1"></label>
+    <label>Surface count<input id="isoCount" type="number" value="4" min="1" max="12" step="1"></label>
+    <label>3D voxel cap<input id="voxelCap" type="number" value="220000" min="5000" step="1000"></label>
+    <hr class="area-divider">
+    <label>Show isosurface<select id="showIso3d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+    <label>Show slice plane<select id="showPlane3d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+    <label>2D map<select id="show2d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+    <label>Auto refresh<select id="auto3d"><option value="0">OFF</option><option value="1" selected>ON</option></select></label>
+    <hr class="area-divider">
+    <button id="render3d" class="alt" disabled>Render 3D</button>
+    <div id="plot3dStatus" class="fine mono">3D view is idle.</div>
+  </div>
+
+  <!-- EXPORT (top-right corner) -->
+  <div class="area-export">
+    <h3 class="area-heading">Plot Export</h3>
+    <button id="savePlaneSvg" class="alt" disabled>Plane SVG</button>
+    <button id="saveIsoSvg" class="alt" disabled>Iso SVG</button>
+    <button id="savePlaneHtml" class="alt" disabled>Plane HTML</button>
+    <button id="saveIsoHtml" class="alt" disabled>Iso HTML</button>
+    <hr class="area-divider">
+    <button id="saveSliceSvg" class="alt" disabled>Slice SVG</button>
+    <button id="saveSliceCsv" class="alt" disabled>Slice CSV</button>
+  </div>
+
+  <!-- 2D SLICE MAP (bottom-left) -->
+  <div class="area-slice2d" id="slice2dPanel">
+    <div class="panelHead">
+      <h3>2D Slice Map</h3>
+    </div>
+    <div class="canvasWrap">
+      <canvas id="heatmap" width="980" height="560"></canvas>
+      <canvas id="heatmapOverlay" width="980" height="560"></canvas>
+      <div class="zoom-controls bottom-right">
+        <button class="zoom-btn" id="heatmapZoomIn" title="Zoom in">+</button>
+        <button class="zoom-btn" id="heatmapZoomOut" title="Zoom out">&minus;</button>
+        <button class="zoom-btn" id="heatmapZoomReset" title="Reset zoom"><span class="zoom-icon">&#8634;</span></button>
+      </div>
+    </div>
+    <div id="sliceStats">No result yet.</div>
+  </div>
+
+  <!-- MOBILE STATUS BAR (shown on tablet/phone) -->
+  <div class="mobile-status" id="mobileStatus">Waiting for input file.</div>
+
+  <!-- MOBILE SLICE TOOL (always visible on tablet/phone, below maps) -->
+  <div class="mobile-slice-tool" id="mobileSliceTool">
+    <div class="mst-grid">
+      <div class="mst-section">
+        <h2 class="sb-heading">Slice Tool</h2>
+        <div class="planeHeader">
+          <label>Slice mode<select id="mSliceMode" disabled><option value="axis">Axis</option><option value="plane" selected>Normal plane</option></select></label>
+          <label>Scale<select id="mScale" disabled><option value="log">log10</option><option value="linear">linear</option></select></label>
+        </div>
+        <div class="btns">
+          <button id="mPlaneApply" class="alt" disabled>Set Plane</button>
+          <button id="mPlaneReset" class="alt" disabled>Reset Tool</button>
+        </div>
+        <div id="mPlaneControls">
+          <div class="vec3">
+            <label>nH<input id="mPNX" type="number" value="1.00" step="0.1" disabled></label>
+            <label>nK<input id="mPNY" type="number" value="0.00" step="0.1" disabled></label>
+            <label>nL<input id="mPNZ" type="number" value="0.00" step="0.1" disabled></label>
+          </div>
+          <div class="vec3">
+            <label>oH<input id="mPOX" type="number" value="0.00" step="0.01" disabled></label>
+            <label>oK<input id="mPOY" type="number" value="0.00" step="0.01" disabled></label>
+            <label>oL<input id="mPOZ" type="number" value="0.00" step="0.01" disabled></label>
+          </div>
+          <label>Move Along Normal<input id="mPlaneMove" type="range" min="0" max="100" step="1" value="50" disabled></label>
+          <div id="mPlaneMoveVal" class="mono fine">Plane center: -</div>
+          <div class="planeMetaRow">
+            <label>Plane res<input id="mPRes" type="number" value="200" min="32" max="600" step="1" disabled></label>
+            <label>Plane scale<input id="mPScale" type="number" value="1.75" min="0.2" max="8" step="0.05" disabled></label>
           </div>
         </div>
-
-        <div class="toolBox" id="axisToolBox">
-          <h3>Axis Slice Tool</h3>
+        <div id="mAxisToolBox">
           <div class="axisRow">
-            <label>Axis<select id="axis" disabled><option value="l" selected>Fix L, show H×K</option><option value="h">Fix H, show K×L</option><option value="k">Fix K, show H×L</option></select></label>
-            <label>Slice index<input id="idx" type="range" min="0" max="0" value="0" disabled></label>
-          </div>
-          <div id="sliceVal">Slice: -</div>
-        </div>
-
-        <div class="toolBox">
-          <h3>Color Levels</h3>
-          <div class="colorRow">
-            <label>Color map<select id="colorMap" disabled><option value="turbo">Turbo</option><option value="viridis" selected>Viridis</option><option value="inferno">Inferno</option><option value="plasma">Plasma</option><option value="magma">Magma</option><option value="gray">Gray</option></select></label>
-          </div>
-          <div class="colorRow2">
-            <button id="resetLevels" class="alt" disabled>Reset</button>
-          </div>
-          <div id="levelInfo" class="mono">Display levels: auto</div>
-        </div>
-
-        <div class="toolBox">
-          <h3>Slice Window</h3>
-          <div class="btns">
-            <button id="openSliceWin" class="alt" disabled>Open Slice Window</button>
-            <button id="closeSliceWin" class="alt" disabled>Close Slice Window</button>
-          </div>
-          <div class="fine">Saved <code>.dat</code> can be used by <code>RMCDiffuse3DSlice</code> utility.</div>
-        </div>
-      </aside>
-
-      <div class="viewerMain">
-        <div class="toolBox">
-          <h3>3D Slice Plane + Isosurface</h3>
-          <div class="viewer3dCtl">
-            <label>Iso percentile<input id="isoPct" type="number" value="95" min="50" max="99.99" step="0.1"></label>
-            <label>Surface count<input id="isoCount" type="number" value="4" min="1" max="12" step="1"></label>
-            <label>3D voxel cap<input id="voxelCap" type="number" value="220000" min="5000" step="1000"></label>
-            <label>Show isosurface<select id="showIso3d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
-            <label>Show slice plane<select id="showPlane3d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
-            <label>2D map<select id="show2d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
-            <label>Auto refresh<select id="auto3d"><option value="0">OFF</option><option value="1" selected>ON</option></select></label>
-            <button id="render3d" class="alt" disabled>Render 3D</button>
-          </div>
-          <div class="viewer3dExport">
-            <button id="savePlaneSvg" class="alt" disabled>Save plane .svg</button>
-            <button id="saveIsoSvg" class="alt" disabled>Save iso .svg</button>
-            <button id="savePlaneHtml" class="alt" disabled>Save plane .html</button>
-            <button id="saveIsoHtml" class="alt" disabled>Save iso .html</button>
-          </div>
-          <div id="plot3dStatus" class="fine mono">3D view is idle.</div>
-          <div class="plotSplit">
-            <div class="plot3dWrap"><div id="plot3dPlane"></div></div>
-            <div class="plot3dWrap"><div id="plot3dIso"></div></div>
+            <label>Axis<select id="mAxis" disabled><option value="l" selected>Fix L, show H&times;K</option><option value="h">Fix H, show K&times;L</option><option value="k">Fix K, show H&times;L</option></select></label>
+            <label>Slice index<input id="mIdx" type="range" min="0" max="0" value="0" disabled></label>
           </div>
         </div>
-
-        <div class="toolBox" id="slice2dPanel">
-          <div class="panelHead">
-            <h3>2D Slice Map</h3>
-            <div class="panelActions">
-              <button id="saveSliceSvg" class="alt" disabled>Save slice .svg</button>
-              <button id="saveSliceCsv" class="alt" disabled>Save slice .csv</button>
-            </div>
-          </div>
-          <div class="canvasWrap"><canvas id="heatmap" width="980" height="560"></canvas></div>
-          <div id="sliceStats">No result yet.</div>
+      </div>
+      <div class="mst-section">
+        <h2 class="sb-heading">Color Levels</h2>
+        <div class="colorRow">
+          <label>Color map<select id="mColorMap" disabled><option value="turbo">Turbo</option><option value="viridis" selected>Viridis</option><option value="inferno">Inferno</option><option value="plasma">Plasma</option><option value="magma">Magma</option><option value="gray">Gray</option></select></label>
+        </div>
+        <div class="btns">
+          <button id="mResetLevels" class="alt" disabled>Reset Levels</button>
+        </div>
+        <div id="mLevelInfo" class="mono fine">Display levels: auto</div>
+      </div>
+      <div class="mst-section mst-full">
+        <h2 class="sb-heading">3D Render</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <label>Iso %<input id="mIsoPct" type="number" value="95" min="50" max="99.99" step="0.1"></label>
+          <label>Surfaces<input id="mIsoCount" type="number" value="4" min="1" max="12" step="1"></label>
+          <label>Show iso<select id="mShowIso3d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+          <label>Show plane<select id="mShowPlane3d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+          <label>2D map<select id="mShow2d"><option value="1" selected>ON</option><option value="0">OFF</option></select></label>
+          <label>Auto 3D<select id="mAuto3d"><option value="0">OFF</option><option value="1" selected>ON</option></select></label>
+        </div>
+        <div class="btns" style="margin-top:6px">
+          <button id="mRender3d" class="alt" style="width:100%">Render 3D</button>
+        </div>
+      </div>
+      <div class="mst-section mst-full">
+        <h2 class="sb-heading">Export</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+          <button id="mSavePlaneSvg" class="alt" disabled>Plane SVG</button>
+          <button id="mSaveIsoSvg" class="alt" disabled>Iso SVG</button>
+          <button id="mSaveSliceSvg" class="alt" disabled>Slice SVG</button>
+          <button id="mSavePlanHtml" class="alt" disabled>Plane HTML</button>
+          <button id="mSaveIsoHtml" class="alt" disabled>Iso HTML</button>
+          <button id="mSaveSliceCsv" class="alt" disabled>Slice CSV</button>
         </div>
       </div>
     </div>
-  </section>
+  </div>
+
+  <!-- ISOSURFACE (bottom-right on desktop, collapsible on mobile) -->
+  <details class="mobile-iso-details" id="mobileIsoDetails">
+    <summary>Isosurface (tap to expand)</summary>
+    <div class="mobile-iso-content" id="mobileIsoContent">
+      <!-- iso plot moved here by JS on mobile -->
+    </div>
+  </details>
+  <div class="area-iso" id="isoArea">
+    <div class="plot3dWrap" id="isoPlotWrap">
+      <div id="plot3dIso"></div>
+      <div class="zoom-controls bottom-right">
+        <button class="zoom-btn" id="isoZoomIn" title="Zoom in">+</button>
+        <button class="zoom-btn" id="isoZoomOut" title="Zoom out">&minus;</button>
+        <button class="zoom-btn" id="isoZoomReset" title="Reset zoom"><span class="zoom-icon">&#8634;</span></button>
+      </div>
+    </div>
+  </div>
+
 </main>
+
+<!-- DRAWER BACKDROP (outside grid to avoid iOS position:fixed issues) -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+<!-- FLOATING COMPUTE BUTTON (position:fixed, outside grid) -->
+<button class="fab-compute" id="fabCompute" aria-label="Compute Diffuse" title="Compute Diffuse">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="5,3 19,12 5,21 5,3"/>
+  </svg>
+</button>
+
+<nav class="bottom-tabs" id="bottomTabs">
+  <button class="tab-btn active" data-scroll-target=".area-plane3d">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+    <span>Plane</span>
+  </button>
+  <button class="tab-btn" data-scroll-target="#slice2dPanel">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="2" y1="8" x2="22" y2="8"/><line x1="2" y1="14" x2="22" y2="14"/><line x1="8" y1="2" x2="8" y2="22"/><line x1="14" y1="2" x2="14" y2="22"/></svg>
+    <span>Map</span>
+  </button>
+  <button class="tab-btn" data-scroll-target="#mobileSliceTool">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+    <span>Slice</span>
+  </button>
+  <button class="tab-btn" data-scroll-target="#mobileIsoDetails">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+    <span>Iso</span>
+  </button>
+  <button class="tab-btn" data-scroll-target="drawer">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    <span>Setup</span>
+  </button>
+</nav>
 
 <script src="https://cdn.jsdelivr.net/gh/MaximEremenko/WebGPU-NUFFT@main/lib/type3_cpu_like.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/MaximEremenko/WebGPU-NUFFT@main/lib/type3_webgpu_gpufft.js"></script>
@@ -271,7 +927,7 @@ const PLOTLY_CDN="https://cdn.plot.ly/plotly-2.35.2.min.js";
 const BACKEND_PRESETS={webgpu_fft:{tol:"1e-7",upsamp:"1.5",gridLimit:"8000000"},fft:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"},direct:{tol:"1e-9",upsamp:"2.0",gridLimit:"120000"}};
 const WEBGPU_STAGE_ORDER=["spread_setup","spread_dispatch","amplify_dispatch","fft_dispatch","interp_dispatch","postmul_dispatch","smooth_axis0_dispatch","smooth_axis1_dispatch","smooth_axis2_dispatch","done","smooth_done"];
 const WEBGPU_STAGE_LABEL={spread_setup:"setup",spread_dispatch:"spread",amplify_dispatch:"amplify",fft_dispatch:"fft",interp_dispatch:"interp",postmul_dispatch:"postmul",smooth_axis0_dispatch:"smooth-h",smooth_axis1_dispatch:"smooth-k",smooth_axis2_dispatch:"smooth-l",done:"done",smooth_done:"smooth-done"};
-const state={rmc:null,res:null,sliceWin:null,volCache:null,render3dTimer:null,last3dStamp:0,sliceLevels:null,lastBar:null,levelDrag:null,levelClickSuppress:false,level3dSyncTimer:null,plane:null,planeSliceCache:null,offscreen:null,planeMoveRaf:0,planeTraceReqId:0,planeTraceBusy:false,planeTraceQueued:null,planeMoving:false,planeMoveCameraLock:null,render3dEpoch:0,sceneCamera:{iso:null,plane:null},lastSlice:null};
+const state={rmc:null,res:null,sliceWin:null,volCache:null,render3dTimer:null,last3dStamp:0,sliceLevels:null,lastBar:null,levelDrag:null,levelClickSuppress:false,level3dSyncTimer:null,plane:null,planeSliceCache:null,offscreen:null,planeMoveRaf:0,planeTraceReqId:0,planeTraceBusy:false,planeTraceQueued:null,planeMoving:false,planeMoveCameraLock:null,render3dEpoch:0,sceneCamera:{iso:null,plane:null},lastSlice:null,heatmapZoom:{level:1,panX:0,panY:0,isPanning:false,panStartX:0,panStartY:0,panBaseX:0,panBaseY:0}};
 const COLOR_PRESETS={
 turbo:{plotly:"Turbo",stops:[[0,[48,18,59]],[.2,[32,78,168]],[.45,[44,165,197]],[.7,[109,206,111]],[.9,[246,220,80]],[1,[232,79,53]]]},
 viridis:{plotly:"Viridis",stops:[[0,[68,1,84]],[.25,[59,82,139]],[.5,[33,145,140]],[.75,[94,201,98]],[1,[253,231,37]]]},
@@ -343,7 +999,8 @@ if(!nearMin&&!nearMax)return null;
 if(nearMin&&nearMax)return Math.abs(y-yMin)<=Math.abs(y-yMax)?"min":"max";
 return nearMin?"min":"max";
 }
-function getHeatmapCanvasXY(ev,cv){const r=cv.getBoundingClientRect();return{x:(ev.clientX-r.left)*(cv.width/r.width),y:(ev.clientY-r.top)*(cv.height/r.height)};}
+function getHeatmapCanvasXY(ev,cv){const r=cv.getBoundingClientRect();/* Return CSS-pixel coords (draw() uses CSS coords via ctx.setTransform) */return{x:(ev.clientX-r.left)*(Math.round(r.width)/r.width),y:(ev.clientY-r.top)*(Math.round(r.height)/r.height)};}
+function getOverlayCanvasXY(ev){const ov=$("heatmapOverlay");if(!ov)return null;const r=ov.getBoundingClientRect();return{x:(ev.clientX-r.left)*(Math.round(r.width)/r.width),y:(ev.clientY-r.top)*(Math.round(r.height)/r.height)};}
 function drawColorBarHandle(ctx,b,y,active){
 const tipX=b.x-1,baseX=b.x-20,hh=10;
 ctx.beginPath();
@@ -724,7 +1381,7 @@ function creal(a){needDiffuseCore();return window.DiffuseCore.complexReal(a);}
 
 function parseRMC(name,text){needRmcReader();needDiffuseCore();const parsed=window.RMC6fReader.parse(name,text);return window.DiffuseCore.attachNeutronCoefficients(parsed,10);}
 
-function meta(r){$("mFile").textContent=r.file;$("mAtoms").textContent=String(r.atoms);$("mSuper").textContent=r.super.join(" × ");const c=r.cellDeg.map((v,i)=>i<3?v.toFixed(5):v.toFixed(3));$("mCell").textContent=`${c[0]}, ${c[1]}, ${c[2]} ; ${c[3]}, ${c[4]}, ${c[5]}`;$("mElem").textContent=r.present.join(", ");$("hStep").value=(1/r.super[0]).toFixed(3);$("kStep").value=(1/r.super[1]).toFixed(3);$("lStep").value=(1/r.super[2]).toFixed(3);}
+function meta(r){$("mFile").textContent=r.file;$("mAtoms").textContent=String(r.atoms);$("mSuper").textContent=r.super.join(" × ");const c=r.cellDeg.map((v,i)=>i<3?v.toFixed(5):v.toFixed(3));$("mCell").textContent=`${c[0]}, ${c[1]}, ${c[2]} ; ${c[3]}, ${c[4]}, ${c[5]}`;$("mElem").textContent=r.present.join(", ");$("hStep").value=(1/r.super[0]).toFixed(3);$("kStep").value=(1/r.super[1]).toFixed(3);$("lStep").value=(1/r.super[2]).toFixed(3);if($("tbFile"))$("tbFile").textContent=r.file;if($("tbAtoms"))$("tbAtoms").textContent=String(r.atoms);if($("tbSuper"))$("tbSuper").textContent=r.super.join(" \u00d7 ");}
 
 function buildElementCheckboxes(present){
 const wrap=$("mElemFilter");
@@ -998,9 +1655,10 @@ if(!hasIsoPlot&&!liveIsoCam&&keepIsoCam)sceneIso.camera=keepIsoCam;
 if(!hasPlanePlot&&!livePlaneCam&&keepPlaneCam)scenePlane.camera=keepPlaneCam;
 const layoutIso={paper_bgcolor:"#070b12",plot_bgcolor:"#070b12",font:{color:"#dbeafe"},margin:{l:0,r:0,b:0,t:34},uirevision:sceneRev,title:{text:`Diffuse 3D Isosurface (${mode})${showIso?"":" [OFF]"}`,font:{size:14}},scene:sceneIso};
 const layoutPlane={paper_bgcolor:"#070b12",plot_bgcolor:"#070b12",font:{color:"#dbeafe"},margin:{l:0,r:0,b:0,t:34},uirevision:sceneRev,title:{text:`Slice Plane (${getSliceMode()==="plane"?"Normal":"Axis"})${showPlane?"":" [OFF]"}`,font:{size:14}},scene:scenePlane};
+const plotlyCfg={responsive:true,displaylogo:false,scrollZoom:true,modeBarButtonsToAdd:["zoomIn3d","zoomOut3d","resetCameraDefault3d"],displayModeBar:true};
 await Promise.all([
-plotly.react("plot3dIso",[...isoTraces,...axisOverlay],layoutIso,{responsive:true,displaylogo:false}),
-plotly.react("plot3dPlane",[...planeTraces,...axisOverlay],layoutPlane,{responsive:true,displaylogo:false})
+plotly.react("plot3dIso",[...isoTraces,...axisOverlay],layoutIso,plotlyCfg),
+plotly.react("plot3dPlane",[...planeTraces,...axisOverlay],layoutPlane,plotlyCfg)
 ]);
 if(renderEpoch!==state.render3dEpoch||(!force&&state.planeMoving&&getSliceMode()==="plane"))return;
 capture3dCameras();
@@ -1012,7 +1670,7 @@ state.last3dStamp=performance.now();
 setPlot3dStatus(`3D ready. ${isoMsg}. plane=${planeTraces.length?"on":"off"}.`);
 }
 function schedule3dRender(force=false,delayMs=100){if(!state.res)return;if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}if(!force&&$("auto3d").value!=="1")return;if(!force&&state.planeMoving&&getSliceMode()==="plane")return;const delay=Math.max(0,Math.floor(Number.isFinite(delayMs)?delayMs:100));state.render3dTimer=setTimeout(()=>{state.render3dTimer=null;if(state.planeMoving&&getSliceMode()==="plane")return;render3d(force).catch(e=>setPlot3dStatus(`3D render failed: ${e.message}`));},delay);}
-function ensureSliceWindow(){if(state.sliceWin&&!state.sliceWin.closed)return state.sliceWin;const w=window.open("","diffuse_slice_window","width=1180,height=860,resizable=yes,scrollbars=yes");if(!w)throw new Error("Popup blocked by browser.");w.document.open();w.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>Diffuse Slice View</title><style>body{margin:0;font-family:Segoe UI,Tahoma,sans-serif;background:#060b14;color:#dbeafe}header{padding:10px 12px;background:#0f172a;border-bottom:1px solid #273449}main{padding:10px}#im{width:100%;height:auto;border:1px solid #334155;border-radius:8px;background:#0b1321}#meta{margin-top:10px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap}</style></head><body><header><strong>Diffuse Slice Window</strong></header><main><img id="im" alt="slice"><div id="meta">No slice yet.</div></main><script>window.updateSlice=function(p){document.title='Diffuse Slice - '+(p.title||'-');document.getElementById('im').src=p.img||'';document.getElementById('meta').textContent=(p.title||'')+'\\n'+(p.stats||'');};<\/script></body></html>`);w.document.close();state.sliceWin=w;$("closeSliceWin").disabled=false;return w;}
+function ensureSliceWindow(){if(state.sliceWin&&!state.sliceWin.closed)return state.sliceWin;const popW=Math.min(2400,Math.floor(screen.availWidth*0.55)),popH=Math.min(1600,Math.floor(screen.availHeight*0.7));const w=window.open("","diffuse_slice_window",`width=${popW},height=${popH},resizable=yes,scrollbars=yes`);if(!w)throw new Error("Popup blocked by browser.");w.document.open();w.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>Diffuse Slice View</title><style>body{margin:0;font-family:Segoe UI,Tahoma,sans-serif;background:#060b14;color:#dbeafe}header{padding:10px 12px;background:#0f172a;border-bottom:1px solid #273449}main{padding:10px}#im{width:100%;height:auto;border:1px solid #334155;border-radius:8px;background:#0b1321}#meta{margin-top:10px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap}</style></head><body><header><strong>Diffuse Slice Window</strong></header><main><img id="im" alt="slice"><div id="meta">No slice yet.</div></main><script>window.updateSlice=function(p){document.title='Diffuse Slice - '+(p.title||'-');document.getElementById('im').src=p.img||'';document.getElementById('meta').textContent=(p.title||'')+'\\n'+(p.stats||'');};<\/script></body></html>`);w.document.close();state.sliceWin=w;$("closeSliceWin").disabled=false;return w;}
 function pushSliceWindow(){const w=state.sliceWin;if(!w||w.closed){if(w&&w.closed){state.sliceWin=null;$("closeSliceWin").disabled=true;}return;}if(!state.res)return;const cv=$("heatmap"),payload={title:$("sliceVal").textContent||"",stats:$("sliceStats").textContent||"",img:cv&&cv.toDataURL?cv.toDataURL("image/png"):""};if(typeof w.updateSlice==="function")w.updateSlice(payload);}
 function openSliceWindow(){const w=ensureSliceWindow();pushSliceWindow();try{w.focus();}catch(_){/* no-op */}}
 function closeSliceWindow(){if(state.sliceWin&&!state.sliceWin.closed)state.sliceWin.close();state.sliceWin=null;$("closeSliceWin").disabled=true;}
@@ -1104,7 +1762,8 @@ function resetDisplayLevels(){state.sliceLevels=null;state.lastBar=null;state.le
 function onHeatmapClick(ev){
 if(state.levelClickSuppress){state.levelClickSuppress=false;return;}
 if(!state.res||!state.lastBar)return;
-const cv=$("heatmap"),pt=getHeatmapCanvasXY(ev,cv),x=pt.x,y=pt.y,b=state.lastBar;
+const pt=getOverlayCanvasXY(ev);if(!pt)return;
+const cv=$("heatmap"),x=pt.x,y=pt.y,b=state.lastBar;
 if(x<b.x||x>b.x+b.w||y<b.y||y>b.y+b.h)return;
 const picked=barValueFromY(y,b);
 let nmin=b.dispMin,nmax=b.dispMax;
@@ -1116,7 +1775,8 @@ scheduleLevelSync3d(true);
 }
 function onHeatmapPointerDown(ev){
 if(!state.res||!state.lastBar)return;
-const cv=$("heatmap"),pt=getHeatmapCanvasXY(ev,cv),handle=pickColorBarHandle(pt.x,pt.y,state.lastBar);
+const cv=$("heatmap"),pt=getOverlayCanvasXY(ev);if(!pt)return;
+const handle=pickColorBarHandle(pt.x,pt.y,state.lastBar);
 if(!handle)return;
 state.levelDrag={active:true,pointerId:ev.pointerId,handle,moved:false};
 state.levelClickSuppress=true;
@@ -1126,8 +1786,8 @@ ev.preventDefault();
 }
 function onHeatmapPointerMove(ev){
 const drag=state.levelDrag,b=state.lastBar;
-const cv=$("heatmap"),pt=getHeatmapCanvasXY(ev,cv);
-if(!b){cv.style.cursor="default";return;}
+const cv=$("heatmap"),pt=getOverlayCanvasXY(ev);
+if(!pt||!b){cv.style.cursor="default";return;}
 if(!drag||!drag.active){
 const hoverHandle=pickColorBarHandle(pt.x,pt.y,b);
 cv.style.cursor=hoverHandle?"ns-resize":"default";
@@ -1156,8 +1816,17 @@ if(moved){scheduleLevelSync3d(true);}
 function draw(opts){
 const cv=$("heatmap"),ctx=cv.getContext("2d",{willReadFrequently:true});
 if(!ctx)return;
+/* HiDPI: scale canvas backing store to match physical pixels */
+const dpr=window.devicePixelRatio||1;
+const rect=cv.getBoundingClientRect();
+const cssW=Math.max(1,Math.round(rect.width)),cssH=Math.max(1,Math.round(rect.height));
+const bkW=Math.round(cssW*dpr),bkH=Math.round(cssH*dpr);
+if(cv.width!==bkW||cv.height!==bkH){cv.width=bkW;cv.height=bkH;}
+ctx.setTransform(dpr,0,0,dpr,0,0);
 if(!state.res){
-ctx.fillStyle="#0b1321";ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle="#cbd5e1";ctx.font="16px Consolas";ctx.fillText("No result yet.",20,36);$("sliceStats").textContent="No result yet.";state.lastBar=null;state.lastSlice=null;const info=$("levelInfo");if(info)info.textContent="Display levels: auto";return;
+ctx.fillStyle="#0b1321";ctx.fillRect(0,0,cssW,cssH);ctx.fillStyle="#cbd5e1";ctx.font="16px Consolas";ctx.fillText("No result yet.",20,36);$("sliceStats").textContent="No result yet.";state.lastBar=null;state.lastSlice=null;const info=$("levelInfo");if(info)info.textContent="Display levels: auto";
+var _ov=$("heatmapOverlay");if(_ov){var _oc=_ov.getContext("2d");if(_oc){_oc.clearRect(0,0,_ov.width,_ov.height);}}
+return;
 }
 const o=opts||{},planeResOverride=Number.isFinite(o.planeResOverride)?Math.max(32,Math.min(600,Math.floor(o.planeResOverride))):null;
 updateSliceVal();
@@ -1177,9 +1846,9 @@ const ox=off.getContext("2d",{willReadFrequently:true}),img=ox.createImageData(s
 for(let r=0;r<sl.rows;r++)for(let c=0;c<sl.cols;c++){const i=r*sl.cols+c,vv=Number.isFinite(t[i])?t[i]:dmin,u=clamp01((vv-dmin)/den),rgb=rgbFromStops(stops,u),p=i*4;img.data[p]=rgb[0];img.data[p+1]=rgb[1];img.data[p+2]=rgb[2];img.data[p+3]=Number.isFinite(t[i])?255:0;}
 ox.putImageData(img,0,0);
 ctx.fillStyle="#0b1321";
-ctx.fillRect(0,0,cv.width,cv.height);
+ctx.fillRect(0,0,cssW,cssH);
 ctx.imageSmoothingEnabled=false;
-const bw=18,bx=cv.width-38,by=20,bh=cv.height-40,plotMarginLeft=56,plotMarginTop=20,plotMarginBottom=74,mapX=plotMarginLeft,mapY=plotMarginTop,mapW=Math.max(1,bx-mapX-12),mapH=Math.max(1,cv.height-plotMarginTop-plotMarginBottom);
+const bw=18,bx=cssW-26,by=20,bh=cssH-40,plotMarginLeft=56,plotMarginTop=20,plotMarginBottom=74,mapX=plotMarginLeft,mapY=plotMarginTop,mapW=Math.max(1,bx-mapX-6),mapH=Math.max(1,cssH-plotMarginTop-plotMarginBottom);
 let srcX=0,srcY=0,srcW=sl.cols,srcH=sl.rows;
 let visXMin=Number.isFinite(sl.xMin)?sl.xMin:0,visXMax=Number.isFinite(sl.xMax)?sl.xMax:Math.max(1,sl.cols-1),visYMin=Number.isFinite(sl.yMin)?sl.yMin:0,visYMax=Number.isFinite(sl.yMax)?sl.yMax:Math.max(1,sl.rows-1);
 if(sm==="plane"&&(sl.validCount||0)>0&&(sl.validCount||0)<sl.rows*sl.cols){
@@ -1221,38 +1890,53 @@ const xTicks=hklAxisTicks(Math.min(visXMin,visXMax),Math.max(visXMin,visXMax),xS
 ctx.strokeStyle="rgba(148,163,184,.85)";ctx.fillStyle="#e2e8f0";ctx.font="11px Consolas";
 for(const tck of xTicks){const p=mapXY(tck,visYMin);ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(p[0],p[1]+5);ctx.stroke();ctx.fillText(String(Math.round(tck)),p[0]-8,p[1]+16);}
 for(const tck of yTicks){const p=mapXY(visXMin,tck);ctx.beginPath();ctx.moveTo(p[0]-5,p[1]);ctx.lineTo(p[0],p[1]);ctx.stroke();ctx.fillText(String(Math.round(tck)),p[0]-30,p[1]+4);}
-ctx.fillText(`${(sl.xLabel||"x")}`,drawX+Math.max(4,Math.floor(drawW*0.5)-10),Math.min(cv.height-8,drawY+drawH+30));
+ctx.fillText(`${(sl.xLabel||"x")}`,drawX+Math.max(4,Math.floor(drawW*0.5)-10),Math.min(cssH-8,drawY+drawH+30));
 ctx.save();ctx.translate(Math.max(12,drawX-44),drawY+Math.max(20,Math.floor(drawH*0.5)+18));ctx.rotate(-Math.PI/2);ctx.fillText(`${(sl.yLabel||"y")}`,0,0);ctx.restore();
-for(let i=0;i<bh;i++){const u=1-i/Math.max(1,bh-1),rgb=rgbFromStops(stops,u);ctx.fillStyle=`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;ctx.fillRect(bx,by+i,bw,1);}
-const barMeta={x:bx,y:by,w:bw,h:bh,rawMin:gmin,rawMax:gmax,dispMin:dmin,dispMax:dmax};
+/* --- Draw color bar on overlay canvas (unaffected by zoom) --- */
+const ov=$("heatmapOverlay"),oCtx=ov?ov.getContext("2d"):null;
+if(ov&&oCtx){
+const ovRect=ov.getBoundingClientRect();
+const ovW=Math.max(1,Math.round(ovRect.width)),ovH=Math.max(1,Math.round(ovRect.height));
+const ovBkW=Math.round(ovW*dpr),ovBkH=Math.round(ovH*dpr);
+if(ov.width!==ovBkW||ov.height!==ovBkH){ov.width=ovBkW;ov.height=ovBkH;}
+oCtx.setTransform(dpr,0,0,dpr,0,0);
+oCtx.clearRect(0,0,ovW,ovH);
+/* Recalculate color bar position relative to overlay size */
+const obx=ovW-26,oby=20,obh=ovH-40;
+for(let i=0;i<obh;i++){const u=1-i/Math.max(1,obh-1),rgb=rgbFromStops(stops,u);oCtx.fillStyle=`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;oCtx.fillRect(obx,oby+i,bw,1);}
+const barMeta={x:obx,y:oby,w:bw,h:obh,rawMin:gmin,rawMax:gmax,dispMin:dmin,dispMax:dmax};
 const yDispMax=barYFromValue(dmax,barMeta),yDispMin=barYFromValue(dmin,barMeta);
-ctx.fillStyle="rgba(2,6,23,.52)";
-if(yDispMax>by)ctx.fillRect(bx,by,bw,yDispMax-by);
-if(yDispMin<by+bh)ctx.fillRect(bx,yDispMin,bw,by+bh-yDispMin);
+oCtx.fillStyle="rgba(2,6,23,.52)";
+if(yDispMax>oby)oCtx.fillRect(obx,oby,bw,yDispMax-oby);
+if(yDispMin<oby+obh)oCtx.fillRect(obx,yDispMin,bw,oby+obh-yDispMin);
 const activeHandle=state.levelDrag&&state.levelDrag.active?state.levelDrag.handle:null;
-drawColorBarHandle(ctx,barMeta,yDispMax,activeHandle==="max");
-drawColorBarHandle(ctx,barMeta,yDispMin,activeHandle==="min");
-ctx.strokeStyle="#f8fafc";
-ctx.lineWidth=2;
-ctx.beginPath();ctx.moveTo(bx-5,yDispMax+0.5);ctx.lineTo(bx+bw+5,yDispMax+0.5);ctx.stroke();
-ctx.beginPath();ctx.moveTo(bx-5,yDispMin+0.5);ctx.lineTo(bx+bw+5,yDispMin+0.5);ctx.stroke();
-ctx.lineWidth=1;
-ctx.strokeStyle="#dbeafe";
-ctx.strokeRect(bx,by,bw,bh);
-ctx.fillStyle="#e2e8f0";
-ctx.font="12px Consolas";
-ctx.fillText(gmax.toExponential(2),bx-78,by+10);
-ctx.fillText(gmin.toExponential(2),bx-78,by+bh-2);
-ctx.font="11px Consolas";
-ctx.fillText(dmax.toExponential(2),bx-132,Math.max(by+10,yDispMax-4));
-ctx.fillText(dmin.toExponential(2),bx-132,Math.min(by+bh-2,yDispMin+12));
+drawColorBarHandle(oCtx,barMeta,yDispMax,activeHandle==="max");
+drawColorBarHandle(oCtx,barMeta,yDispMin,activeHandle==="min");
+oCtx.strokeStyle="#f8fafc";
+oCtx.lineWidth=2;
+oCtx.beginPath();oCtx.moveTo(obx-5,yDispMax+0.5);oCtx.lineTo(obx+bw+5,yDispMax+0.5);oCtx.stroke();
+oCtx.beginPath();oCtx.moveTo(obx-5,yDispMin+0.5);oCtx.lineTo(obx+bw+5,yDispMin+0.5);oCtx.stroke();
+oCtx.lineWidth=1;
+oCtx.strokeStyle="#dbeafe";
+oCtx.strokeRect(obx,oby,bw,obh);
+oCtx.fillStyle="#e2e8f0";
+var small=ovW<500,labelFont=small?"9px Consolas":"12px Consolas",handleFont=small?"8px Consolas":"11px Consolas";
+var lOff1=small?56:78,lOff2=small?90:132;
+oCtx.font=labelFont;
+oCtx.fillText(gmax.toExponential(2),obx-lOff1,oby+10);
+oCtx.fillText(gmin.toExponential(2),obx-lOff1,oby+obh-2);
+oCtx.font=handleFont;
+oCtx.fillText(dmax.toExponential(2),obx-lOff2,Math.max(oby+10,yDispMax-4));
+oCtx.fillText(dmin.toExponential(2),obx-lOff2,Math.min(oby+obh-2,yDispMin+12));
 state.lastBar=barMeta;
+}
 const info=$("levelInfo");
 if(info)info.textContent=state.sliceLevels?`Display levels: [${dmin.toExponential(3)}, ${dmax.toExponential(3)}] | global [${gmin.toExponential(3)}, ${gmax.toExponential(3)}]`:`Display levels: auto [${gmin.toExponential(3)}, ${gmax.toExponential(3)}]`;
 const validMsg=sm==="plane"?` | valid=${sl.validCount||0}/${sl.rows*sl.cols}`:"";
 const uvMsg=sm==="plane"?" | uv: u->right, v->up":"";
 const mapMsg=(Array.isArray(sl.xQVec)&&Array.isArray(sl.yQVec))?" | map=Q-cart":"";
-$("sliceStats").textContent=`${sl.plane} | display=${mode} | slice min=${mn.toExponential(5)} | slice max=${mx.toExponential(5)} | shown [${dmin.toExponential(3)}, ${dmax.toExponential(3)}]${validMsg}${uvMsg}${mapMsg} | ${sl.x} | ${sl.y}`;
+var isMobile=window.innerWidth<768;
+$("sliceStats").textContent=isMobile?`${sl.plane} | ${mode} | [${dmin.toExponential(2)}, ${dmax.toExponential(2)}]${validMsg}`:`${sl.plane} | display=${mode} | slice min=${mn.toExponential(5)} | slice max=${mx.toExponential(5)} | shown [${dmin.toExponential(3)}, ${dmax.toExponential(3)}]${validMsg}${uvMsg}${mapMsg} | ${sl.x} | ${sl.y}`;
 state.lastSlice={sliceMode:sm,displayMode:mode,slice:sl};
 pushSliceWindow();
 }
@@ -1369,6 +2053,7 @@ function saveSliceSvg(){
 if(!state.res){status("Compute diffuse first.","warn");return;}
 const cv=$("heatmap");
 if(!cv||!cv.width||!cv.height){status("2D slice map is unavailable.","warn");return;}
+/* Use backing-store (physical pixel) dimensions for full HiDPI resolution in SVG export */
 const w=cv.width,h=cv.height,png=cv.toDataURL("image/png"),title=xmlEsc($("sliceVal").textContent||"2D Slice Map"),desc=xmlEsc($("sliceStats").textContent||"");
 const svg=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><title>${title}</title><desc>${desc}</desc><image x="0" y="0" width="${w}" height="${h}" href="${png}" xlink:href="${png}" preserveAspectRatio="none"/></svg>`;
 saveText(`${base()}_slice2d.svg`,svg,"image/svg+xml;charset=utf-8");
@@ -1520,8 +2205,383 @@ $("closeSliceWin").addEventListener("click",closeSliceWindow);
 $("show2d").addEventListener("change",()=>{update2dVisibility();if($("show2d").value==="1"){draw();}});
 for(const id of ["isoPct","isoCount","voxelCap","showIso3d","showPlane3d","auto3d"]){$(id).addEventListener("change",()=>schedule3dRender(false));}
 window.addEventListener("beforeunload",closeSliceWindow);
+/* Redraw canvas on resize so HiDPI backing store stays correct */
+let _resizeTimer=0;
+window.addEventListener("resize",()=>{clearTimeout(_resizeTimer);_resizeTimer=setTimeout(()=>{draw();if(typeof Plotly!=="undefined"&&Plotly.Plots){try{Plotly.Plots.resize("plot3dIso");}catch(_){}try{Plotly.Plots.resize("plot3dPlane");}catch(_){}}},150);});
 updateScatteringUi();updateSmoothUi();syncResultControls();updateSliceUI();update2dVisibility();setPlot3dStatus("3D view is idle.");}
 bind();draw();
+
+/* --- localStorage persistence for collapsible panel states --- */
+(function(){
+  var panels=[
+    {id:"advancedSettingsBox",key:"ds_advancedSettings_open"},
+    {id:"modeToolBox",key:"ds_modeToolBox_open"},
+    {id:"colorLevelsBox",key:"ds_colorLevels_open"},
+    {id:"sliceWinBox",key:"ds_sliceWin_open"},
+    {id:"elemFilterDetails",key:"ds_elemFilter_open"}
+  ];
+  panels.forEach(function(cfg){
+    var el=document.getElementById(cfg.id);
+    if(!el)return;
+    try{
+      var saved=localStorage.getItem(cfg.key);
+      if(saved!==null){el.open=saved==="true";}
+    }catch(_){}
+    el.addEventListener("toggle",function(){
+      try{localStorage.setItem(cfg.key,String(el.open));}catch(_){}
+      requestAnimationFrame(function(){requestAnimationFrame(function(){
+        if(typeof Plotly!=="undefined"&&Plotly.Plots){try{Plotly.Plots.resize("plot3dIso");}catch(_){}try{Plotly.Plots.resize("plot3dPlane");}catch(_){}}
+        draw();
+      });});
+    });
+  });
+})();
+
+/* --- Drawer toggle / close / backdrop --- */
+(function(){
+  var MQ=window.matchMedia('(max-width:1199px)');
+  var app=document.querySelector('.dashboard');
+  var toggle=$('drawerToggle'), backdrop=$('drawerBackdrop'), close=$('drawerClose');
+  function open(){app.classList.add('drawer-open');document.body.style.overflow='hidden';}
+  function shut(){app.classList.remove('drawer-open');document.body.style.overflow='';}
+  if(toggle)toggle.addEventListener('click',open);
+  if(backdrop)backdrop.addEventListener('click',shut);
+  if(close)close.addEventListener('click',shut);
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&app.classList.contains('drawer-open'))shut();});
+  MQ.addEventListener('change',function(e){if(!e.matches)shut();});
+  var sx=0,sy=0;
+  document.addEventListener('touchstart',function(e){sx=e.touches[0].clientX;sy=e.touches[0].clientY;},{passive:true});
+  document.addEventListener('touchend',function(e){if(!MQ.matches)return;var dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(sx<30&&dx>80&&dy<60&&!app.classList.contains('drawer-open'))open();if(dx<-80&&dy<60&&app.classList.contains('drawer-open'))shut();},{passive:true});
+})();
+
+/* --- Bottom tab bar --- */
+(function(){
+  var tabs=$('bottomTabs');if(!tabs)return;
+  var dash=document.querySelector('.dashboard');
+  tabs.addEventListener('click',function(e){
+    var btn=e.target.closest('.tab-btn');if(!btn)return;
+    var target=btn.dataset.scrollTarget;
+    if(target==='drawer'){dash.classList.add('drawer-open');return;}
+    var el=document.querySelector(target);
+    if(el){
+      el.scrollIntoView({behavior:'smooth',block:'start'});
+    }
+    tabs.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
+    btn.classList.add('active');
+  });
+})();
+
+/* --- Theme toggle (light/dark) --- */
+(function(){
+  var btn=$('themeToggle');
+  if(!btn)return;
+  try{
+    var saved=localStorage.getItem('ds-theme');
+    if(saved==='light')document.documentElement.setAttribute('data-theme','light');
+  }catch(_){}
+  btn.addEventListener('click',function(){
+    var isLight=document.documentElement.getAttribute('data-theme')==='light';
+    if(isLight){
+      document.documentElement.removeAttribute('data-theme');
+      try{localStorage.setItem('ds-theme','dark');}catch(_){}
+    }else{
+      document.documentElement.setAttribute('data-theme','light');
+      try{localStorage.setItem('ds-theme','light');}catch(_){}
+    }
+  });
+})();
+
+/* ============================================================
+   MOBILE INTERACTION: Floating Compute, Mobile Slice Tool sync,
+   Mobile Status Bar, Isosurface DOM relocation
+   ============================================================ */
+(function(){
+  var MQ_MOBILE=window.matchMedia('(max-width:1199px)');
+
+  /* --- Floating Compute Button --- */
+  var fab=$('fabCompute');
+  if(fab){
+    fab.addEventListener('click',function(){
+      var runBtn=$('run');
+      if(runBtn&&!runBtn.disabled){
+        runBtn.click();
+      }
+    });
+  }
+
+  /* --- Mirror status() to mobile status bar --- */
+  var origStatus=window.status;
+  var mobileStatusEl=$('mobileStatus');
+  if(mobileStatusEl){
+    var statusEl=$('status');
+    if(statusEl){
+      var observer=new MutationObserver(function(){
+        mobileStatusEl.textContent=statusEl.textContent;
+        mobileStatusEl.className='mobile-status'+(statusEl.className?' '+statusEl.className:'');
+      });
+      observer.observe(statusEl,{childList:true,characterData:true,subtree:true,attributes:true,attributeFilter:['class']});
+    }
+  }
+
+  /* --- Sync FAB disabled state with #run --- */
+  if(fab){
+    var runBtn=$('run');
+    if(runBtn){
+      var fabObs=new MutationObserver(function(){
+        fab.disabled=runBtn.disabled;
+      });
+      fabObs.observe(runBtn,{attributes:true,attributeFilter:['disabled']});
+    }
+  }
+
+  /* --- Mobile Slice Tool: Two-way sync with sidebar controls --- */
+  /* Map: mobile id -> sidebar id */
+  var SYNC_MAP={
+    mSliceMode:'sliceMode', mScale:'scale',
+    mPNX:'pNX', mPNY:'pNY', mPNZ:'pNZ',
+    mPOX:'pOX', mPOY:'pOY', mPOZ:'pOZ',
+    mPRes:'pRes', mPScale:'pScale',
+    mAxis:'axis', mColorMap:'colorMap',
+    mIsoPct:'isoPct', mIsoCount:'isoCount',
+    mShowIso3d:'showIso3d', mShowPlane3d:'showPlane3d',
+    mShow2d:'show2d', mAuto3d:'auto3d'
+  };
+  /* Range inputs need special handling */
+  var RANGE_MAP={mPlaneMove:'planeMove',mIdx:'idx'};
+  /* Button maps: mobile button -> sidebar button to click */
+  var BTN_MAP={
+    mPlaneApply:'planeApply', mPlaneReset:'planeReset',
+    mResetLevels:'resetLevels', mRender3d:'render3d',
+    mSavePlaneSvg:'savePlaneSvg', mSaveIsoSvg:'saveIsoSvg',
+    mSaveSliceSvg:'saveSliceSvg', mSavePlanHtml:'savePlaneHtml',
+    mSaveIsoHtml:'saveIsoHtml', mSaveSliceCsv:'saveSliceCsv'
+  };
+
+  /* Sync value from source to target element */
+  function syncVal(srcEl,dstEl){
+    if(!srcEl||!dstEl)return;
+    if(dstEl.value!==srcEl.value)dstEl.value=srcEl.value;
+    if(srcEl.disabled!==undefined)dstEl.disabled=srcEl.disabled;
+  }
+
+  /* Wire two-way sync for select/input pairs */
+  Object.keys(SYNC_MAP).forEach(function(mId){
+    var sId=SYNC_MAP[mId];
+    var mEl=$(mId),sEl=$(sId);
+    if(!mEl||!sEl)return;
+    /* Mobile -> Sidebar */
+    mEl.addEventListener('change',function(){syncVal(mEl,sEl);sEl.dispatchEvent(new Event('change',{bubbles:true}));});
+    mEl.addEventListener('input',function(){syncVal(mEl,sEl);sEl.dispatchEvent(new Event('input',{bubbles:true}));});
+    /* Sidebar -> Mobile (use MutationObserver on value attribute + poll) */
+    var obsS=new MutationObserver(function(){syncVal(sEl,mEl);});
+    obsS.observe(sEl,{attributes:true,attributeFilter:['value','disabled']});
+  });
+
+  /* Wire range inputs */
+  Object.keys(RANGE_MAP).forEach(function(mId){
+    var sId=RANGE_MAP[mId];
+    var mEl=$(mId),sEl=$(sId);
+    if(!mEl||!sEl)return;
+    mEl.addEventListener('input',function(){syncVal(mEl,sEl);sEl.dispatchEvent(new Event('input',{bubbles:true}));});
+    mEl.addEventListener('change',function(){syncVal(mEl,sEl);sEl.dispatchEvent(new Event('change',{bubbles:true}));});
+    var obsR=new MutationObserver(function(){syncVal(sEl,mEl);});
+    obsR.observe(sEl,{attributes:true,attributeFilter:['value','disabled','min','max']});
+  });
+
+  /* Wire button clicks */
+  Object.keys(BTN_MAP).forEach(function(mId){
+    var sId=BTN_MAP[mId];
+    var mEl=$(mId),sEl=$(sId);
+    if(!mEl||!sEl)return;
+    mEl.addEventListener('click',function(){sEl.click();});
+    var obsB=new MutationObserver(function(){mEl.disabled=sEl.disabled;});
+    obsB.observe(sEl,{attributes:true,attributeFilter:['disabled']});
+  });
+
+  /* Periodic sync: sidebar values -> mobile (handles programmatic changes) */
+  function periodicSync(){
+    Object.keys(SYNC_MAP).forEach(function(mId){
+      var sEl=$(SYNC_MAP[mId]),mEl=$(mId);
+      if(sEl&&mEl){syncVal(sEl,mEl);}
+    });
+    Object.keys(RANGE_MAP).forEach(function(mId){
+      var sEl=$(RANGE_MAP[mId]),mEl=$(mId);
+      if(sEl&&mEl){
+        syncVal(sEl,mEl);
+        /* Also sync min/max for range inputs */
+        if(sEl.min!==undefined&&mEl.min!==sEl.min)mEl.min=sEl.min;
+        if(sEl.max!==undefined&&mEl.max!==sEl.max)mEl.max=sEl.max;
+      }
+    });
+    Object.keys(BTN_MAP).forEach(function(mId){
+      var sEl=$(BTN_MAP[mId]),mEl=$(mId);
+      if(sEl&&mEl){mEl.disabled=sEl.disabled;}
+    });
+    /* Sync plane controls visibility */
+    var planeCtl=$('planeControls'),mPlaneCtl=$('mPlaneControls');
+    if(planeCtl&&mPlaneCtl){
+      mPlaneCtl.classList.toggle('hidden',planeCtl.classList.contains('hidden'));
+    }
+    var axisBox=$('axisToolBox'),mAxisBox=$('mAxisToolBox');
+    if(axisBox&&mAxisBox){
+      mAxisBox.classList.toggle('hidden',axisBox.classList.contains('hidden'));
+    }
+    /* Sync planeMoveVal text */
+    var pmv=$('planeMoveVal'),mpmv=$('mPlaneMoveVal');
+    if(pmv&&mpmv)mpmv.textContent=pmv.textContent;
+    /* Sync levelInfo text */
+    var li=$('levelInfo'),mli=$('mLevelInfo');
+    if(li&&mli)mli.textContent=li.textContent;
+  }
+  setInterval(periodicSync,300);
+
+  /* --- Isosurface DOM relocation for mobile --- */
+  var isoArea=$('isoArea');
+  var isoPlotWrap=$('isoPlotWrap');
+  var mobileIsoContent=$('mobileIsoContent');
+  var mobileIsoDetails=$('mobileIsoDetails');
+  var isoInMobile=false;
+
+  function relocateIso(){
+    if(!isoArea||!isoPlotWrap||!mobileIsoContent||!mobileIsoDetails)return;
+    var isMobile=MQ_MOBILE.matches;
+    if(isMobile&&!isoInMobile){
+      mobileIsoContent.appendChild(isoPlotWrap);
+      isoArea.style.display='none';
+      isoInMobile=true;
+    }else if(!isMobile&&isoInMobile){
+      isoArea.appendChild(isoPlotWrap);
+      isoArea.style.display='';
+      isoInMobile=false;
+    }
+  }
+
+  relocateIso();
+  MQ_MOBILE.addEventListener('change',function(){
+    relocateIso();
+    /* Resize plotly after relocation */
+    setTimeout(function(){
+      if(typeof Plotly!=='undefined'&&Plotly.Plots){
+        try{Plotly.Plots.resize('plot3dIso');}catch(_){}
+        try{Plotly.Plots.resize('plot3dPlane');}catch(_){}
+      }
+      if(typeof draw==='function')draw();
+    },200);
+  });
+
+  /* Resize plots when mobile iso details is toggled */
+  if(mobileIsoDetails){
+    mobileIsoDetails.addEventListener('toggle',function(){
+      setTimeout(function(){
+        if(typeof Plotly!=='undefined'&&Plotly.Plots){
+          try{Plotly.Plots.resize('plot3dIso');}catch(_){}
+        }
+      },250);
+    });
+  }
+})();
+
+/* ============================================================
+   ZOOM CONTROLS: Heatmap canvas + Plotly 3D plots
+   ============================================================ */
+(function(){
+  /* --- Heatmap (2D canvas) zoom via CSS transform --- */
+  var cv=$('heatmap');
+  if(cv){
+    var wrap=cv.closest('.canvasWrap');
+    function clampPan(z){
+      if(z.level<=1){z.panX=0;z.panY=0;return;}
+      var maxPan=(z.level-1)/(2*z.level)*Math.max(cv.clientWidth,cv.clientHeight);
+      z.panX=Math.max(-maxPan,Math.min(maxPan,z.panX));
+      z.panY=Math.max(-maxPan,Math.min(maxPan,z.panY));
+    }
+    function applyHeatmapTransform(){
+      var z=state.heatmapZoom;
+      if(!z||z.level<=1){cv.style.transform='';cv.style.transformOrigin='';}
+      else{clampPan(z);cv.style.transformOrigin='center center';cv.style.transform='scale('+z.level+') translate('+(z.panX/z.level)+'px,'+(z.panY/z.level)+'px)';}
+    }
+    function heatZoom(delta){
+      var z=state.heatmapZoom;
+      z.level=Math.max(1,Math.min(8,z.level*(1+delta)));
+      if(z.level<=1){z.level=1;z.panX=0;z.panY=0;}
+      applyHeatmapTransform();
+    }
+
+    var zIn=$('heatmapZoomIn'),zOut=$('heatmapZoomOut'),zReset=$('heatmapZoomReset');
+    if(zIn)zIn.addEventListener('click',function(){heatZoom(0.3);});
+    if(zOut)zOut.addEventListener('click',function(){heatZoom(-0.23);});
+    if(zReset)zReset.addEventListener('click',function(){
+      state.heatmapZoom={level:1,panX:0,panY:0,isPanning:false,panStartX:0,panStartY:0,panBaseX:0,panBaseY:0};
+      applyHeatmapTransform();
+    });
+
+    /* Scroll-wheel zoom on canvas */
+    cv.addEventListener('wheel',function(e){
+      if(!state.res)return;
+      /* Don't intercept if cursor is on the color bar area (right 160px) */
+      var rect=cv.getBoundingClientRect();
+      if(e.clientX>rect.right-160)return;
+      e.preventDefault();
+      heatZoom(e.deltaY<0?0.12:-0.12);
+    },{passive:false});
+
+    /* Pan via mouse drag when zoomed */
+    cv.addEventListener('mousedown',function(e){
+      if(state.heatmapZoom.level<=1)return;
+      if(state.levelDrag&&state.levelDrag.active)return;
+      var rect=cv.getBoundingClientRect();
+      if(e.clientX>rect.right-160)return;
+      var z=state.heatmapZoom;
+      z.isPanning=true;z.panStartX=e.clientX;z.panStartY=e.clientY;z.panBaseX=z.panX;z.panBaseY=z.panY;
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove',function(e){
+      var z=state.heatmapZoom;if(!z.isPanning)return;
+      z.panX=z.panBaseX+(e.clientX-z.panStartX)/z.level;
+      z.panY=z.panBaseY+(e.clientY-z.panStartY)/z.level;
+      applyHeatmapTransform();
+    });
+    window.addEventListener('mouseup',function(){state.heatmapZoom.isPanning=false;});
+
+    /* Touch pinch-zoom on canvas */
+    var lastPinchDist=0;
+    cv.addEventListener('touchstart',function(e){
+      if(e.touches.length===2){lastPinchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
+    },{passive:true});
+    cv.addEventListener('touchmove',function(e){
+      if(e.touches.length===2&&lastPinchDist>0){
+        var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+        heatZoom((d-lastPinchDist)*0.003);lastPinchDist=d;
+        e.preventDefault();
+      }
+    },{passive:false});
+  }
+
+  /* --- Plotly 3D plot zoom buttons --- */
+  function plotly3dZoom(plotId,factor){
+    if(typeof Plotly==='undefined')return;
+    var gd=$(plotId);if(!gd||!gd.layout)return;
+    var scene=gd.layout.scene||{},cam=scene.camera||{},eye=cam.eye||{x:1.25,y:1.25,z:1.25};
+    try{Plotly.relayout(gd,{'scene.camera.eye':{x:eye.x*factor,y:eye.y*factor,z:eye.z*factor}});}catch(_){}
+  }
+  function plotly3dReset(plotId){
+    if(typeof Plotly==='undefined')return;
+    var gd=$(plotId);if(!gd||!gd.layout)return;
+    try{Plotly.relayout(gd,{'scene.camera':null});}catch(_){}
+  }
+
+  var plots=[
+    ['planeZoomIn','planeZoomOut','planeZoomReset','plot3dPlane'],
+    ['isoZoomIn','isoZoomOut','isoZoomReset','plot3dIso']
+  ];
+  plots.forEach(function(p){
+    var inB=$(p[0]),outB=$(p[1]),rstB=$(p[2]),pid=p[3];
+    if(inB)inB.addEventListener('click',function(){plotly3dZoom(pid,0.8);});
+    if(outB)outB.addEventListener('click',function(){plotly3dZoom(pid,1.25);});
+    if(rstB)rstB.addEventListener('click',function(){plotly3dReset(pid);});
+  });
+})();
 </script>
+
 </body>
 </html>
