@@ -2191,7 +2191,7 @@ $("sliceMode").addEventListener("change",()=>{state.planeMoving=false;state.plan
 $("axis").addEventListener("change",()=>{updateSliceUI();draw();schedule3dRender(false,140);});
 $("idx").addEventListener("input",()=>{draw();schedule3dRender(false,140);});
 $("scale").addEventListener("change",()=>{resetDisplayLevels();draw();schedule3dRender(false,160);});
-$("colorMap").addEventListener("change",()=>{draw();schedule3dRender(false,120);});
+$("colorMap").addEventListener("change",()=>{draw();var cs=getColorPreset().plotly;if(window.Plotly){var isoGd=$("plot3dIso"),planeGd=$("plot3dPlane");if(isoGd&&Array.isArray(isoGd.data)&&isoGd.data.length)Plotly.restyle(isoGd,{colorscale:cs});if(planeGd&&Array.isArray(planeGd.data)&&planeGd.data.length)Plotly.restyle(planeGd,{colorscale:cs});}});
 $("resetLevels").addEventListener("click",()=>{resetDisplayLevels();draw();scheduleLevelSync3d(true);});
 $("planeApply").addEventListener("click",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;captureSceneCamera("plot3dPlane","plane");applyPlaneFromInputs();resetDisplayLevels();draw();if(getSliceMode()==="plane"){const fullRes=Math.max(64,Math.min(260,Math.floor(readNumberInput("pRes",200))));updatePlaneTraceFast(fullRes).catch(()=>{});}else{schedule3dRender(false,220);}});
 $("planeReset").addEventListener("click",()=>{resetPlaneToolDefaults();});
