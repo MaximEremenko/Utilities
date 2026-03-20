@@ -2192,7 +2192,7 @@ $("saveVtk").addEventListener("click",saveVtk);
 $("saveCube").addEventListener("click",saveCube);
 $("saveSliceSvg").addEventListener("click",saveSliceSvg);
 $("saveSliceCsv").addEventListener("click",saveSliceCsv);
-$("sliceMode").addEventListener("change",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;updateSliceUI();resetDisplayLevels();draw();schedule3dRender(false,180);});
+$("sliceMode").addEventListener("change",()=>{state.planeMoving=false;state.planeMoveCameraLock=null;state.render3dEpoch++;updateSliceUI();draw();schedule3dRender(false,180);});
 $("axis").addEventListener("change",()=>{updateSliceUI();draw();schedule3dRender(false,140);});
 $("idx").addEventListener("input",()=>{draw();schedule3dRender(false,140);});
 $("scale").addEventListener("change",()=>{resetDisplayLevels();draw();schedule3dRender(false,160);});
