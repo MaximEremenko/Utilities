@@ -21,6 +21,8 @@ The tool computes diffuse intensity `I(h,k,l)` in reciprocal space, visualizes
 - `js/`
   - Modular source files for RMC6f parsing, scattering coefficients, and
     diffuse-calculation logic.
+- `Examples/`
+  - Shipped `.rmc6f` profiles for external users of the Utilities docs surface.
 
 ## Example Profiles Highlighted In The Docs
 
