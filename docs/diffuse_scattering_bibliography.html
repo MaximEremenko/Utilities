@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Diffuse Scattering Bibliography</title>
+
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; line-height: 1.6; color: #1f2937; background: #f8fafc; }
+    header, main, footer, nav { max-width: 960px; margin: 0 auto; }
+    header { margin-bottom: 1.5rem; }
+    nav { margin-bottom: 1.5rem; padding: 0.85rem 1rem; background: #e2e8f0; border-radius: 10px; }
+    nav a { margin-right: 1rem; font-weight: 600; }
+    section { background: white; padding: 1.25rem 1.5rem; border-radius: 12px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    h1, h2, h3 { color: #0f172a; }
+    code { background: #eef2ff; padding: 0 4px; border-radius: 4px; }
+    .small { font-size: 0.95rem; color: #475569; }
+  </style>
+
+    </head>
+    <body>
+      <header>
+        <h1>Diffuse Scattering Bibliography</h1>
+        <p class="small">Utilities documentation for the RMC6f diffuse-scattering tool.</p>
+      </header>
+      <nav>
+        <a href="index.html">Docs Home</a>
+        <a href="diffuse_scattering.html">Guide</a>
+        <a href="diffuse_scattering_examples.html">Examples</a>
+        <a href="diffuse_scattering_theory.html">Theory</a>
+        <a href="diffuse_scattering_supplementary.html">Supplementary</a>
+        <a href="diffuse_scattering_bibliography.html">Bibliography</a>
+        <a href="diffuse_scattering_troubleshooting.html">Troubleshooting</a>
+        <a href="../RMCProfileUtilities/Diffuse_Scattering/Diffuse_Scattering_RMC6f.html">Open Tool</a>
+      </nav>
+      <main>
+
+<section>
+  <h2>Software Used By The Calculator</h2>
+  <ul>
+    <li><strong>WebGPU-FFT</strong> — Maksim Eremenko, repository: <a href="https://github.com/MaximEremenko/WebGPU-FFT">github.com/MaximEremenko/WebGPU-FFT</a></li>
+    <li><strong>WebGPU-NUFFT</strong> — Maksim Eremenko, repository: <a href="https://github.com/MaximEremenko/WebGPU-NUFFT">github.com/MaximEremenko/WebGPU-NUFFT</a></li>
+    <li><strong>Plotly.js</strong> — Plotly Technologies Inc., <a href="https://plotly.com/javascript/">plotly.com/javascript</a></li>
+  </ul>
+</section>
+<section>
+  <h2>Diffuse-Scattering Theory And Calculation References</h2>
+  <h3>Butler and Welberry diffuse-scattering calculation paper</h3>
+  <p>Butler, B. D., &amp; Welberry, T. R. (1992). <em>Calculation of diffuse scattering from simulated disordered crystals: a comparison with optical transforms.</em> Journal of Applied Crystallography, 25(3), 391-399.</p>
+  <h3>Diffuse-scattering interpretation background</h3>
+  <p>Welberry, T. R., &amp; Butler, B. D. (1994). <em>Interpretation of diffuse X-ray scattering via models of disorder.</em> Journal of Applied Crystallography, 27(3), 205-231.</p>
+  <h3>Butler-Welberry adaptation for RMC electron diffraction</h3>
+  <p>Goodwin, A. L., Withers, R. L., &amp; Nguyen, H. B. (2007). <em>Real-space refinement of single-crystal electron diffuse scattering and its application to Bi<sub>2</sub>Ru<sub>2</sub>O<sub>7&minus;&delta;</sub>.</em> Journal of Physics: Condensed Matter, 19(33), 335216.</p>
+  <h3>Kinematic diffraction background</h3>
+  <p>Cowley, J. M. (1995). <em>Diffraction Physics.</em> Elsevier.</p>
+</section>
+<section>
+  <h2>Scattering Table Families Exposed In The UI</h2>
+  <p>Use the exact family name shown in the UI together with one of the following standard references.</p>
+  <h3>Neutron scattering lengths</h3>
+  <p>Sears, V. F. (1992). <em>Neutron scattering lengths and cross sections.</em> Neutron News, 3(3), 26-37.</p>
+  <h3>Waasmaier</h3>
+  <p>Waasmaier, D., &amp; Kirfel, A. (1995). <em>New analytical scattering-factor functions for free atoms and ions.</em> Acta Crystallographica Section A, 51, 416-431.</p>
+  <h3>Lobato</h3>
+  <p>Lobato, I., &amp; Van Dyck, D. (2014). <em>An accurate parameterization for scattering factors, electron densities and electrostatic potentials for neutral atoms that obey the Mott-Bethe formula.</em> Acta Crystallographica Section A, 70, 636-649.</p>
+  <h3>Peng 0.4 / Peng family</h3>
+  <p>Peng, L.-M., Ren, G., Dudarev, S. L., &amp; Whelan, M. J. (1996). <em>Robust parameterization of elastic and absorptive electron atomic scattering factors.</em> Acta Crystallographica Section A, 52, 257-276.</p>
+  <h3>Doyle</h3>
+  <p>Doyle, P. A., &amp; Turner, P. S. (1968). <em>Relativistic Hartree-Fock X-ray and electron scattering factors.</em> Acta Crystallographica Section A, 24, 390-397.</p>
+  <h3>Weickenmeier</h3>
+  <p>Weickenmeier, A., &amp; Kohl, H. (1991). <em>Computation of absorptive form factors for high-energy electron diffraction.</em> Acta Crystallographica Section A, 47, 590-597.</p>
+  <h3>Kirkland</h3>
+  <p>Kirkland, E. J. (2010). <em>Advanced Computing in Electron Microscopy.</em> 2nd edition. Springer.</p>
+</section>
+<section>
+  <h2>RMC And RMCProfile References</h2>
+  <h3>RMCProfile overview paper</h3>
+  <p>Tucker, M. G., Keen, D. A., Dove, M. T., Goodwin, A. L., &amp; Hui, Q. (2007). <em>RMCProfile: Reverse Monte Carlo for polycrystalline materials.</em> Journal of Physics: Condensed Matter, 19, 335218.</p>
+  <h3>RMCProfile nanoscale manuscript</h3>
+  <p>Eremenko, M., Krayzman, V., Gagin, A., &amp; Levin, I. (2017). <em>Advancing reverse Monte Carlo structure refinements to the nanoscale.</em> Journal of Applied Crystallography, 50, 1561-1570.</p>
+  <h3>RMCProfile user manual</h3>
+  <p>Tucker, M., Dove, M., Goodwin, A., Phillips, A., Keen, D., Playford, H., Slawinski, W. A., Levin, I., Krayzman, V., Eremenko, M., &amp; Zhang, Y. <em>RMCProfile User Manual</em>, code version 6.7.9.</p>
+  <h3>RMCProfile EXAFS / combined-scattering extension manual</h3>
+  <p>Krayzman, V., &amp; Levin, I. <em>A Combined Fit of X-ray/Neutron Total Scattering, EXAFS, and Electron Diffuse Scattering in RMCProfile: User Manual</em>. National Institute of Standards and Technology. Available at <a href="https://www.nist.gov/system/files/documents/2017/10/04/manual_rmcprofileexafs_v6.pdf">nist.gov/system/files/documents/2017/10/04/manual_rmcprofileexafs_v6.pdf</a>.</p>
+</section>
+<section>
+  <h2>MOSAIC And Sample-Context References</h2>
+  <h3>MOSAIC manuscript</h3>
+  <p>Eremenko, M. (2026). <em>A Filter-Based Approach Linking Diffuse Scattering Features to Site-Resolved Real-Space Fields.</em> Manuscript referenced by the MOSAIC project documentation.</p>
+  <h3>MOSAIC software</h3>
+  <p>Eremenko, M. (2026). <em>MOSAIC</em>, version 0.1.0. GitHub repository: <a href="https://github.com/MaximEremenko/MOSAIC">github.com/MaximEremenko/MOSAIC</a>.</p>
+  <h3>PMN / relaxor benchmark context (2025 paper)</h3>
+  <p>Eremenko, M., Krayzman, V., Gorfman, S., Bosak, A., Playford, H. Y., Chater, P. A., Ravel, B., Laws, W. J., Ye, F., Minelli, A., and co-authors. (2025). <em>Emergent topological polarization textures in relaxor ferroelectrics.</em> Nature Communications, 16, 7531.</p>
+  <h3>Earlier PMN local-order / PNR context</h3>
+  <p>Eremenko, M., Krayzman, V., Bosak, A., Playford, H. Y., Chapman, K. W., Woicik, J. C., Ravel, B., &amp; Levin, I. (2019). <em>Local atomic order and hierarchical polar nanoregions in a classical relaxor ferroelectric.</em> Nature Communications, 10(1), 2728.</p>
+</section>
+<section>
+  <h2>Practical Citation Rule</h2>
+  <p>When publishing or sharing results from this calculator, record backend, scattering type, exact family name selected in the UI, reciprocal-space grid settings, and whichever sample-context paper is relevant to the figure or dataset.</p>
+</section>
+      </main>
+      <footer class="small"><p>Diffuse-scattering documentation surface for Utilities.</p></footer>
+    </body>
+    </html>

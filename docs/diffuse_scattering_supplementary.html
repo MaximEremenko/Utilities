@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Diffuse Scattering Supplementary</title>
+
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; line-height: 1.6; color: #1f2937; background: #f8fafc; }
+    header, main, footer, nav { max-width: 960px; margin: 0 auto; }
+    header { margin-bottom: 1.5rem; }
+    nav { margin-bottom: 1.5rem; padding: 0.85rem 1rem; background: #e2e8f0; border-radius: 10px; }
+    nav a { margin-right: 1rem; font-weight: 600; }
+    section { background: white; padding: 1.25rem 1.5rem; border-radius: 12px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    h1, h2, h3 { color: #0f172a; }
+    code { background: #eef2ff; padding: 0 4px; border-radius: 4px; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #cbd5e1; padding: 0.55rem 0.7rem; text-align: left; vertical-align: top; }
+    th { background: #e2e8f0; }
+    .callout { padding: 0.9rem 1rem; border-left: 4px solid #1d4ed8; background: #eff6ff; border-radius: 8px; }
+    .small { font-size: 0.95rem; color: #475569; }
+  </style>
+
+    </head>
+    <body>
+      <header>
+        <h1>Diffuse Scattering Supplementary</h1>
+        <p class="small">Utilities documentation for the RMC6f diffuse-scattering tool.</p>
+      </header>
+      <nav>
+        <a href="index.html">Docs Home</a>
+        <a href="diffuse_scattering.html">Guide</a>
+        <a href="diffuse_scattering_examples.html">Examples</a>
+        <a href="diffuse_scattering_theory.html">Theory</a>
+        <a href="diffuse_scattering_supplementary.html">Supplementary</a>
+        <a href="diffuse_scattering_bibliography.html">Bibliography</a>
+        <a href="diffuse_scattering_troubleshooting.html">Troubleshooting</a>
+        <a href="../RMCProfileUtilities/Diffuse_Scattering/Diffuse_Scattering_RMC6f.html">Open Tool</a>
+      </nav>
+      <main>
+
+<section>
+  <h2>What This Page Is</h2>
+  <p>This page collects supplementary material: backend provenance, scattering-table families, reproducibility notes, and citation-oriented context.</p>
+</section>
+<section>
+  <h2>Backend Stack</h2>
+  <ul>
+    <li><strong>WebGPU-FFT</strong> — Maksim Eremenko's WebGPU FFT library used by the WebGPU execution path.</li>
+    <li><strong>WebGPU-NUFFT</strong> — type-3 NUFFT implementation and WebGPU bridge. In the UI this appears as <code>Type-3 + webgpufft (WebGPU)</code>, <code>type3NufftCpu (CPU FFT)</code>, and <code>type3NufftCpuDirect</code>.</li>
+    <li><strong>Plotly.js</strong> — interactive 3D rendering for slice-plane and isosurface views.</li>
+  </ul>
+</section>
+<section>
+  <h2>Scattering Table Families</h2>
+  <ul>
+    <li><strong>Neutron:</strong> embedded neutron scattering lengths with fallback value <code>10.0</code> for unknown elements.</li>
+    <li><strong>X-ray:</strong> Waasmaier, Lobato, Peng 0.4, Doyle, Weickenmeier, Kirkland.</li>
+    <li><strong>Electron:</strong> Lobato, Peng 0.4, Doyle, Weickenmeier, Kirkland, plus ion-mode Peng support.</li>
+  </ul>
+  <p>The coefficient database records its generated source paths as <code>helper_info/xray_scattering_factor_constants.f90</code> and <code>helper_info/scattering_coefficients.f90</code>.</p>
+  <p>When publishing, retain the exact family name shown in the UI in figure captions and methods text. Formal references for each family are collected in <a href="diffuse_scattering_bibliography.html">Bibliography</a>.</p>
+</section>
+<section>
+  <h2>Reproducibility Notes</h2>
+  <p>For scientific comparison or publication, record:</p>
+  <ul>
+    <li>backend</li>
+    <li>scattering type</li>
+    <li>exact table/model name</li>
+    <li>reciprocal-space grid range and step</li>
+    <li>normalization and slice-mode choices relevant to the figure</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Advanced Scattering Modes</h2>
+  <h3>Grouped exact (neutron)</h3>
+  <p><code>Grouped exact</code> evaluates grouped element contributions explicitly instead of using the lightweight fast neutron path. It is more explicit about per-element weighting and can be slower than <code>Fast (neutron)</code>.</p>
+  <h3>Ion (Peng)</h3>
+  <p><code>Ion (Peng)</code> is the electron-ion mode. It uses Peng ion coefficients together with the <code>Ion valence</code> mapping entered in the UI, for example <code>Fe:2,O:-2</code>. If an element/valence pair is unsupported by the embedded coefficient set, the calculator reports that explicitly.</p>
+</section>
+
+      </main>
+      <footer class="small">
+        <p>Diffuse-scattering documentation surface for Utilities.</p>
+      </footer>
+    </body>
+    </html>

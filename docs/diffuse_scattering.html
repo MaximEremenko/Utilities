@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Diffuse Scattering Guide</title>
+
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; line-height: 1.6; color: #1f2937; background: #f8fafc; }
+    header, main, footer, nav { max-width: 960px; margin: 0 auto; }
+    header { margin-bottom: 1.5rem; }
+    nav { margin-bottom: 1.5rem; padding: 0.85rem 1rem; background: #e2e8f0; border-radius: 10px; }
+    nav a { margin-right: 1rem; font-weight: 600; }
+    section { background: white; padding: 1.25rem 1.5rem; border-radius: 12px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    h1, h2, h3 { color: #0f172a; }
+    code { background: #eef2ff; padding: 0 4px; border-radius: 4px; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #cbd5e1; padding: 0.55rem 0.7rem; text-align: left; vertical-align: top; }
+    th { background: #e2e8f0; }
+    .callout { padding: 0.9rem 1rem; border-left: 4px solid #1d4ed8; background: #eff6ff; border-radius: 8px; }
+    .small { font-size: 0.95rem; color: #475569; }
+  </style>
+
+    </head>
+    <body>
+      <header>
+        <h1>Diffuse Scattering Guide</h1>
+        <p class="small">Utilities documentation for the RMC6f diffuse-scattering tool.</p>
+      </header>
+      <nav>
+        <a href="index.html">Docs Home</a>
+        <a href="diffuse_scattering.html">Guide</a>
+        <a href="diffuse_scattering_examples.html">Examples</a>
+        <a href="diffuse_scattering_theory.html">Theory</a>
+        <a href="diffuse_scattering_supplementary.html">Supplementary</a>
+        <a href="diffuse_scattering_bibliography.html">Bibliography</a>
+        <a href="diffuse_scattering_troubleshooting.html">Troubleshooting</a>
+        <a href="../RMCProfileUtilities/Diffuse_Scattering/Diffuse_Scattering_RMC6f.html">Open Tool</a>
+      </nav>
+      <main>
+
+    <section>
+      <h2>What This Tool Does</h2>
+      <p>The diffuse-scattering tool computes reciprocal-space diffuse intensity <code>I(h,k,l)</code> directly in the browser from an <code>.rmc6f</code> atomistic configuration. It is intended for interactive exploration of diffuse features rather than for inverse reconstruction.</p>
+      <div class="callout">Use this tool to compute, slice, visualize, and export diffuse-scattering volumes from RMC6f configurations without leaving the browser.</div>
+    </section>
+    <section>
+      <h2>Quick Start</h2>
+      <ol>
+        <li>Open the tool.</li>
+        <li>Load an <code>.rmc6f</code> file.</li>
+        <li>Choose a backend: WebGPU first, CPU FFT if WebGPU is unavailable.</li>
+        <li>Set the reciprocal-space grid and press <strong>Compute Diffuse</strong>.</li>
+        <li>Inspect the <strong>3D Slice Plane</strong>, <strong>2D Slice Map</strong>, and <strong>3D Isosurface</strong>.</li>
+      </ol>
+      <pre><code>Input:  .rmc6f
+Output: diffuse volume + slices + exports (.dat/.json/.vtk/.cube/.csv/.svg/.html)</code></pre>
+      <figure>
+        <img src="assets/diffuse_scattering_ui_annotated.png" alt="Diffuse scattering calculator interface after loading LiFeO2 and computing diffuse intensity" style="width:100%;border:1px solid #cbd5e1;border-radius:12px;">
+        <figcaption class="small">Example live interface after computing diffuse scattering for <code>LiFeO2.rmc6f</code>. The main workflow areas are the input/setup panel on the left, the 3D Slice Plane at top center, the 2D Slice Map below it, and the 3D render/export controls on the right.</figcaption>
+      </figure>
+    </section>
+    <section>
+      <h2>Major Views</h2>
+      <table>
+        <tr><th>View</th><th>Purpose</th></tr>
+        <tr><td>3D Slice Plane</td><td>Shows a planar cut through the diffuse volume in reciprocal space.</td></tr>
+        <tr><td>2D Slice Map</td><td>Shows the current slice in a 2D coordinate frame for easier inspection of diffuse features.</td></tr>
+        <tr><td>3D Isosurface</td><td>Shows a constant-intensity contour view of the diffuse volume.</td></tr>
+      </table>
+    </section>
+<section>
+  <h2>How To Read The Views</h2>
+  <ul>
+    <li>Localized superlattice condensation appears as concentrated intensity near specific reciprocal positions.</li>
+    <li>Manifold-like or sheet-like short-range-order scattering appears as extended diffuse surfaces.</li>
+    <li>Rod-like diffuse scattering indicates strongly anisotropic correlations.</li>
+    <li>Changing the plane position reveals how the same diffuse object intersects different slices.</li>
+  </ul>
+  <p>For sample-specific examples of these patterns, see the <a href="diffuse_scattering_examples.html">examples guide</a>.</p>
+</section>
+    <section>
+      <h2>Slice Modes</h2>
+      <table>
+        <tr><th>Mode</th><th>Meaning</th></tr>
+        <tr><td>Axis</td><td>Fix one reciprocal-lattice coordinate and inspect a conventional crystallographic section.</td></tr>
+        <tr><td>Normal plane</td><td>Define a custom plane by its normal and slide it through reciprocal space.</td></tr>
+        <tr><td>Volume average</td><td>Average the diffuse intensity over a slab around the current plane.</td></tr>
+      </table>
+    </section>
+
+<section>
+  <h2>Volume Average Mode</h2>
+  <p>Volume average mode is designed for broad or noisy diffuse features. Instead of sampling one infinitely thin plane, the calculator evaluates multiple parallel planes and averages them into a slab view.</p>
+  <ul>
+    <li><strong>Slab &plusmn;</strong>: half-thickness of the slab in HKL units. Larger values integrate through a thicker reciprocal-space region.</li>
+    <li><strong>Slab N</strong>: number of sample planes inside the slab. Larger values give a denser average through the same thickness.</li>
+  </ul>
+  <p>Use this mode when a single normal plane looks too sparse, noisy, or overly sensitive to exact plane placement.</p>
+</section>
+<section>
+  <h2>Advanced Calculation Controls</h2>
+  <table>
+    <tr><th>Control</th><th>Purpose</th></tr>
+    <tr><td>Subtract avg</td><td>Subtract the coherent average-structure contribution so the result emphasizes diffuse scattering rather than the total intensity including Bragg-like contributions.</td></tr>
+    <tr><td>Aavg N</td><td>Choose whether the average subtraction uses all atoms or only the atoms currently included by the element filter.</td></tr>
+    <tr><td>Normalize Nq</td><td>Normalize by the reciprocal-space grid size so runs at different resolutions are easier to compare.</td></tr>
+    <tr><td>Viewer scale</td><td>Choose <code>log10</code> or <code>linear</code> display scaling for the diffuse intensity.</td></tr>
+    <tr><td>Base name</td><td>Controls the base filename used by the export actions.</td></tr>
+  </table>
+  <p>See <a href="diffuse_scattering_theory.html">Theory</a> for the equations behind these controls.</p>
+</section>
+<section>
+  <h2>Element Filter</h2>
+  <p>The <strong>Element Filter</strong> is an experimental feature that lets you include or exclude specific elements from the scattering calculation. This is useful for partial diffuse-scattering views, but it changes the meaning of normalization and average subtraction, especially when <strong>Aavg N</strong> is set to <em>N included</em>.</p>
+</section>
+<section>
+  <h2>Smoothing Controls</h2>
+  <p>The advanced <strong>Smoothing</strong> controls operate on the computed 3D intensity volume before visualization.</p>
+  <ul>
+    <li><strong>Smooth 3D</strong>: enable or disable smoothing of the diffuse volume.</li>
+    <li><strong>Filter</strong>: choose between <em>Lanczos</em> and <em>Chebyshev</em>.</li>
+    <li><strong>Cheb dB</strong>: controls the Chebyshev attenuation parameter.</li>
+    <li><strong>Scale</strong>: controls the smoothing kernel size relative to the supercell-driven baseline.</li>
+  </ul>
+  <p>Lanczos is a good general-purpose smoothing filter. Chebyshev is more tunable and can produce stronger suppression of ringing depending on the chosen dB value.</p>
+</section>
+    <section>
+      <h2>Backends And Scattering Choices</h2>
+      <ul>
+        <li><strong>WebGPU</strong>: fastest interactive path when supported by the browser/GPU.</li>
+        <li><strong>CPU FFT</strong>: the preferred fallback when WebGPU is unavailable.</li>
+        <li><strong>Direct CPU</strong>: slower reference path for difficult or smaller cases.</li>
+      </ul>
+      <p>The UI also supports neutron, X-ray, and electron scattering options with model/table selection.</p>
+      <p>Practical default grid-limit presets are backend-dependent: the WebGPU preset uses <code>8,000,000</code> voxels, while the CPU FFT and direct CPU presets use <code>120,000</code> voxels. These are practical defaults, not hard physical limits, but they are the right starting point for sizing runs.</p>
+    </section>
+    
+<section>
+      <h2>Supplementary Material</h2>
+      <p>Backend provenance, scattering-table families, and citation-oriented notes are collected in <a href="diffuse_scattering_supplementary.html">Diffuse Scattering Supplementary</a>.</p>
+    </section>
+<section>
+      <h2>3D Render Controls</h2>
+      <ul>
+        <li><strong>Iso percentile</strong>: selects the intensity percentile used for the isosurface threshold. For example, 95 means the isosurface is built from the top 5% of intensity values in the sampled 3D volume.</li>
+        <li><strong>Surface count</strong>: number of isosurfaces rendered.</li>
+        <li><strong>3D voxel cap</strong>: downsampling limit used before isosurface rendering to keep the 3D view tractable.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Exports</h2>
+      <ul>
+        <li>Diffuse volume: <code>.dat</code>, <code>.json</code>, <code>.vtk</code>, <code>.cube</code></li>
+        <li>2D slice: CSV and SVG</li>
+        <li>3D plots: Plotly HTML and SVG exports</li>
+      </ul>
+      <p><strong>Base name</strong> controls the export filename prefix. <strong>Open Slice Window</strong> opens the current 2D slice in a separate browser window for side-by-side comparison. VTK and Cube export expect uniform axes; if the reciprocal axes are not uniform, those exports are intentionally rejected by the tool.</p>
+      <p>For sample-specific workflows, use the <a href="diffuse_scattering_examples.html">examples guide</a>.</p>
+    </section>
+
+      </main>
+      <footer class="small">
+        <p>Diffuse-scattering documentation surface for Utilities.</p>
+      </footer>
+    </body>
+    </html>

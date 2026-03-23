@@ -3,7 +3,7 @@
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Utilities Documentation Home</title>
+      <title>Diffuse Scattering Troubleshooting</title>
 
   <style>
     body { font-family: Arial, sans-serif; margin: 2rem; line-height: 1.6; color: #1f2937; background: #f8fafc; }
@@ -25,7 +25,7 @@
     </head>
     <body>
       <header>
-        <h1>Utilities Documentation Home</h1>
+        <h1>Diffuse Scattering Troubleshooting</h1>
         <p class="small">Utilities documentation for the RMC6f diffuse-scattering tool.</p>
       </header>
       <nav>
@@ -41,24 +41,45 @@
       <main>
 
 <section>
-  <h2>Diffuse Scattering Documentation</h2>
+  <h2>Start With The Smallest Stable Example</h2>
+  <p>If the tool appears unstable, start with <code>LiFeO2.rmc6f</code> and moderate grid spacing before moving to the larger or more complex examples.</p>
+</section>
+<section>
+  <h2>WebGPU Does Not Work</h2>
   <ul>
-    <li><a href="diffuse_scattering.html">Diffuse Scattering Guide</a></li>
-    <li><a href="diffuse_scattering_examples.html">Diffuse Scattering Examples</a></li>
-    <li><a href="diffuse_scattering_theory.html">Diffuse Scattering Theory</a></li>
-    <li><a href="diffuse_scattering_supplementary.html">Diffuse Scattering Supplementary</a></li>
-    <li><a href="diffuse_scattering_bibliography.html">Diffuse Scattering Bibliography</a></li>
-    <li><a href="diffuse_scattering_troubleshooting.html">Diffuse Scattering Troubleshooting</a></li>
+    <li>Use a recent Chromium-based browser with WebGPU enabled.</li>
+    <li>If WebGPU is unavailable, switch the backend to <strong>CPU FFT</strong>.</li>
+    <li>For verification runs, CPU FFT is the preferred fallback.</li>
   </ul>
 </section>
 <section>
-  <h2>Live Tool Surface</h2>
+  <h2>Runs Are Slow Or Too Large</h2>
   <ul>
-    <li><a href="../RMCProfileUtilities/Diffuse_Scattering/Diffuse_Scattering_RMC6f.html">RMC6f Diffuse Scattering Tool</a></li>
-    <li><a href="../RMCProfileUtilities/Select_Subvolume/RMC6f_Select_Subvolume_App.html">RMC6f Select Subvolume App</a></li>
-    <li><a href="../RMCProfileUtilities/PCA_KDE/PCA_KDE_rmcdisplacements.html">PCA KDE Tool</a></li>
-    <li><a href="../RMCProfileUtilities/PCA_SDE/PCA_SDE_rmcdisplacements.html">PCA SDE Tool</a></li>
+    <li>Increase the grid step.</li>
+    <li>Reduce the reciprocal-space range.</li>
+    <li>Switch from WebGPU to CPU FFT only if debugging a backend-specific problem.</li>
+    <li>Use <code>LiFeO2.rmc6f</code> or <code>CaTiO3.rmc6f</code> before attempting PMN.</li>
   </ul>
+</section>
+<section>
+  <h2>2D Slice Looks Hard To Interpret</h2>
+  <ul>
+    <li>Reset the slice and color levels.</li>
+    <li>Start with axis mode, then move to normal-plane mode.</li>
+    <li>Use the examples guide to understand which feature families to expect in each sample.</li>
+  </ul>
+</section>
+<section>
+  <h2>Scattering Model Confusion</h2>
+  <ul>
+    <li>Use the scattering type/model controls to match the experimental modality.</li>
+    <li>Neutron, X-ray, and electron settings are not interchangeable.</li>
+    <li>For published scientific interpretation, always record which scattering option was used.</li>
+  </ul>
+</section>
+<section>
+  <h2>Exports</h2>
+  <p>If a plot export is disabled, compute the diffuse volume first. Slice and 3D export actions are tied to available results and active views.</p>
 </section>
 
       </main>

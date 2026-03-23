@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Diffuse Scattering Examples</title>
+
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; line-height: 1.6; color: #1f2937; background: #f8fafc; }
+    header, main, footer, nav { max-width: 960px; margin: 0 auto; }
+    header { margin-bottom: 1.5rem; }
+    nav { margin-bottom: 1.5rem; padding: 0.85rem 1rem; background: #e2e8f0; border-radius: 10px; }
+    nav a { margin-right: 1rem; font-weight: 600; }
+    section { background: white; padding: 1.25rem 1.5rem; border-radius: 12px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    h1, h2, h3 { color: #0f172a; }
+    code { background: #eef2ff; padding: 0 4px; border-radius: 4px; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #cbd5e1; padding: 0.55rem 0.7rem; text-align: left; vertical-align: top; }
+    th { background: #e2e8f0; }
+    .callout { padding: 0.9rem 1rem; border-left: 4px solid #1d4ed8; background: #eff6ff; border-radius: 8px; }
+    .small { font-size: 0.95rem; color: #475569; }
+  </style>
+
+    </head>
+    <body>
+      <header>
+        <h1>Diffuse Scattering Examples</h1>
+        <p class="small">Utilities documentation for the RMC6f diffuse-scattering tool.</p>
+      </header>
+      <nav>
+        <a href="index.html">Docs Home</a>
+        <a href="diffuse_scattering.html">Guide</a>
+        <a href="diffuse_scattering_examples.html">Examples</a>
+        <a href="diffuse_scattering_theory.html">Theory</a>
+        <a href="diffuse_scattering_supplementary.html">Supplementary</a>
+        <a href="diffuse_scattering_bibliography.html">Bibliography</a>
+        <a href="diffuse_scattering_troubleshooting.html">Troubleshooting</a>
+        <a href="../RMCProfileUtilities/Diffuse_Scattering/Diffuse_Scattering_RMC6f.html">Open Tool</a>
+      </nav>
+      <main>
+
+<section>
+  <h2>Recommended First-Use Order</h2>
+  <ol>
+    <li><strong>LiFeO2.rmc6f</strong> — a practical first benchmark for learning diffuse manifolds, custom plane slicing, and short-range-order interpretation.</li>
+    <li><strong>CaTiO3.rmc6f</strong> — a compact displacement benchmark for comparing rod-like and localized diffuse features produced by different structural mechanisms.</li>
+    <li><strong>PMN_300k.rmc6f</strong> — the largest and most advanced benchmark, useful once you are already comfortable with the calculator workflow.</li>
+  </ol>
+</section>
+<section>
+  <h2>At A Glance</h2>
+  <table>
+    <tr><th>File</th><th>Material</th><th>Shipped file size/surface</th><th>Main use in this calculator</th></tr>
+    <tr><td><code>LiFeO2.rmc6f</code></td><td>&gamma;-LiFeO2</td><td>20&times;20&times;20 supercell, 64,000 atoms</td><td>Learn diffuse manifolds and superlattice condensation in a chemically ordered benchmark.</td></tr>
+    <tr><td><code>CaTiO3.rmc6f</code></td><td>CaTiO3</td><td>16&times;16&times;16 supercell, 20,480 atoms</td><td>Compare overlapping displacement-driven diffuse features with different shapes.</td></tr>
+    <tr><td><code>PMN_300k.rmc6f</code></td><td>PMN at 300 K</td><td>40&times;40&times;40 supercell, 320,000 atoms</td><td>Inspect anisotropic relaxor diffuse scattering and advanced slice placement in the largest shipped benchmark.</td></tr>
+  </table>
+</section>
+<section>
+  <h2>&gamma;-LiFeO2 Chemical-Order Benchmark</h2>
+  <p><code>LiFeO2.rmc6f</code> is based on the MOSAIC manuscript benchmark for <strong>&gamma;-LiFeO2</strong>. It is a practical first example for learning how the calculator behaves on a configuration with a clear diffuse-scattering manifold.</p>
+  <p>In the manuscript model, Li and Fe are distributed so that each oxygen is coordinated by exactly 3 Li and 3 Fe cations. That local rule creates short-range order and yields the characteristic diffuse surface approximately described by <code>cos(&pi;h) + cos(&pi;k) + cos(&pi;l) &asymp; 0</code>. On top of that, nanoscale <code>L1_1</code>-type ordering introduces condensation of intensity near <code>1/2(111)</code>-type locations.</p>
+  <h3>Why This Sample Matters</h3>
+  <ul>
+    <li>It shows both a broad diffuse manifold and more localized superlattice-related condensation.</li>
+    <li>It is chemically simple enough that the 3D slice plane and 2D slice map are easy to interpret.</li>
+    <li>It is a useful sample for learning normal-plane slicing.</li>
+  </ul>
+  <h3>Inspect First</h3>
+  <ul>
+    <li>the broad short-range-order manifold in the 3D Slice Plane</li>
+    <li>the buildup of intensity near <code>1/2(111)</code>-type locations</li>
+    <li>how the same feature family looks in 3D context versus the 2D slice map</li>
+  </ul>
+  <h3>Suggested Workflow</h3>
+  <ol>
+    <li>Compute diffuse.</li>
+    <li>Start in <strong>Normal plane</strong> mode.</li>
+    <li>Move the plane through the manifold and watch how the 2D slice changes as it cuts the broad diffuse surface.</li>
+    <li>Then move the plane toward <code>1/2(111)</code>-type regions to compare manifold scattering with condensed intensity.</li>
+  </ol>
+  <h3>Practical Notes</h3>
+  <ul>
+    <li>This file is large enough to be meaningful but still friendly for first runs.</li>
+    <li>If you are just learning the UI, start with a moderate grid step before refining the grid.</li>
+    <li>Best first views: <strong>3D Slice Plane</strong> and <strong>2D Slice Map</strong>.</li>
+  </ul>
+  <p class="small">Scientific context source: MOSAIC manuscript, <em>A Filter-Based Approach Linking Diffuse Scattering Features to Site-Resolved Real-Space Fields</em>, LiFeO2 benchmark section.</p>
+</section>
+<section>
+  <h2>CaTiO3 Displacement Benchmark</h2>
+  <p><code>CaTiO3.rmc6f</code> is based on the MOSAIC CaTiO3 displacement benchmark. It is a compact example for seeing that two different structural mechanisms can generate diffuse features with different reciprocal-space shapes.</p>
+  <p>In the manuscript benchmark, the structure contains two coexisting distortion families:</p>
+  <ul>
+    <li>octahedral rotations, which produce rod-like diffuse intensity</li>
+    <li>breathing distortions, which produce more localized superlattice-related intensity around <code>1/2(111)</code></li>
+  </ul>
+  <h3>Why This Sample Matters</h3>
+  <ul>
+    <li>It shows overlapping diffuse signatures caused by different displacement mechanisms.</li>
+    <li>It is ideal for comparing elongated rod-like features against more localized features in the same dataset.</li>
+    <li>It is smaller than PMN and therefore a practical second benchmark after LiFeO2.</li>
+  </ul>
+  <h3>Inspect First</h3>
+  <ul>
+    <li>rod-like diffuse features running through <code>(1/2,1/2,l)</code>-type regions</li>
+    <li>localized/spherical features near <code>1/2(111)</code></li>
+    <li>how different slices emphasize one distortion family more strongly than the other</li>
+  </ul>
+  <h3>Suggested Workflow</h3>
+  <ol>
+    <li>Compute diffuse.</li>
+    <li>Begin with axis slices to find elongated rods.</li>
+    <li>Switch to normal-plane mode to compare rod-dominated cuts with cuts that isolate more localized intensity.</li>
+    <li>Use the 2D slice map to compare shape and anisotropy directly.</li>
+  </ol>
+  <h3>Practical Notes</h3>
+  <ul>
+    <li>This is a strong benchmark for users who want to understand how reciprocal-space shape maps to structural mechanism.</li>
+    <li>Best first views: <strong>2D Slice Map</strong> for feature-shape comparison, then <strong>3D Slice Plane</strong> for orientation.</li>
+  </ul>
+  <p class="small">Scientific context source: MOSAIC manuscript, <em>A Filter-Based Approach Linking Diffuse Scattering Features to Site-Resolved Real-Space Fields</em>, CaTiO3 benchmark section.</p>
+</section>
+<section>
+  <h2>PMN At 300 K Relaxor Benchmark</h2>
+  <p><code>PMN_300k.rmc6f</code> is a <strong>300 K PMN relaxor ferroelectric benchmark</strong> and the most advanced shipped sample. It is the right file when you want to inspect strongly anisotropic diffuse scattering and practice more demanding slice placement in reciprocal space.</p>
+  <p>PMN is a widely studied relaxor with chemically disordered B-site occupancy and pronounced polar/displacement correlations. The 2025 Nature Communications article discusses mesoscale polarization textures and chemically driven heterogeneity in PMN and related relaxor systems, while the earlier 2019 Nature Communications paper provides complementary local-order and polar-nanoregion context for classical PMN. For the purposes of this calculator, the practical point is that PMN produces broad anisotropic diffuse intensity that is often easier to interpret by combining a 3D overview with targeted 2D cuts.</p>
+  <h3>Why This Sample Matters</h3>
+  <ul>
+    <li>It is the most demanding and most structurally rich example included with the calculator.</li>
+    <li>It is useful for exploring anisotropic diffuse scattering, broad reciprocal-space features, and careful slice placement.</li>
+    <li>It is a demanding example for both UI workflow and computational settings because it is the largest shipped file.</li>
+  </ul>
+  <h3>Inspect First</h3>
+  <ul>
+    <li>anisotropic diffuse features rather than only isolated compact spots</li>
+    <li>how the 2D slice shape and contrast change as you move through different diffuse regions</li>
+    <li>the 3D isosurface as a global view before deciding where to place more detailed slices</li>
+  </ul>
+  <h3>Suggested Workflow</h3>
+  <ol>
+    <li>Compute diffuse.</li>
+    <li>Start from the <strong>3D Isosurface</strong> to see where the main anisotropic diffuse regions sit.</li>
+    <li>Then use the <strong>2D Slice Map</strong> to inspect anisotropic regions in more detail.</li>
+    <li>Use custom plane slicing only after you have identified a feature family you want to follow through reciprocal space.</li>
+  </ol>
+  <h3>Practical Notes</h3>
+  <ul>
+    <li>This is the largest shipped file: 320,000 atoms in a 40&times;40&times;40 supercell.</li>
+    <li>It is not the recommended first-run example. Start with LiFeO2 or CaTiO3 first.</li>
+    <li>For first exploration, begin with a coarser reciprocal-space grid than you would use for a publication-quality figure.</li>
+  </ul>
+  <p class="small">Scientific context references: Eremenko et al., <a href="https://www.nature.com/articles/s41467-025-62658-1"><em>Emergent topological polarization textures in relaxor ferroelectrics</em></a>, Nature Communications <strong>16</strong>, 7531 (2025); and Eremenko et al., <em>Local atomic order and hierarchical polar nanoregions in a classical relaxor ferroelectric</em>, Nature Communications <strong>10</strong>(1), 2728 (2019).</p>
+</section>
+<section>
+  <h2>How To Choose The Right Example</h2>
+  <table>
+    <tr><th>If you want to learn...</th><th>Start with...</th></tr>
+    <tr><td>normal-plane slicing and diffuse manifolds</td><td><code>LiFeO2.rmc6f</code></td></tr>
+    <tr><td>how different structural mechanisms give different diffuse-feature shapes</td><td><code>CaTiO3.rmc6f</code></td></tr>
+    <tr><td>anisotropic relaxor diffuse scattering in a large benchmark</td><td><code>PMN_300k.rmc6f</code></td></tr>
+  </table>
+</section>
+<section>
+  <h2>Scope Note</h2>
+  <p>These examples are included to help users learn reciprocal-space navigation and qualitative interpretation of diffuse features. The calculator is a forward diffuse-scattering and visualization tool; it does not perform the MOSAIC inverse reconstruction workflow.</p>
+</section>
+      </main>
+      <footer class="small">
+        <p>Diffuse-scattering documentation surface for Utilities.</p>
+      </footer>
+    </body>
+    </html>
