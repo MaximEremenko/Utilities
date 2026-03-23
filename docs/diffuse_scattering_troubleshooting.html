@@ -53,6 +53,15 @@
   </ul>
 </section>
 <section>
+  <h2>Results Differ Between Backends</h2>
+  <ul>
+    <li>The WebGPU FFT/NUFFT stack and the CPU FFT path use <code>fp32</code> arithmetic and do not provide <code>fp64</code> execution.</li>
+    <li>Small numerical differences or precision-related artifacts can appear for large grids, high dynamic range, or cancellation-sensitive features.</li>
+    <li>For important checks, compare against <strong>type3NufftCpuDirect</strong>.</li>
+    <li>If the interpretation changes with backend or grid density, treat that result cautiously.</li>
+  </ul>
+</section>
+<section>
   <h2>Runs Are Slow Or Too Large</h2>
   <ul>
     <li>Increase the grid step.</li>

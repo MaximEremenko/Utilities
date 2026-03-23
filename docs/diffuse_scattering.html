@@ -61,6 +61,10 @@ Output: diffuse volume + slices + exports (.dat/.json/.vtk/.cube/.csv/.svg/.html
         <figcaption class="small">Example live interface after computing diffuse scattering for <code>LiFeO2.rmc6f</code>. The main workflow areas are the input/setup panel on the left, the 3D Slice Plane at top center, the 2D Slice Map below it, and the 3D render/export controls on the right.</figcaption>
       </figure>
     </section>
+<section>
+  <h2>Precision Notice</h2>
+  <div class="callout"><strong>Important:</strong> the WebGPU FFT/NUFFT stack and the CPU FFT path used by this calculator currently operate in single precision (<code>fp32</code>) and do not provide <code>fp64</code> arithmetic. Small numerical differences, rounding-sensitive behavior, or precision-related artifacts can appear, especially for large grids, high dynamic range, or cancellation-sensitive features. For important scientific checks, compare against <code>type3NufftCpuDirect</code> and test whether the interpretation is stable with respect to backend and grid settings.</div>
+</section>
     <section>
       <h2>Major Views</h2>
       <table>

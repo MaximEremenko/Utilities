@@ -53,6 +53,17 @@
   </ul>
 </section>
 <section>
+  <h2>Precision Note</h2>
+  <p>The bundled WebGPU FFT/NUFFT stack and the CPU FFT path use single-precision (<code>fp32</code>) arithmetic. They do not provide <code>fp64</code> execution. For demanding cases this can introduce small numerical differences, rounding-sensitive behavior, or precision-related artifacts.</p>
+  <ul>
+    <li>large reciprocal-space grids</li>
+    <li>strong dynamic range between Bragg-like and diffuse intensity</li>
+    <li>subtraction- or cancellation-sensitive features</li>
+    <li>backend-to-backend comparisons</li>
+  </ul>
+  <p>For important scientific checks, compare against <code>type3NufftCpuDirect</code> and verify that the qualitative interpretation is stable with respect to backend and grid settings.</p>
+</section>
+<section>
   <h2>Scattering Table Families</h2>
   <ul>
     <li><strong>Neutron:</strong> embedded neutron scattering lengths with fallback value <code>10.0</code> for unknown elements.</li>
