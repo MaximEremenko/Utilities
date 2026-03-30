@@ -9,13 +9,13 @@ and related structural-analysis workflows.
 Public-facing documentation for the diffuse-scattering utility now lives in the
 GitHub Pages docs surface:
 
-- [Diffuse Scattering Guide](docs/diffuse_scattering.html)
-- [Diffuse Scattering Examples](docs/diffuse_scattering_examples.html)
-- [Diffuse Scattering Theory](docs/diffuse_scattering_theory.html)
-- [Diffuse Scattering Supplementary](docs/diffuse_scattering_supplementary.html)
-- [Diffuse Scattering Bibliography](docs/diffuse_scattering_bibliography.html)
-- [Diffuse Scattering Troubleshooting](docs/diffuse_scattering_troubleshooting.html)
-- [Utilities Docs Home](docs/index.html)
+- [Diffuse Scattering Guide](https://maximeremenko.github.io/Utilities/docs/diffuse_scattering.html)
+- [Diffuse Scattering Examples](https://maximeremenko.github.io/Utilities/docs/diffuse_scattering_examples.html)
+- [Diffuse Scattering Theory](https://maximeremenko.github.io/Utilities/docs/diffuse_scattering_theory.html)
+- [Diffuse Scattering Supplementary](https://maximeremenko.github.io/Utilities/docs/diffuse_scattering_supplementary.html)
+- [Diffuse Scattering Bibliography](https://maximeremenko.github.io/Utilities/docs/diffuse_scattering_bibliography.html)
+- [Diffuse Scattering Troubleshooting](https://maximeremenko.github.io/Utilities/docs/diffuse_scattering_troubleshooting.html)
+- [Utilities Docs Home](https://maximeremenko.github.io/Utilities/docs/index.html)
 
 ## Live Demos
 
@@ -59,7 +59,7 @@ the top of this README.
 
 Backend provenance, scattering-table families, and reproducibility notes are collected in:
 
-- [Diffuse Scattering Supplementary](docs/diffuse_scattering_supplementary.html)
+- [Diffuse Scattering Supplementary](https://maximeremenko.github.io/Utilities/docs/diffuse_scattering_supplementary.html)
 
 ## Contribution
 
