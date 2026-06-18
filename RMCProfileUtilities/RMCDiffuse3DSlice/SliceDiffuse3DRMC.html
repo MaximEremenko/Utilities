@@ -688,12 +688,16 @@ function looksLikeHeader(nums){
 function parseNumbers(line){
   const parts = line.trim().split(/[,\s]+/);
   const nums = new Array(parts.length);
+  let strict = true;
   for(let i=0;i<parts.length;i++){
     const v = Number(parts[i].replace(/D/i, "E"));
-    if(!Number.isFinite(v)) return null;
+    if(!Number.isFinite(v)){ strict = false; break; }
     nums[i] = v;
   }
-  return nums;
+  if(strict) return nums;
+  const matches = String(line).match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][-+]?\d+)?/g);
+  if(!matches || matches.length < 2) return null;
+  return matches.map(v => Number(v.replace(/D/i, "E"))).filter(Number.isFinite);
 }
 
 function valueFromRmcDiffuse3dRow(name, nums, header){
