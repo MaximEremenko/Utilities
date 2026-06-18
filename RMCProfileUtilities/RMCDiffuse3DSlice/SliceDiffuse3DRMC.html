@@ -357,6 +357,7 @@ input[type=range]{padding:0;border:0;accent-color:var(--brand)}
 <script>
 const PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js";
 const H5WASM_CDN = "https://cdn.jsdelivr.net/npm/h5wasm@0.7.5/dist/esm/hdf5_hl.js";
+const STREAM_TEXT_THRESHOLD = 64 * 1024 * 1024;
 const $ = (id) => document.getElementById(id);
 const state = {
   res:null,
@@ -912,6 +913,95 @@ function parseTextData(name, text){
   if(looksLikeIndexed3dRows(text)) return parse3dsDat(name, text);
   if(looksLikeNumericMatrix(text)) return parseMatrix2d(name, text);
   return parse3dsDat(name, text);
+}
+
+async function forEachFileLine(file, onLine, chunkSize=4 * 1024 * 1024){
+  let offset = 0, carry = "";
+  while(offset < file.size){
+    const text = await file.slice(offset, Math.min(file.size, offset + chunkSize)).text();
+    offset += chunkSize;
+    const parts = (carry + text).split("\n");
+    carry = parts.pop() || "";
+    for(let line of parts){
+      if(line.endsWith("\r")) line = line.slice(0, -1);
+      if(onLine(line) === false) return;
+    }
+  }
+  if(carry && onLine(carry.replace(/\r$/, "")) === false) return;
+}
+
+function headerFromNums(nums){
+  return {
+    points:Math.round(nums[0]),
+    sections:Math.round(nums[1]),
+    scale:nums.length > 2 ? nums[2] : null,
+    offset:nums.length > 3 ? nums[3] : null
+  };
+}
+
+async function parseIndexedTextFile(file, sampleText){
+  let header = null, firstNumeric = true, skipped = 0, rows = 0;
+  let minI=Infinity, minJ=Infinity, minK=Infinity, maxI=-Infinity, maxJ=-Infinity, maxK=-Infinity;
+  let rawMin=Infinity, rawMax=-Infinity;
+  await forEachFileLine(file, line => {
+    const s = line.trim();
+    if(!s || s[0] === "#" || s[0] === "!" || s[0] === ";") return;
+    const nums = parseNumbers(s);
+    if(!nums){ skipped++; return; }
+    if(firstNumeric){
+      firstNumeric = false;
+      if(looksLikeHeader(nums)){ header = headerFromNums(nums); return; }
+    }
+    if(nums.length >= 7 && isIntLike(nums[0]) && isIntLike(nums[1]) && isIntLike(nums[2])){
+      const ii = Math.round(nums[0]), jj = Math.round(nums[1]), kk = Math.round(nums[2]);
+      const val = valueFromRmcDiffuse3dRow(file.name, nums, header);
+      if(!Number.isFinite(val)){ skipped++; return; }
+      if(ii < minI) minI = ii; if(ii > maxI) maxI = ii;
+      if(jj < minJ) minJ = jj; if(jj > maxJ) maxJ = jj;
+      if(kk < minK) minK = kk; if(kk > maxK) maxK = kk;
+      if(val < rawMin) rawMin = val; if(val > rawMax) rawMax = val;
+      rows++;
+    }else{
+      skipped++;
+    }
+  });
+  if(rows < 1) throw new Error("No indexed 3DS data rows found in streamed text file.");
+  const shape = [maxI - minI + 1, maxJ - minJ + 1, maxK - minK + 1];
+  const total = shape[0] * shape[1] * shape[2];
+  if(total > 60000000) throw new Error(`Grid ${shape[0]} x ${shape[1]} x ${shape[2]} is too large for browser plotting.`);
+  const I = new Float64Array(total);
+  I.fill(NaN);
+  const hAxis = new Float64Array(shape[0]), kAxis = new Float64Array(shape[1]), lAxis = new Float64Array(shape[2]);
+  const hSeen = new Uint8Array(shape[0]), kSeen = new Uint8Array(shape[1]), lSeen = new Uint8Array(shape[2]);
+  let filled = 0;
+  firstNumeric = true;
+  await forEachFileLine(file, line => {
+    const s = line.trim();
+    if(!s || s[0] === "#" || s[0] === "!" || s[0] === ";") return;
+    const nums = parseNumbers(s);
+    if(!nums) return;
+    if(firstNumeric){
+      firstNumeric = false;
+      if(looksLikeHeader(nums)) return;
+    }
+    if(nums.length < 7 || !isIntLike(nums[0]) || !isIntLike(nums[1]) || !isIntLike(nums[2])) return;
+    const a = Math.round(nums[0]) - minI, b = Math.round(nums[1]) - minJ, c = Math.round(nums[2]) - minK;
+    if(a < 0 || b < 0 || c < 0 || a >= shape[0] || b >= shape[1] || c >= shape[2]) return;
+    const val = valueFromRmcDiffuse3dRow(file.name, nums, header);
+    if(!Number.isFinite(val)) return;
+    const p = idx3(shape, a, b, c);
+    if(!Number.isFinite(I[p])) filled++;
+    I[p] = val;
+    if(!hSeen[a]){ hAxis[a] = nums[3]; hSeen[a] = 1; }
+    if(!kSeen[b]){ kAxis[b] = nums[4]; kSeen[b] = 1; }
+    if(!lSeen[c]){ lAxis[c] = nums[5]; lSeen[c] = 1; }
+  });
+  fillMissingAxis(hAxis, hSeen);
+  fillMissingAxis(kAxis, kSeen);
+  fillMissingAxis(lAxis, lSeen);
+  const coordKind = inferCoordKind(file.name, sampleText || "", "indexed 3ds");
+  const meta = extractBasisFromText((sampleText || "").slice(0, 8192));
+  return finalizeResult({file:file.name, header, skipped, rows, filled, format:"indexed text stream", coordKind, shape, h:hAxis, k:kAxis, l:lAxis, I, rawMin, rawMax, ...meta});
 }
 
 async function ensureH5wasm(){
@@ -1495,6 +1585,13 @@ async function parseNexusFile(file){
 
 async function parseFile(file){
   if(/\.(nx|nxs|h5|hdf5)$/i.test(file.name)) return parseNexusFile(file);
+  if(file.size > STREAM_TEXT_THRESHOLD){
+    const sampleText = await file.slice(0, Math.min(file.size, 262144)).text();
+    const sample = sampleText.trimStart();
+    if(!sample.startsWith("{") && !sample.startsWith("[") && !/^#\s*vtk\b/i.test(sample) && !/\bDATASET\s+STRUCTURED_POINTS\b/i.test(sample) && looksLikeIndexed3dRows(sampleText)){
+      return parseIndexedTextFile(file, sampleText);
+    }
+  }
   const text = await file.text();
   return parseTextData(file.name, text);
 }
