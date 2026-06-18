@@ -358,6 +358,18 @@ input[type=range]{padding:0;border:0;accent-color:var(--brand)}
 const PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js";
 const H5WASM_CDN = "https://cdn.jsdelivr.net/npm/h5wasm@0.7.5/dist/esm/hdf5_hl.js";
 const STREAM_TEXT_THRESHOLD = 64 * 1024 * 1024;
+const MAX_BROWSER_VOXELS = 1000000000;
+const MAX_AXIS_SLICE_CELLS = 1500000;
+const MAX_LIVE_AXIS_SLICE_CELLS = 90000;
+const MAX_3D_SLICE_CELLS = 180 * 180;
+const PARALLEL_INDEXED_MIN_BYTES = 192 * 1024 * 1024;
+const PARALLEL_INDEXED_CHUNK_BYTES = 128 * 1024 * 1024;
+const MAX_INDEXED_WORKERS = 8;
+const ORDERED_INDEXED_SAMPLE_BYTES = 32 * 1024 * 1024;
+const ORDERED_INDEXED_TAIL_BYTES = 1024 * 1024;
+const CACHE_DB_NAME = "three_ds_plotter_cache_v1";
+const CACHE_STORE_NAME = "parsed_volumes";
+const CACHE_VERSION = 1;
 const $ = (id) => document.getElementById(id);
 const state = {
   res:null,
@@ -370,9 +382,16 @@ const state = {
   levelClickSuppress:false,
   manualLevelBounds:null,
   offscreen:null,
+  offscreenImage:null,
+  drawRaf:0,
+  moveActive:false,
+  planeFastBusy:false,
+  planeFastQueued:false,
   renderTimer:0,
   plotlyPromise:null,
   h5wasmPromise:null,
+  cacheDbPromise:null,
+  indexedWorkerUrl:null,
   cameras:{plane:null, iso:null},
   resizeTimer:0
 };
@@ -392,6 +411,123 @@ function status(msg, kind=""){
 }
 function set3dStatus(msg){ $("plot3dStatus").textContent = msg; }
 function setIsoStatus(msg){ $("iso3dStatus").textContent = msg; }
+function makeLoadProgress(file){
+  let last = 0;
+  return (info={}) => {
+    const now = Date.now();
+    if(!info.force && now - last < 150) return;
+    last = now;
+    const size = Number(info.size || file.size || 0);
+    const offset = Math.min(size, Math.max(0, Number(info.offset || 0)));
+    const pct = size ? ` ${fmt(100 * offset / size, 1)}%` : "";
+    const amount = info.units === "rows" || info.units === "chunks"
+      ? size ? ` (${offset.toLocaleString()} / ${size.toLocaleString()} ${info.units})` : ""
+      : size ? ` (${formatBytes(offset)} / ${formatBytes(size)})` : "";
+    const rows = info.units === "rows" ? "" : Number.isFinite(Number(info.rows)) ? `, ${Number(info.rows).toLocaleString()} rows` : "";
+    status(`${info.phase || "Reading"} ${file.name}:${pct}${amount}${rows}`);
+  };
+}
+
+function fileCacheKey(file){
+  return [
+    CACHE_VERSION,
+    file && file.name || "",
+    file && file.size || 0,
+    file && file.lastModified || 0
+  ].join("|");
+}
+
+function idbRequest(req){
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("IndexedDB request failed."));
+  });
+}
+
+function openCacheDb(){
+  if(state.cacheDbPromise) return state.cacheDbPromise;
+  state.cacheDbPromise = new Promise(resolve => {
+    if(typeof indexedDB === "undefined"){
+      resolve(null);
+      return;
+    }
+    const req = indexedDB.open(CACHE_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains(CACHE_STORE_NAME)) db.createObjectStore(CACHE_STORE_NAME, {keyPath:"key"});
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+    req.onblocked = () => resolve(null);
+  });
+  return state.cacheDbPromise;
+}
+
+function cacheBaseFromResult(res){
+  const keys = [
+    "file","header","skipped","rows","filled","format","coordKind","shape",
+    "h","k","l","I","rawMin","rawMax","dataKind","Bq","Bp","basisSource",
+    "gridOrigin","gridVectors","gridVectorSource","axisLabels","h5"
+  ];
+  const base = {};
+  for(const key of keys){
+    if(res[key] !== undefined) base[key] = res[key];
+  }
+  return base;
+}
+
+function toFloat64View(value){
+  return value instanceof Float64Array ? value : Float64Array.from(value || []);
+}
+
+function restoreCachedResult(record){
+  const base = {...(record && record.base || {})};
+  if(!base.I || !base.h || !base.k || !base.l || !base.shape) return null;
+  base.I = toFloat64View(base.I);
+  base.h = toFloat64View(base.h);
+  base.k = toFloat64View(base.k);
+  base.l = toFloat64View(base.l);
+  base.shape = Array.from(base.shape).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  if(base.shape.length < 3) return null;
+  base.fromCache = true;
+  return finalizeResult(base);
+}
+
+async function readCachedResult(file, progress=null){
+  if(progress) progress({phase:"Checking cache", offset:0, size:file.size, force:true});
+  try{
+    const db = await openCacheDb();
+    if(!db) return null;
+    const tx = db.transaction(CACHE_STORE_NAME, "readonly");
+    const record = await idbRequest(tx.objectStore(CACHE_STORE_NAME).get(fileCacheKey(file)));
+    const restored = restoreCachedResult(record);
+    if(restored && progress) progress({phase:"Restored from cache", offset:file.size, size:file.size, force:true});
+    return restored;
+  }catch(_){
+    return null;
+  }
+}
+
+function queueCacheSave(file, res){
+  if(!file || !res || res.fromCache) return;
+  setTimeout(async () => {
+    try{
+      const db = await openCacheDb();
+      if(!db) return;
+      const record = {
+        key:fileCacheKey(file),
+        version:CACHE_VERSION,
+        savedAt:Date.now(),
+        source:{name:file.name, size:file.size, lastModified:file.lastModified || 0},
+        base:cacheBaseFromResult(res)
+      };
+      const tx = db.transaction(CACHE_STORE_NAME, "readwrite");
+      await idbRequest(tx.objectStore(CACHE_STORE_NAME).put(record));
+    }catch(err){
+      console.warn("3DS cache save skipped:", err && err.message || err);
+    }
+  }, 0);
+}
 function fmt(n, digits=5){
   if(!Number.isFinite(n)) return "-";
   if(Math.abs(n) >= 1e5 || (Math.abs(n) > 0 && Math.abs(n) < 1e-3)) return n.toExponential(3);
@@ -436,6 +572,38 @@ function regularAxis(n, start=0, step=1){
   return a;
 }
 
+function formatBytes(n){
+  const units = ["B","KB","MB","GB"];
+  let v = Number(n) || 0, i = 0;
+  while(v >= 1024 && i < units.length - 1){ v /= 1024; i++; }
+  return `${v.toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+function gridPointCount(shape){
+  const dims = Array.from(shape || []).slice(0, 3).map(v => Math.max(1, Math.floor(Number(v) || 1)));
+  while(dims.length < 3) dims.push(1);
+  const total = dims[0] * dims[1] * dims[2];
+  return {dims, total};
+}
+
+function assertVolumeFits(shape, context="Grid"){
+  const {dims, total} = gridPointCount(shape);
+  if(!Number.isSafeInteger(total) || total <= 0) throw new Error(`${context} dimensions are invalid.`);
+  if(total > MAX_BROWSER_VOXELS){
+    const cap = MAX_BROWSER_VOXELS * 8;
+    throw new Error(`${context} ${dims[0]} x ${dims[1]} x ${dims[2]} has ${total.toLocaleString()} voxels. ` +
+      `The browser limit is ${MAX_BROWSER_VOXELS.toLocaleString()} voxels (${formatBytes(cap)} for one dense array); ` +
+      `crop, downsample, or convert to a smaller slice before loading.`);
+  }
+  return {dims, total};
+}
+
+function isLikelyMemoryError(err){
+  const msg = String(err && (err.message || err) || "").toLowerCase();
+  return msg.includes("out of memory") || msg.includes("allocation") || msg.includes("array buffer") ||
+    msg.includes("invalid array length") || msg.includes("wasm memory") || msg.includes("memory access");
+}
+
 function validMatrix3(m){
   return Array.isArray(m) && m.length === 3 && m.every(r => Array.isArray(r) && r.length === 3 && r.every(Number.isFinite));
 }
@@ -469,8 +637,8 @@ function vec2space(v){
 }
 
 function basisFromCell(cell){
-  if(!Array.isArray(cell) || cell.length < 6) return null;
-  const nums = cell.slice(0,6).map(Number);
+  if((!Array.isArray(cell) && !ArrayBuffer.isView(cell)) || cell.length < 6) return null;
+  const nums = Array.from(cell).slice(0,6).map(Number);
   if(!nums.every(Number.isFinite) || nums[0] <= 0 || nums[1] <= 0 || nums[2] <= 0) return null;
   const angles = nums.slice(3).map(v => Math.abs(v) > Math.PI * 2 ? v * Math.PI / 180 : v);
   try{
@@ -691,7 +859,8 @@ function parseNumbers(line){
   const nums = new Array(parts.length);
   let strict = true;
   for(let i=0;i<parts.length;i++){
-    const v = Number(parts[i].replace(/D/i, "E"));
+    const token = parts[i];
+    const v = token.indexOf("D") >= 0 || token.indexOf("d") >= 0 ? Number(token.replace(/D/i, "E")) : Number(token);
     if(!Number.isFinite(v)){ strict = false; break; }
     nums[i] = v;
   }
@@ -699,6 +868,20 @@ function parseNumbers(line){
   const matches = String(line).match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][-+]?\d+)?/g);
   if(!matches || matches.length < 2) return null;
   return matches.map(v => Number(v.replace(/D/i, "E"))).filter(Number.isFinite);
+}
+
+function parseStrictDelimitedNumbers(line){
+  const s = line.trim();
+  if(!s) return null;
+  const parts = s.split(/[,\s]+/);
+  const nums = new Array(parts.length);
+  for(let i=0;i<parts.length;i++){
+    const token = parts[i];
+    const v = token.indexOf("D") >= 0 || token.indexOf("d") >= 0 ? Number(token.replace(/D/i, "E")) : Number(token);
+    if(!Number.isFinite(v)) return null;
+    nums[i] = v;
+  }
+  return nums;
 }
 
 function valueFromRmcDiffuse3dRow(name, nums, header){
@@ -710,7 +893,206 @@ function valueFromRmcDiffuse3dRow(name, nums, header){
   return nums[nums.length - 1];
 }
 
+function indexedIntensityFromNums(nums, ampMode){
+  if(ampMode && nums.length >= 8){
+    const re = nums[nums.length - 2], im = nums[nums.length - 1];
+    if(Number.isFinite(re) && Number.isFinite(im)) return Math.hypot(re, im);
+  }
+  return nums[nums.length - 1];
+}
+
+function numberToken(token){
+  return token && (token.indexOf("D") >= 0 || token.indexOf("d") >= 0) ? Number(token.replace(/D/i, "E")) : Number(token);
+}
+
+function numberTokenSlice(line, start, end){
+  const token = line.slice(start, end);
+  return token.indexOf("D") >= 0 || token.indexOf("d") >= 0 ? Number(token.replace(/D/i, "E")) : Number(token);
+}
+
+function tokenBoundsAt(line, targetIndex){
+  let token = 0, inToken = false, start = 0;
+  for(let i=0;i<=line.length;i++){
+    const code = i < line.length ? line.charCodeAt(i) : 32;
+    const sep = i >= line.length || code === 44 || code <= 32;
+    if(sep){
+      if(inToken){
+        if(token === targetIndex) return [start, i];
+        token++;
+        inToken = false;
+      }
+    }else if(!inToken){
+      start = i;
+      inToken = true;
+    }
+  }
+  return null;
+}
+
+function trailingTokenBounds(line, reverseIndex){
+  let token = 0, inToken = false, end = line.length;
+  for(let i=line.length - 1;i>=-1;i--){
+    const code = i >= 0 ? line.charCodeAt(i) : 32;
+    const sep = i < 0 || code === 44 || code <= 32;
+    if(sep){
+      if(inToken){
+        if(token === reverseIndex) return [i + 1, end];
+        token++;
+        inToken = false;
+      }
+    }else if(!inToken){
+      end = i + 1;
+      inToken = true;
+    }
+  }
+  return null;
+}
+
+function firstContentChar(line){
+  for(let i=0;i<line.length;i++){
+    if(line.charCodeAt(i) > 32) return line[i];
+  }
+  return "";
+}
+
+function firstContentCharRange(text, start, end){
+  for(let i=start;i<end;i++){
+    if(text.charCodeAt(i) > 32) return text[i];
+  }
+  return "";
+}
+
+function tokenBoundsAtRange(text, start, end, targetIndex){
+  let token = 0, inToken = false, tokenStart = start;
+  for(let i=start;i<=end;i++){
+    const code = i < end ? text.charCodeAt(i) : 32;
+    const sep = i >= end || code === 44 || code <= 32;
+    if(sep){
+      if(inToken){
+        if(token === targetIndex) return [tokenStart, i];
+        token++;
+        inToken = false;
+      }
+    }else if(!inToken){
+      tokenStart = i;
+      inToken = true;
+    }
+  }
+  return null;
+}
+
+function trailingTokenBoundsRange(text, start, end, reverseIndex){
+  let token = 0, inToken = false, tokenEnd = end;
+  for(let i=end - 1;i>=start - 1;i--){
+    const code = i >= start ? text.charCodeAt(i) : 32;
+    const sep = i < start || code === 44 || code <= 32;
+    if(sep){
+      if(inToken){
+        if(token === reverseIndex) return [i + 1, tokenEnd];
+        token++;
+        inToken = false;
+      }
+    }else if(!inToken){
+      tokenEnd = i + 1;
+      inToken = true;
+    }
+  }
+  return null;
+}
+
+function parseOrderedIndexedFields(line, ampMode, needH, needK, needL, out){
+  if(needH){
+    const bounds = tokenBoundsAt(line, 3);
+    if(!bounds) return false;
+    const h = numberTokenSlice(line, bounds[0], bounds[1]);
+    if(!Number.isFinite(h)) return false;
+    out[0] = h;
+  }
+  if(needK){
+    const bounds = tokenBoundsAt(line, 4);
+    if(!bounds) return false;
+    const k = numberTokenSlice(line, bounds[0], bounds[1]);
+    if(!Number.isFinite(k)) return false;
+    out[1] = k;
+  }
+  if(needL){
+    const bounds = tokenBoundsAt(line, 5);
+    if(!bounds) return false;
+    const l = numberTokenSlice(line, bounds[0], bounds[1]);
+    if(!Number.isFinite(l)) return false;
+    out[2] = l;
+  }
+  const hasAmpPair = ampMode && !!tokenBoundsAt(line, 7);
+  if(hasAmpPair){
+    const reBounds = trailingTokenBounds(line, 1), imBounds = trailingTokenBounds(line, 0);
+    if(!reBounds || !imBounds) return false;
+    const re = numberTokenSlice(line, reBounds[0], reBounds[1]), im = numberTokenSlice(line, imBounds[0], imBounds[1]);
+    if(!Number.isFinite(re) || !Number.isFinite(im)) return false;
+    out[3] = Math.hypot(re, im);
+  }else{
+    const bounds = trailingTokenBounds(line, 0);
+    if(!bounds) return false;
+    const val = numberTokenSlice(line, bounds[0], bounds[1]);
+    if(!Number.isFinite(val)) return false;
+    out[3] = val;
+  }
+  return true;
+}
+
+function parseOrderedIndexedFieldsRange(text, start, end, ampMode, needH, needK, needL, out){
+  if(needH){
+    const bounds = tokenBoundsAtRange(text, start, end, 3);
+    if(!bounds) return false;
+    const h = numberTokenSlice(text, bounds[0], bounds[1]);
+    if(!Number.isFinite(h)) return false;
+    out[0] = h;
+  }
+  if(needK){
+    const bounds = tokenBoundsAtRange(text, start, end, 4);
+    if(!bounds) return false;
+    const k = numberTokenSlice(text, bounds[0], bounds[1]);
+    if(!Number.isFinite(k)) return false;
+    out[1] = k;
+  }
+  if(needL){
+    const bounds = tokenBoundsAtRange(text, start, end, 5);
+    if(!bounds) return false;
+    const l = numberTokenSlice(text, bounds[0], bounds[1]);
+    if(!Number.isFinite(l)) return false;
+    out[2] = l;
+  }
+  const hasAmpPair = ampMode && !!tokenBoundsAtRange(text, start, end, 7);
+  if(hasAmpPair){
+    const reBounds = trailingTokenBoundsRange(text, start, end, 1), imBounds = trailingTokenBoundsRange(text, start, end, 0);
+    if(!reBounds || !imBounds) return false;
+    const re = numberTokenSlice(text, reBounds[0], reBounds[1]), im = numberTokenSlice(text, imBounds[0], imBounds[1]);
+    if(!Number.isFinite(re) || !Number.isFinite(im)) return false;
+    out[3] = Math.hypot(re, im);
+  }else{
+    const bounds = trailingTokenBoundsRange(text, start, end, 0);
+    if(!bounds) return false;
+    const val = numberTokenSlice(text, bounds[0], bounds[1]);
+    if(!Number.isFinite(val)) return false;
+    out[3] = val;
+  }
+  return true;
+}
+
 function flatNumericArray(value){
+  if(value === null || value === undefined) return new Float64Array(0);
+  if(ArrayBuffer.isView(value)){
+    if(value instanceof Float64Array) return value;
+    return Float64Array.from(value, v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : NaN;
+    });
+  }
+  if(Array.isArray(value) && value.every(v => !Array.isArray(v) && !ArrayBuffer.isView(v))){
+    return Float64Array.from(value, v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : NaN;
+    });
+  }
   const out = [];
   const walk = (v) => {
     if(v === null || v === undefined) return;
@@ -729,7 +1111,7 @@ function flatNumericArray(value){
     out.push(Number.isFinite(n) ? n : NaN);
   };
   walk(value);
-  return out;
+  return Float64Array.from(out);
 }
 
 function nestedShape(value){
@@ -767,15 +1149,19 @@ function axisFromPayload(payload, names, n){
 }
 
 function makeVolumeResult(name, shape, hAxis, kAxis, lAxis, values, format, coordKind, header=null, skipped=0, meta={}){
-  const nH = Math.max(1, Math.floor(shape[0] || 1));
-  const nK = Math.max(1, Math.floor(shape[1] || 1));
-  const nL = Math.max(1, Math.floor(shape[2] || 1));
-  const total = nH * nK * nL;
-  if(total > 60000000) throw new Error(`Grid ${nH} x ${nK} x ${nL} is too large for browser plotting.`);
-  const I = new Float64Array(total);
-  I.fill(NaN);
+  const {dims:[nH,nK,nL], total} = assertVolumeFits(shape);
+  let I;
+  const canAdopt = values instanceof Float64Array && values.length === total;
+  if(canAdopt){
+    I = values;
+  }else{
+    I = new Float64Array(total);
+    I.fill(NaN);
+  }
   const n = Math.min(total, values.length);
-  for(let i=0;i<n;i++) I[i] = Number(values[i]);
+  if(!canAdopt){
+    for(let i=0;i<n;i++) I[i] = Number(values[i]);
+  }
   const bounds = finiteBounds(I);
   return finalizeResult({
     file:name,
@@ -819,26 +1205,26 @@ function parseVtkVolume(name, text){
   const origin = text.match(/\bORIGIN\s+([^\n\r]+)/i);
   const spacing = text.match(/\bSPACING\s+([^\n\r]+)/i);
   const nH = Number(dims[1]), nK = Number(dims[2]), nL = Number(dims[3]);
+  const {dims:shape, total} = assertVolumeFits([nH,nK,nL], "VTK grid");
   const o = origin ? parseNumbers(origin[1]) || [0,0,0] : [0,0,0];
   const s = spacing ? parseNumbers(spacing[1]) || [1,1,1] : [1,1,1];
   const table = text.search(/\bLOOKUP_TABLE\s+\S+/i);
   if(table < 0) throw new Error("VTK file is missing LOOKUP_TABLE data.");
   const start = text.indexOf("\n", table);
   const values = flatNumericArray((text.slice(start < 0 ? table : start + 1).match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][-+]?\d+)?|NaN/gi) || []).map(v => Number(String(v).replace(/D/i, "E"))));
-  const total = nH * nK * nL;
   const I = new Float64Array(total);
   I.fill(NaN);
   let p = 0;
-  for(let il=0;il<nL;il++) for(let ik=0;ik<nK;ik++) for(let ih=0;ih<nH;ih++){
-    if(p < values.length) I[idx3([nH,nK,nL], ih, ik, il)] = values[p++];
+  for(let il=0;il<shape[2];il++) for(let ik=0;ik<shape[1];ik++) for(let ih=0;ih<shape[0];ih++){
+    if(p < values.length) I[idx3(shape, ih, ik, il)] = values[p++];
   }
   const coordKind = inferCoordKind(name, text.slice(0, 512), "vtk structured points");
   return makeVolumeResult(
     name,
-    [nH,nK,nL],
-    regularAxis(nH, Number(o[0]) || 0, Number(s[0]) || 1),
-    regularAxis(nK, Number(o[1]) || 0, Number(s[1]) || 1),
-    regularAxis(nL, Number(o[2]) || 0, Number(s[2]) || 1),
+    shape,
+    regularAxis(shape[0], Number(o[0]) || 0, Number(s[0]) || 1),
+    regularAxis(shape[1], Number(o[1]) || 0, Number(s[1]) || 1),
+    regularAxis(shape[2], Number(o[2]) || 0, Number(s[2]) || 1),
     I,
     "vtk structured points",
     coordKind,
@@ -915,19 +1301,96 @@ function parseTextData(name, text){
   return parse3dsDat(name, text);
 }
 
-async function forEachFileLine(file, onLine, chunkSize=4 * 1024 * 1024){
+async function forEachFileLine(file, onLine, options={}){
+  const chunkSize = Math.max(1024 * 1024, Math.floor(Number(options.chunkSize) || 128 * 1024 * 1024));
+  const progress = typeof options.progress === "function" ? options.progress : null;
+  const phase = options.phase || "Reading";
   let offset = 0, carry = "";
+  let processed = 0;
+  const notify = (force=false) => {
+    if(progress) progress({phase, offset, size:file.size, rows:processed, force});
+  };
+  notify(true);
   while(offset < file.size){
     const text = await file.slice(offset, Math.min(file.size, offset + chunkSize)).text();
     offset += chunkSize;
-    const parts = (carry + text).split("\n");
-    carry = parts.pop() || "";
-    for(let line of parts){
+    notify(false);
+    const chunk = carry ? carry + text : text;
+    let start = 0;
+    for(;;){
+      const end = chunk.indexOf("\n", start);
+      if(end < 0) break;
+      let line = chunk.slice(start, end);
+      start = end + 1;
       if(line.endsWith("\r")) line = line.slice(0, -1);
       if(onLine(line) === false) return;
+      processed++;
+      if((processed & 0x3ffff) === 0){
+        notify(false);
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
     }
+    carry = chunk.slice(start);
+    notify(false);
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
   if(carry && onLine(carry.replace(/\r$/, "")) === false) return;
+  notify(true);
+}
+
+async function forEachFileLineRange(file, onLine, options={}){
+  const chunkSize = Math.max(1024 * 1024, Math.floor(Number(options.chunkSize) || 128 * 1024 * 1024));
+  const progress = typeof options.progress === "function" ? options.progress : null;
+  const phase = options.phase || "Reading";
+  let offset = 0, carry = "";
+  let processed = 0;
+  const notify = (force=false) => {
+    if(progress) progress({phase, offset, size:file.size, rows:processed, force});
+  };
+  notify(true);
+  while(offset < file.size){
+    const endOffset = Math.min(file.size, offset + chunkSize);
+    const text = await file.slice(offset, endOffset).text();
+    offset = endOffset;
+    notify(false);
+    let start = 0;
+    if(carry){
+      const firstEnd = text.indexOf("\n");
+      if(firstEnd < 0){
+        carry += text;
+        notify(false);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        continue;
+      }
+      const merged = carry + text.slice(0, firstEnd);
+      const lineEnd = merged.endsWith("\r") ? merged.length - 1 : merged.length;
+      if(onLine(merged, 0, lineEnd) === false) return;
+      processed++;
+      carry = "";
+      start = firstEnd + 1;
+    }
+    for(;;){
+      const lineBreak = text.indexOf("\n", start);
+      if(lineBreak < 0) break;
+      let lineEnd = lineBreak;
+      if(lineEnd > start && text.charCodeAt(lineEnd - 1) === 13) lineEnd--;
+      if(onLine(text, start, lineEnd) === false) return;
+      processed++;
+      start = lineBreak + 1;
+      if((processed & 0x3ffff) === 0){
+        notify(false);
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    carry = start < text.length ? text.slice(start) : "";
+    notify(false);
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  if(carry){
+    const lineEnd = carry.endsWith("\r") ? carry.length - 1 : carry.length;
+    if(onLine(carry, 0, lineEnd) === false) return;
+  }
+  notify(true);
 }
 
 function headerFromNums(nums){
@@ -939,7 +1402,7 @@ function headerFromNums(nums){
   };
 }
 
-async function parseIndexedTextFile(file, sampleText){
+async function parseIndexedTextFile(file, sampleText, progress=null){
   let header = null, firstNumeric = true, skipped = 0, rows = 0;
   let minI=Infinity, minJ=Infinity, minK=Infinity, maxI=-Infinity, maxJ=-Infinity, maxK=-Infinity;
   let rawMin=Infinity, rawMax=-Infinity;
@@ -964,11 +1427,9 @@ async function parseIndexedTextFile(file, sampleText){
     }else{
       skipped++;
     }
-  });
+  }, {progress, phase:"Scanning indexed text"});
   if(rows < 1) throw new Error("No indexed 3DS data rows found in streamed text file.");
-  const shape = [maxI - minI + 1, maxJ - minJ + 1, maxK - minK + 1];
-  const total = shape[0] * shape[1] * shape[2];
-  if(total > 60000000) throw new Error(`Grid ${shape[0]} x ${shape[1]} x ${shape[2]} is too large for browser plotting.`);
+  const {dims:shape, total} = assertVolumeFits([maxI - minI + 1, maxJ - minJ + 1, maxK - minK + 1], "Indexed 3DS grid");
   const I = new Float64Array(total);
   I.fill(NaN);
   const hAxis = new Float64Array(shape[0]), kAxis = new Float64Array(shape[1]), lAxis = new Float64Array(shape[2]);
@@ -995,13 +1456,902 @@ async function parseIndexedTextFile(file, sampleText){
     if(!hSeen[a]){ hAxis[a] = nums[3]; hSeen[a] = 1; }
     if(!kSeen[b]){ kAxis[b] = nums[4]; kSeen[b] = 1; }
     if(!lSeen[c]){ lAxis[c] = nums[5]; lSeen[c] = 1; }
-  });
+  }, {progress, phase:"Filling indexed grid"});
   fillMissingAxis(hAxis, hSeen);
   fillMissingAxis(kAxis, kSeen);
   fillMissingAxis(lAxis, lSeen);
   const coordKind = inferCoordKind(file.name, sampleText || "", "indexed 3ds");
   const meta = extractBasisFromText((sampleText || "").slice(0, 8192));
   return finalizeResult({file:file.name, header, skipped, rows, filled, format:"indexed text stream", coordKind, shape, h:hAxis, k:kAxis, l:lAxis, I, rawMin, rawMax, ...meta});
+}
+
+function appendCommentText(text, line, limit=8192){
+  if(text.length >= limit) return text;
+  const add = (text ? "\n" : "") + line;
+  return (text + add).slice(0, limit);
+}
+
+function addUniqueAxisValue(map, value){
+  const key = numKey(value);
+  if(!map.has(key)) map.set(key, value);
+}
+
+function sortedAxisFromMap(map){
+  return Array.from(map.values()).sort((a,b) => a - b);
+}
+
+function makeIndexedBuffers(capacity){
+  return {
+    capacity,
+    i:new Int32Array(capacity),
+    j:new Int32Array(capacity),
+    k:new Int32Array(capacity),
+    h:new Float64Array(capacity),
+    q:new Float64Array(capacity),
+    l:new Float64Array(capacity),
+    v:new Float64Array(capacity)
+  };
+}
+
+function growIndexedBuffers(buf, needed){
+  if(buf.capacity >= needed) return buf;
+  let capacity = buf.capacity || 0;
+  capacity = Math.max(needed, capacity ? Math.ceil(capacity * 1.5) : 1024);
+  const out = makeIndexedBuffers(capacity);
+  if(buf.capacity){
+    out.i.set(buf.i);
+    out.j.set(buf.j);
+    out.k.set(buf.k);
+    out.h.set(buf.h);
+    out.q.set(buf.q);
+    out.l.set(buf.l);
+    out.v.set(buf.v);
+  }
+  return out;
+}
+
+function indexedWorkerSource(){
+  return `
+const isIntLike = v => Number.isFinite(v) && Math.abs(v - Math.round(v)) < 1e-9;
+function looksLikeHeader(nums){
+  if(nums.length < 2 || nums.length > 4) return false;
+  if(!isIntLike(nums[0]) || !isIntLike(nums[1])) return false;
+  if(nums[0] < 1 || nums[1] < 1) return false;
+  return nums[0] > 100 || nums.length === 2;
+}
+function headerFromNums(nums){
+  return {points:Math.round(nums[0]), sections:Math.round(nums[1]), scale:nums.length > 2 ? nums[2] : null, offset:nums.length > 3 ? nums[3] : null};
+}
+function parseStrictDelimitedNumbers(line){
+  const s = line.trim();
+  if(!s) return null;
+  const parts = s.split(/[,\\s]+/);
+  const nums = new Array(parts.length);
+  for(let i=0;i<parts.length;i++){
+    const token = parts[i];
+    const v = token.indexOf("D") >= 0 || token.indexOf("d") >= 0 ? Number(token.replace(/D/i, "E")) : Number(token);
+    if(!Number.isFinite(v)) return null;
+    nums[i] = v;
+  }
+  return nums;
+}
+function indexedIntensityFromNums(nums, ampMode){
+  if(ampMode && nums.length >= 8){
+    const re = nums[nums.length - 2], im = nums[nums.length - 1];
+    if(Number.isFinite(re) && Number.isFinite(im)) return Math.hypot(re, im);
+  }
+  return nums[nums.length - 1];
+}
+function numberTokenSlice(text, start, end){
+  const token = text.slice(start, end);
+  return token.indexOf("D") >= 0 || token.indexOf("d") >= 0 ? Number(token.replace(/D/i, "E")) : Number(token);
+}
+function firstContentCharRange(text, start, end){
+  for(let i=start;i<end;i++) if(text.charCodeAt(i) > 32) return text[i];
+  return "";
+}
+function collectFirstTokenBounds(text, start, end, limit, starts, ends){
+  let token = 0, inToken = false, tokenStart = start;
+  for(let i=start;i<=end;i++){
+    const code = i < end ? text.charCodeAt(i) : 32;
+    const sep = i >= end || code === 44 || code <= 32;
+    if(sep){
+      if(inToken){
+        if(token < limit){ starts[token] = tokenStart; ends[token] = i; }
+        token++;
+        if(token >= limit) return token;
+        inToken = false;
+      }
+    }else if(!inToken){
+      tokenStart = i;
+      inToken = true;
+    }
+  }
+  return token;
+}
+function trailingTokenBoundsRange(text, start, end, reverseIndex){
+  let token = 0, inToken = false, tokenEnd = end;
+  for(let i=end - 1;i>=start - 1;i--){
+    const code = i >= start ? text.charCodeAt(i) : 32;
+    const sep = i < start || code === 44 || code <= 32;
+    if(sep){
+      if(inToken){
+        if(token === reverseIndex) return [i + 1, tokenEnd];
+        token++;
+        inToken = false;
+      }
+    }else if(!inToken){
+      tokenEnd = i + 1;
+      inToken = true;
+    }
+  }
+  return null;
+}
+function parseIndexedFieldsRange(text, start, end, ampMode, out, tokenStarts, tokenEnds){
+  const found = collectFirstTokenBounds(text, start, end, ampMode ? 8 : 6, tokenStarts, tokenEnds);
+  if(found < 6) return false;
+  const ii = numberTokenSlice(text, tokenStarts[0], tokenEnds[0]);
+  const jj = numberTokenSlice(text, tokenStarts[1], tokenEnds[1]);
+  const kk = numberTokenSlice(text, tokenStarts[2], tokenEnds[2]);
+  if(!isIntLike(ii) || !isIntLike(jj) || !isIntLike(kk)) return false;
+  const h = numberTokenSlice(text, tokenStarts[3], tokenEnds[3]);
+  const q = numberTokenSlice(text, tokenStarts[4], tokenEnds[4]);
+  const l = numberTokenSlice(text, tokenStarts[5], tokenEnds[5]);
+  if(!Number.isFinite(h) || !Number.isFinite(q) || !Number.isFinite(l)) return false;
+  let val;
+  if(ampMode && found >= 8){
+    const reBounds = trailingTokenBoundsRange(text, start, end, 1), imBounds = trailingTokenBoundsRange(text, start, end, 0);
+    if(!reBounds || !imBounds) return false;
+    const re = numberTokenSlice(text, reBounds[0], reBounds[1]), im = numberTokenSlice(text, imBounds[0], imBounds[1]);
+    if(!Number.isFinite(re) || !Number.isFinite(im)) return false;
+    val = Math.hypot(re, im);
+  }else{
+    const bounds = trailingTokenBoundsRange(text, start, end, 0);
+    if(!bounds) return false;
+    val = numberTokenSlice(text, bounds[0], bounds[1]);
+    if(!Number.isFinite(val)) return false;
+  }
+  out[0] = Math.round(ii); out[1] = Math.round(jj); out[2] = Math.round(kk);
+  out[3] = h; out[4] = q; out[5] = l; out[6] = val;
+  return true;
+}
+function makeBuffers(capacity){
+  return {capacity, i:new Int32Array(capacity), j:new Int32Array(capacity), k:new Int32Array(capacity), h:new Float64Array(capacity), q:new Float64Array(capacity), l:new Float64Array(capacity), v:new Float64Array(capacity)};
+}
+function growBuffers(buf, needed){
+  if(buf.capacity >= needed) return buf;
+  let capacity = buf.capacity || 0;
+  capacity = Math.max(needed, capacity ? Math.ceil(capacity * 1.5) : 1024);
+  const out = makeBuffers(capacity);
+  if(buf.capacity){
+    out.i.set(buf.i); out.j.set(buf.j); out.k.set(buf.k); out.h.set(buf.h); out.q.set(buf.q); out.l.set(buf.l); out.v.set(buf.v);
+  }
+  return out;
+}
+self.onmessage = async ev => {
+  const d = ev.data;
+  try{
+    const text = await d.file.slice(d.start, d.end).text();
+    let header = null, firstNumeric = !!d.isFirst, skipped = 0, rows = 0, commentText = "";
+    let minI=Infinity, minJ=Infinity, minK=Infinity, maxI=-Infinity, maxJ=-Infinity, maxK=-Infinity, rawMin=Infinity, rawMax=-Infinity;
+    let buf = makeBuffers(0);
+    let start = 0;
+    const fields = [0,0,0,0,0,0,0];
+    const tokenStarts = new Int32Array(8), tokenEnds = new Int32Array(8);
+    for(;;){
+      const end = text.indexOf("\\n", start);
+      let lineStart = start, lineEnd;
+      if(end < 0){
+        if(start >= text.length) break;
+        lineEnd = text.length;
+        start = text.length;
+      }else{
+        lineEnd = end;
+        start = end + 1;
+      }
+      if(lineEnd > lineStart && text.charCodeAt(lineEnd - 1) === 13) lineEnd--;
+      const firstChar = firstContentCharRange(text, lineStart, lineEnd);
+      if(!firstChar) continue;
+      if(firstChar === "#" || firstChar === "!" || firstChar === ";"){
+        const s = text.slice(lineStart, lineEnd).trim();
+        if(commentText.length < 8192) commentText = (commentText ? commentText + "\\n" : "") + s;
+        continue;
+      }
+      if(firstNumeric){
+        const s = text.slice(lineStart, lineEnd).trim();
+        const nums = parseStrictDelimitedNumbers(s);
+        if(!nums){ skipped++; continue; }
+        firstNumeric = false;
+        if(looksLikeHeader(nums)){
+          header = headerFromNums(nums);
+          if(Number.isFinite(header.points) && header.points > 0) buf = growBuffers(buf, Math.min(header.points, 1024 * 1024));
+          continue;
+        }
+      }
+      if(!parseIndexedFieldsRange(text, lineStart, lineEnd, !!d.ampMode, fields, tokenStarts, tokenEnds)){ skipped++; continue; }
+      buf = growBuffers(buf, rows + 1);
+      const ii = fields[0], jj = fields[1], kk = fields[2], val = fields[6];
+      buf.i[rows] = ii; buf.j[rows] = jj; buf.k[rows] = kk; buf.h[rows] = fields[3]; buf.q[rows] = fields[4]; buf.l[rows] = fields[5]; buf.v[rows] = val;
+      if(ii < minI) minI = ii; if(ii > maxI) maxI = ii;
+      if(jj < minJ) minJ = jj; if(jj > maxJ) maxJ = jj;
+      if(kk < minK) minK = kk; if(kk > maxK) maxK = kk;
+      if(val < rawMin) rawMin = val; if(val > rawMax) rawMax = val;
+      rows++;
+    }
+    const result = {
+      index:d.index, start:d.start, end:d.end, rows, skipped, header, commentText,
+      minI, minJ, minK, maxI, maxJ, maxK, rawMin, rawMax,
+      i:buf.i.slice(0, rows), j:buf.j.slice(0, rows), k:buf.k.slice(0, rows),
+      h:buf.h.slice(0, rows), q:buf.q.slice(0, rows), l:buf.l.slice(0, rows), v:buf.v.slice(0, rows)
+    };
+    self.postMessage({type:"done", result}, [result.i.buffer, result.j.buffer, result.k.buffer, result.h.buffer, result.q.buffer, result.l.buffer, result.v.buffer]);
+  }catch(err){
+    self.postMessage({type:"error", index:d.index, message:err && err.message || String(err)});
+  }
+};`;
+}
+
+function indexedWorkerUrl(){
+  if(state.indexedWorkerUrl) return state.indexedWorkerUrl;
+  const blob = new Blob([indexedWorkerSource()], {type:"text/javascript"});
+  state.indexedWorkerUrl = URL.createObjectURL(blob);
+  return state.indexedWorkerUrl;
+}
+
+async function findNextNewlineOffset(file, pos){
+  if(pos <= 0) return 0;
+  if(pos >= file.size) return file.size;
+  const scanSize = 1024 * 1024;
+  let offset = pos;
+  while(offset < file.size){
+    const text = await file.slice(offset, Math.min(file.size, offset + scanSize)).text();
+    const idx = text.indexOf("\n");
+    if(idx >= 0) return offset + idx + 1;
+    offset += scanSize;
+  }
+  return file.size;
+}
+
+async function lineAlignedRanges(file, chunkBytes, progress=null){
+  const ranges = [];
+  let start = 0, index = 0;
+  while(start < file.size){
+    const target = Math.min(file.size, start + chunkBytes);
+    const end = target >= file.size ? file.size : await findNextNewlineOffset(file, target);
+    if(end <= start) break;
+    ranges.push({index:index++, start, end, isFirst:start === 0});
+    start = end;
+    if(progress) progress({phase:"Splitting file", offset:start, size:file.size});
+  }
+  return ranges;
+}
+
+function parseIndexedRangeWorker(file, range, ampMode){
+  return new Promise((resolve, reject) => {
+    let worker;
+    try{
+      worker = new Worker(indexedWorkerUrl());
+    }catch(err){
+      reject(err);
+      return;
+    }
+    worker.onmessage = ev => {
+      const msg = ev.data || {};
+      worker.terminate();
+      if(msg.type === "done") resolve(msg.result);
+      else reject(new Error(msg.message || "Indexed worker failed."));
+    };
+    worker.onerror = err => {
+      worker.terminate();
+      reject(new Error(err && err.message || "Indexed worker failed."));
+    };
+    worker.postMessage({file, ampMode, ...range});
+  });
+}
+
+async function parseIndexedRangesInWorkers(file, ranges, ampMode, progress=null){
+  const workerCount = Math.max(1, Math.min(MAX_INDEXED_WORKERS, ranges.length, (navigator.hardwareConcurrency || 4) - 1 || 1));
+  const results = new Array(ranges.length);
+  let next = 0, done = 0, totalRows = 0;
+  async function runOne(){
+    for(;;){
+      const idx = next++;
+      if(idx >= ranges.length) return;
+      const result = await parseIndexedRangeWorker(file, ranges[idx], ampMode);
+      results[idx] = result;
+      done++;
+      totalRows += result.rows || 0;
+      if(progress) progress({phase:`Parallel parsing (${workerCount} workers)`, offset:done, size:ranges.length, units:"chunks", rows:totalRows, force:true});
+    }
+  }
+  await Promise.all(Array.from({length:workerCount}, runOne));
+  return results;
+}
+
+async function parseParallelIndexedTextFile(file, sampleText, progress=null){
+  if(typeof Worker === "undefined" || typeof Blob === "undefined" || typeof URL === "undefined"){
+    return null;
+  }
+  const ampMode = String(file.name || "").toLowerCase().includes("amp");
+  const ranges = await lineAlignedRanges(file, PARALLEL_INDEXED_CHUNK_BYTES, progress);
+  if(ranges.length < 2) return null;
+  if(progress) progress({phase:"Starting workers", offset:0, size:ranges.length, units:"chunks", force:true});
+  const chunks = await parseIndexedRangesInWorkers(file, ranges, ampMode, progress);
+  let header = null, skipped = 0, rows = 0, filled = 0, commentText = "";
+  let minI=Infinity, minJ=Infinity, minK=Infinity, maxI=-Infinity, maxJ=-Infinity, maxK=-Infinity, rawMin=Infinity, rawMax=-Infinity;
+  for(const chunk of chunks){
+    if(!chunk) continue;
+    if(!header && chunk.header) header = chunk.header;
+    if(!commentText && chunk.commentText) commentText = chunk.commentText.slice(0, 8192);
+    skipped += chunk.skipped || 0;
+    rows += chunk.rows || 0;
+    if(chunk.rows > 0){
+      if(chunk.minI < minI) minI = chunk.minI; if(chunk.maxI > maxI) maxI = chunk.maxI;
+      if(chunk.minJ < minJ) minJ = chunk.minJ; if(chunk.maxJ > maxJ) maxJ = chunk.maxJ;
+      if(chunk.minK < minK) minK = chunk.minK; if(chunk.maxK > maxK) maxK = chunk.maxK;
+      if(chunk.rawMin < rawMin) rawMin = chunk.rawMin; if(chunk.rawMax > rawMax) rawMax = chunk.rawMax;
+    }
+  }
+  if(rows < 1) throw new Error("No indexed 3DS data rows found in worker-parsed text file.");
+  const {dims:shape, total} = assertVolumeFits([maxI - minI + 1, maxJ - minJ + 1, maxK - minK + 1], "Indexed 3DS grid");
+  const I = new Float64Array(total);
+  I.fill(NaN);
+  const hAxis = new Float64Array(shape[0]), kAxis = new Float64Array(shape[1]), lAxis = new Float64Array(shape[2]);
+  const hSeen = new Uint8Array(shape[0]), kSeen = new Uint8Array(shape[1]), lSeen = new Uint8Array(shape[2]);
+  let merged = 0;
+  for(const chunk of chunks){
+    if(!chunk || !chunk.rows) continue;
+    for(let n=0;n<chunk.rows;n++){
+      const a = chunk.i[n] - minI, b = chunk.j[n] - minJ, c = chunk.k[n] - minK;
+      if(a < 0 || b < 0 || c < 0 || a >= shape[0] || b >= shape[1] || c >= shape[2]) continue;
+      const p = idx3(shape, a, b, c);
+      if(!Number.isFinite(I[p])) filled++;
+      I[p] = chunk.v[n];
+      if(!hSeen[a]){ hAxis[a] = chunk.h[n]; hSeen[a] = 1; }
+      if(!kSeen[b]){ kAxis[b] = chunk.q[n]; kSeen[b] = 1; }
+      if(!lSeen[c]){ lAxis[c] = chunk.l[n]; lSeen[c] = 1; }
+      merged++;
+      if(progress && (merged & 0x7ffff) === 0){
+        progress({phase:"Merging worker chunks", offset:merged, size:rows, units:"rows"});
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    chunk.i = chunk.j = chunk.k = chunk.h = chunk.q = chunk.l = chunk.v = null;
+  }
+  if(progress) progress({phase:"Merging worker chunks", offset:rows, size:rows, units:"rows", force:true});
+  fillMissingAxis(hAxis, hSeen);
+  fillMissingAxis(kAxis, kSeen);
+  fillMissingAxis(lAxis, lSeen);
+  const coordKind = inferCoordKind(file.name, commentText || sampleText || "", "indexed 3ds");
+  const meta = extractBasisFromText(commentText || sampleText.slice(0, 8192));
+  return finalizeResult({file:file.name, header, skipped, rows, filled, format:"indexed text parallel stream", coordKind, shape, h:hAxis, k:kAxis, l:lAxis, I, rawMin, rawMax, ...meta});
+}
+
+function inferOrderedIndexedLayoutFromText(text){
+  const lines = text.split(/\r?\n/);
+  let header = null, firstNumeric = true, first = null;
+  let nH = 0, nK = 0, rowsFirstK = 0, dataRows = 0;
+  for(const line of lines){
+    const s = line.trim();
+    if(!s || s[0] === "#" || s[0] === "!" || s[0] === ";") continue;
+    const nums = parseStrictDelimitedNumbers(s);
+    if(!nums) continue;
+    if(firstNumeric){
+      firstNumeric = false;
+      if(looksLikeHeader(nums)){
+        header = headerFromNums(nums);
+        continue;
+      }
+    }
+    if(nums.length < 7 || !isIntLike(nums[0]) || !isIntLike(nums[1]) || !isIntLike(nums[2])) continue;
+    const ii = Math.round(nums[0]), jj = Math.round(nums[1]), kk = Math.round(nums[2]);
+    if(!first){
+      first = {i:ii, j:jj, k:kk};
+      nH = 1;
+      rowsFirstK = 1;
+      dataRows = 1;
+      continue;
+    }
+    dataRows++;
+    if(kk === first.k){
+      rowsFirstK++;
+      if(jj === first.j && nK === 0) nH++;
+      else if(nH > 0 && rowsFirstK % nH === 0) nK = rowsFirstK / nH;
+      continue;
+    }
+    if(nH > 0 && rowsFirstK % nH === 0) nK = rowsFirstK / nH;
+    break;
+  }
+  if(!first || !header || !(header.points > 0) || !(nH > 0) || !(nK > 0)) return null;
+  const plane = nH * nK;
+  if(header.points % plane !== 0) return null;
+  const nL = header.points / plane;
+  if(!Number.isSafeInteger(nL) || nL < 1) return null;
+  return {
+    header,
+    first,
+    shape:[nH,nK,nL],
+    rowsExpected:header.points,
+    sampledRows:dataRows
+  };
+}
+
+function indexedHeaderAndFirstRowFromText(text){
+  const lines = text.split(/\r?\n/);
+  let header = null, firstNumeric = true;
+  for(const line of lines){
+    const s = line.trim();
+    if(!s || s[0] === "#" || s[0] === "!" || s[0] === ";") continue;
+    const nums = parseStrictDelimitedNumbers(s);
+    if(!nums) continue;
+    if(firstNumeric){
+      firstNumeric = false;
+      if(looksLikeHeader(nums)){
+        header = headerFromNums(nums);
+        continue;
+      }
+    }
+    if(nums.length >= 7 && isIntLike(nums[0]) && isIntLike(nums[1]) && isIntLike(nums[2])){
+      return {
+        header,
+        first:{i:Math.round(nums[0]), j:Math.round(nums[1]), k:Math.round(nums[2])}
+      };
+    }
+  }
+  return null;
+}
+
+function lastIndexedRowFromText(text){
+  const lines = text.split(/\r?\n/);
+  for(let n=lines.length - 1;n>=0;n--){
+    const s = lines[n].trim();
+    if(!s || s[0] === "#" || s[0] === "!" || s[0] === ";") continue;
+    const nums = parseStrictDelimitedNumbers(s);
+    if(nums && nums.length >= 7 && isIntLike(nums[0]) && isIntLike(nums[1]) && isIntLike(nums[2])){
+      return {i:Math.round(nums[0]), j:Math.round(nums[1]), k:Math.round(nums[2])};
+    }
+  }
+  return null;
+}
+
+async function inferOrderedIndexedLayoutFromEnds(file, sampleText, progress=null){
+  const firstInfo = indexedHeaderAndFirstRowFromText(sampleText);
+  if(!firstInfo || !firstInfo.header || !(firstInfo.header.points > 0)) return null;
+  const tailStart = Math.max(0, file.size - ORDERED_INDEXED_TAIL_BYTES);
+  if(progress) progress({phase:"Inferring ordered grid tail", offset:tailStart, size:file.size, force:true});
+  const tailText = tailStart === 0 ? sampleText : await file.slice(tailStart, file.size).text();
+  const last = lastIndexedRowFromText(tailText);
+  if(!last) return null;
+  const shape = [
+    last.i - firstInfo.first.i + 1,
+    last.j - firstInfo.first.j + 1,
+    last.k - firstInfo.first.k + 1
+  ];
+  if(!shape.every(v => Number.isSafeInteger(v) && v > 0)) return null;
+  const total = shape[0] * shape[1] * shape[2];
+  if(total !== firstInfo.header.points) return null;
+  if(progress) progress({phase:"Inferred ordered grid", offset:file.size, size:file.size, force:true});
+  return {
+    header:firstInfo.header,
+    first:firstInfo.first,
+    shape,
+    rowsExpected:firstInfo.header.points,
+    sampledRows:0
+  };
+}
+
+async function inferOrderedIndexedLayout(file, sampleText, progress=null){
+  let layout = inferOrderedIndexedLayoutFromText(sampleText);
+  if(layout) return layout;
+  layout = await inferOrderedIndexedLayoutFromEnds(file, sampleText, progress);
+  if(layout) return layout;
+  if(file.size <= sampleText.length) return null;
+  if(progress) progress({phase:"Inferring ordered grid", offset:0, size:Math.min(file.size, ORDERED_INDEXED_SAMPLE_BYTES), force:true});
+  const text = await file.slice(0, Math.min(file.size, ORDERED_INDEXED_SAMPLE_BYTES)).text();
+  layout = inferOrderedIndexedLayoutFromText(text);
+  if(layout && progress) progress({phase:"Inferred ordered grid", offset:text.length, size:text.length, force:true});
+  return layout;
+}
+
+async function parseOrderedIndexedTextFile(file, sampleText, progress=null){
+  const layout = await inferOrderedIndexedLayout(file, sampleText, progress);
+  if(!layout) return null;
+  const ampMode = String(file.name || "").toLowerCase().includes("amp");
+  const {dims:shape, total} = assertVolumeFits(layout.shape, "Ordered indexed 3DS grid");
+  const I = new Float64Array(total);
+  I.fill(NaN);
+  const hAxis = new Float64Array(shape[0]), kAxis = new Float64Array(shape[1]), lAxis = new Float64Array(shape[2]);
+  const hSeen = new Uint8Array(shape[0]), kSeen = new Uint8Array(shape[1]), lSeen = new Uint8Array(shape[2]);
+  let firstNumeric = true, header = layout.header, skipped = 0, rows = 0, rowOrdinal = 0, filled = 0, rawMin = Infinity, rawMax = -Infinity, commentText = "";
+  const plane = shape[0] * shape[1];
+  const fields = [0, 0, 0, 0];
+  await forEachFileLineRange(file, (text, start, end) => {
+    const firstChar = firstContentCharRange(text, start, end);
+    if(!firstChar) return;
+    if(firstChar === "#" || firstChar === "!" || firstChar === ";"){
+      commentText = appendCommentText(commentText, text.slice(start, end).trim());
+      return;
+    }
+    if(firstNumeric){
+      const nums = parseStrictDelimitedNumbers(text.slice(start, end));
+      if(!nums){ skipped++; return; }
+      firstNumeric = false;
+      if(looksLikeHeader(nums)){
+        header = headerFromNums(nums);
+        return;
+      }
+    }
+    const ordinal = rowOrdinal++;
+    const c = Math.floor(ordinal / plane);
+    if(c >= shape[2]){
+      skipped++;
+      return;
+    }
+    const rem = ordinal - c * plane;
+    const b = Math.floor(rem / shape[0]);
+    const a = rem - b * shape[0];
+    const needH = !hSeen[a], needK = !kSeen[b], needL = !lSeen[c];
+    if(!parseOrderedIndexedFieldsRange(text, start, end, ampMode, needH, needK, needL, fields)){ skipped++; return; }
+    const val = fields[3];
+    const p = idx3(shape, a, b, c);
+    if(!Number.isFinite(I[p])) filled++;
+    I[p] = val;
+    if(needH){ hAxis[a] = fields[0]; hSeen[a] = 1; }
+    if(needK){ kAxis[b] = fields[1]; kSeen[b] = 1; }
+    if(needL){ lAxis[c] = fields[2]; lSeen[c] = 1; }
+    if(val < rawMin) rawMin = val; if(val > rawMax) rawMax = val;
+    rows++;
+  }, {progress, phase:"Reading ordered indexed text"});
+  if(rows < 1) throw new Error("No indexed 3DS data rows found in ordered text file.");
+  fillMissingAxis(hAxis, hSeen);
+  fillMissingAxis(kAxis, kSeen);
+  fillMissingAxis(lAxis, lSeen);
+  const coordKind = inferCoordKind(file.name, commentText || sampleText || "", "indexed 3ds");
+  const meta = extractBasisFromText(commentText || sampleText.slice(0, 8192));
+  return finalizeResult({file:file.name, header, skipped, rows, filled, format:"indexed text ordered stream", coordKind, shape, h:hAxis, k:kAxis, l:lAxis, I, rawMin, rawMax, ...meta});
+}
+
+async function parseFastIndexedTextFile(file, sampleText, progress=null){
+  const ampMode = String(file.name || "").toLowerCase().includes("amp");
+  let header = null, firstNumeric = true, skipped = 0, rows = 0, commentText = "";
+  let minI=Infinity, minJ=Infinity, minK=Infinity, maxI=-Infinity, maxJ=-Infinity, maxK=-Infinity;
+  let rawMin=Infinity, rawMax=-Infinity;
+  let buf = makeIndexedBuffers(0);
+  await forEachFileLine(file, line => {
+    const s = line.trim();
+    if(!s) return;
+    if(s[0] === "#" || s[0] === "!" || s[0] === ";"){
+      commentText = appendCommentText(commentText, s);
+      return;
+    }
+    const nums = parseStrictDelimitedNumbers(s);
+    if(!nums){ skipped++; return; }
+    if(firstNumeric){
+      firstNumeric = false;
+      if(looksLikeHeader(nums)){
+        header = headerFromNums(nums);
+        if(Number.isFinite(header.points) && header.points > 0) buf = growIndexedBuffers(buf, header.points);
+        return;
+      }
+    }
+    if(nums.length < 7 || !isIntLike(nums[0]) || !isIntLike(nums[1]) || !isIntLike(nums[2])){
+      skipped++;
+      return;
+    }
+    const val = indexedIntensityFromNums(nums, ampMode);
+    if(!Number.isFinite(val)){ skipped++; return; }
+    buf = growIndexedBuffers(buf, rows + 1);
+    const ii = Math.round(nums[0]), jj = Math.round(nums[1]), kk = Math.round(nums[2]);
+    buf.i[rows] = ii;
+    buf.j[rows] = jj;
+    buf.k[rows] = kk;
+    buf.h[rows] = nums[3];
+    buf.q[rows] = nums[4];
+    buf.l[rows] = nums[5];
+    buf.v[rows] = val;
+    if(ii < minI) minI = ii; if(ii > maxI) maxI = ii;
+    if(jj < minJ) minJ = jj; if(jj > maxJ) maxJ = jj;
+    if(kk < minK) minK = kk; if(kk > maxK) maxK = kk;
+    if(val < rawMin) rawMin = val; if(val > rawMax) rawMax = val;
+    rows++;
+  }, {progress, phase:"Reading indexed text"});
+  if(rows < 1) throw new Error("No indexed 3DS data rows found in streamed text file.");
+  const {dims:shape, total} = assertVolumeFits([maxI - minI + 1, maxJ - minJ + 1, maxK - minK + 1], "Indexed 3DS grid");
+  const I = new Float64Array(total);
+  I.fill(NaN);
+  const hAxis = new Float64Array(shape[0]), kAxis = new Float64Array(shape[1]), lAxis = new Float64Array(shape[2]);
+  const hSeen = new Uint8Array(shape[0]), kSeen = new Uint8Array(shape[1]), lSeen = new Uint8Array(shape[2]);
+  let filled = 0;
+  for(let n=0;n<rows;n++){
+    if(progress && (n & 0x7ffff) === 0){
+      progress({phase:"Building indexed grid", offset:n, size:rows, units:"rows"});
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    const a = buf.i[n] - minI, b = buf.j[n] - minJ, c = buf.k[n] - minK;
+    if(a < 0 || b < 0 || c < 0 || a >= shape[0] || b >= shape[1] || c >= shape[2]) continue;
+    const p = idx3(shape, a, b, c);
+    if(!Number.isFinite(I[p])) filled++;
+    I[p] = buf.v[n];
+    if(!hSeen[a]){ hAxis[a] = buf.h[n]; hSeen[a] = 1; }
+    if(!kSeen[b]){ kAxis[b] = buf.q[n]; kSeen[b] = 1; }
+    if(!lSeen[c]){ lAxis[c] = buf.l[n]; lSeen[c] = 1; }
+  }
+  if(progress) progress({phase:"Building indexed grid", offset:rows, size:rows, units:"rows", force:true});
+  fillMissingAxis(hAxis, hSeen);
+  fillMissingAxis(kAxis, kSeen);
+  fillMissingAxis(lAxis, lSeen);
+  const coordKind = inferCoordKind(file.name, commentText || sampleText || "", "indexed 3ds");
+  const meta = extractBasisFromText(commentText || sampleText.slice(0, 8192));
+  return finalizeResult({file:file.name, header, skipped, rows, filled, format:"indexed text fast stream", coordKind, shape, h:hAxis, k:kAxis, l:lAxis, I, rawMin, rawMax, ...meta});
+}
+
+async function parseStreamedMatrixFile(file, sampleText, progress=null){
+  let rows = 0, cols = null, skipped = 0, commentText = "";
+  let rawMin = Infinity, rawMax = -Infinity;
+  await forEachFileLine(file, line => {
+    const s = line.trim();
+    if(!s) return;
+    if(s[0] === "#" || s[0] === "!" || s[0] === ";"){
+      commentText = appendCommentText(commentText, s);
+      return;
+    }
+    const nums = parseNumbers(s);
+    if(!nums){ skipped++; return; }
+    if(cols === null) cols = nums.length;
+    if(nums.length !== cols) throw new Error("2D numeric matrix has inconsistent row lengths.");
+    for(const v of nums){
+      if(v < rawMin) rawMin = v;
+      if(v > rawMax) rawMax = v;
+    }
+    rows++;
+  }, {progress, phase:"Scanning matrix text"});
+  if(rows < 1 || !cols) throw new Error("2D numeric matrix has no rows.");
+  const {total} = assertVolumeFits([rows, cols, 1], "2D numeric matrix");
+  const values = new Float64Array(total);
+  let r = 0;
+  await forEachFileLine(file, line => {
+    const s = line.trim();
+    if(!s || s[0] === "#" || s[0] === "!" || s[0] === ";") return;
+    const nums = parseNumbers(s);
+    if(!nums || nums.length !== cols) return;
+    for(let c=0;c<cols;c++) values[r * cols + c] = nums[c];
+    r++;
+  }, {progress, phase:"Filling matrix grid"});
+  const coordKind = inferCoordKind(file.name, commentText || sampleText || "", "2d numeric matrix");
+  return makeVolumeResult(file.name, [rows, cols, 1], regularAxis(rows), regularAxis(cols), regularAxis(1), values, "2D numeric matrix stream", coordKind, null, skipped, extractBasisFromText(commentText || sampleText.slice(0, 8192)));
+}
+
+async function parseStreamedVtkVolume(file, sampleText, progress=null){
+  const dims = sampleText.match(/\bDIMENSIONS\s+(\d+)\s+(\d+)\s+(\d+)/i);
+  if(!dims) throw new Error("VTK file is missing DIMENSIONS.");
+  const origin = sampleText.match(/\bORIGIN\s+([^\n\r]+)/i);
+  const spacing = sampleText.match(/\bSPACING\s+([^\n\r]+)/i);
+  const nH = Number(dims[1]), nK = Number(dims[2]), nL = Number(dims[3]);
+  const {dims:shape, total} = assertVolumeFits([nH,nK,nL], "VTK grid");
+  const o = origin ? parseNumbers(origin[1]) || [0,0,0] : [0,0,0];
+  const s = spacing ? parseNumbers(spacing[1]) || [1,1,1] : [1,1,1];
+  const I = new Float64Array(total);
+  I.fill(NaN);
+  let inData = false, p = 0, extra = 0;
+  await forEachFileLine(file, line => {
+    if(!inData){
+      if(/\bLOOKUP_TABLE\s+\S+/i.test(line)) inData = true;
+      return;
+    }
+    const nums = parseNumbers(line);
+    if(!nums) return;
+    for(const v of nums){
+      if(p < total){
+        const il = Math.floor(p / (shape[0] * shape[1]));
+        const rem = p - il * shape[0] * shape[1];
+        const ik = Math.floor(rem / shape[0]);
+        const ih = rem - ik * shape[0];
+        I[idx3(shape, ih, ik, il)] = v;
+      }else{
+        extra++;
+      }
+      p++;
+    }
+  }, {progress, phase:"Reading VTK text"});
+  if(!inData) throw new Error("VTK file is missing LOOKUP_TABLE data.");
+  const coordKind = inferCoordKind(file.name, sampleText.slice(0, 512), "vtk structured points");
+  return makeVolumeResult(
+    file.name,
+    shape,
+    regularAxis(shape[0], Number(o[0]) || 0, Number(s[0]) || 1),
+    regularAxis(shape[1], Number(o[1]) || 0, Number(s[1]) || 1),
+    regularAxis(shape[2], Number(o[2]) || 0, Number(s[2]) || 1),
+    I,
+    "vtk structured points stream",
+    coordKind,
+    null,
+    extra,
+    extractBasisFromText(sampleText.slice(0, 8192))
+  );
+}
+
+async function parseStreamedPointTextFile(file, sampleText, progress=null){
+  let header = null, firstNumeric = true, skipped = 0, commentText = "";
+  const idxStats = {rows:0, minI:Infinity, minJ:Infinity, minK:Infinity, maxI:-Infinity, maxJ:-Infinity, maxK:-Infinity, rawMin:Infinity, rawMax:-Infinity};
+  const plainStats = {rows:0, h:new Map(), k:new Map(), l:new Map(), rawMin:Infinity, rawMax:-Infinity};
+  const tripStats = {rows:0, x:new Map(), y:new Map(), rawMin:Infinity, rawMax:-Infinity};
+  await forEachFileLine(file, line => {
+    const s = line.trim();
+    if(!s) return;
+    if(s[0] === "#" || s[0] === "!" || s[0] === ";"){
+      commentText = appendCommentText(commentText, s);
+      return;
+    }
+    const nums = parseNumbers(s);
+    if(!nums){ skipped++; return; }
+    if(firstNumeric){
+      firstNumeric = false;
+      if(looksLikeHeader(nums)){ header = headerFromNums(nums); return; }
+    }
+    if(nums.length >= 7 && isIntLike(nums[0]) && isIntLike(nums[1]) && isIntLike(nums[2])){
+      const val = valueFromRmcDiffuse3dRow(file.name, nums, header);
+      if(!Number.isFinite(val)){ skipped++; return; }
+      const ii = Math.round(nums[0]), jj = Math.round(nums[1]), kk = Math.round(nums[2]);
+      if(ii < idxStats.minI) idxStats.minI = ii; if(ii > idxStats.maxI) idxStats.maxI = ii;
+      if(jj < idxStats.minJ) idxStats.minJ = jj; if(jj > idxStats.maxJ) idxStats.maxJ = jj;
+      if(kk < idxStats.minK) idxStats.minK = kk; if(kk > idxStats.maxK) idxStats.maxK = kk;
+      if(val < idxStats.rawMin) idxStats.rawMin = val; if(val > idxStats.rawMax) idxStats.rawMax = val;
+      idxStats.rows++;
+    }else if(nums.length >= 4){
+      const val = nums[nums.length - 1];
+      if(!Number.isFinite(val)){ skipped++; return; }
+      addUniqueAxisValue(plainStats.h, nums[0]);
+      addUniqueAxisValue(plainStats.k, nums[1]);
+      addUniqueAxisValue(plainStats.l, nums[2]);
+      if(val < plainStats.rawMin) plainStats.rawMin = val; if(val > plainStats.rawMax) plainStats.rawMax = val;
+      plainStats.rows++;
+    }else if(nums.length === 3){
+      const val = nums[2];
+      if(!Number.isFinite(val)){ skipped++; return; }
+      addUniqueAxisValue(tripStats.x, nums[0]);
+      addUniqueAxisValue(tripStats.y, nums[1]);
+      if(val < tripStats.rawMin) tripStats.rawMin = val; if(val > tripStats.rawMax) tripStats.rawMax = val;
+      tripStats.rows++;
+    }else{
+      skipped++;
+    }
+  }, {progress, phase:"Scanning point text"});
+  const meta = extractBasisFromText(commentText || sampleText.slice(0, 8192));
+  if(idxStats.rows > 0){
+    return buildStreamedIndexedResult(file, sampleText, header, skipped, commentText, idxStats, meta, progress);
+  }
+  if(plainStats.rows > 0){
+    return buildStreamedPlainResult(file, sampleText, header, skipped, commentText, plainStats, meta, progress);
+  }
+  if(tripStats.rows > 0){
+    return buildStreamedTriplet2dResult(file, sampleText, header, skipped, commentText, tripStats, meta, progress);
+  }
+  throw new Error("No 3DS data rows found. Expected indexH indexK indexL H K L intensity rows, H K L intensity rows, or X Y intensity rows.");
+}
+
+async function buildStreamedIndexedResult(file, sampleText, header, skipped, commentText, stats, meta, progress=null){
+  const {dims:shape, total} = assertVolumeFits([stats.maxI - stats.minI + 1, stats.maxJ - stats.minJ + 1, stats.maxK - stats.minK + 1], "Indexed 3DS grid");
+  const I = new Float64Array(total);
+  I.fill(NaN);
+  const hAxis = new Float64Array(shape[0]), kAxis = new Float64Array(shape[1]), lAxis = new Float64Array(shape[2]);
+  const hSeen = new Uint8Array(shape[0]), kSeen = new Uint8Array(shape[1]), lSeen = new Uint8Array(shape[2]);
+  let firstNumeric = true, filled = 0;
+  await forEachFileLine(file, line => {
+    const s = line.trim();
+    if(!s || s[0] === "#" || s[0] === "!" || s[0] === ";") return;
+    const nums = parseNumbers(s);
+    if(!nums) return;
+    if(firstNumeric){
+      firstNumeric = false;
+      if(looksLikeHeader(nums)) return;
+    }
+    if(nums.length < 7 || !isIntLike(nums[0]) || !isIntLike(nums[1]) || !isIntLike(nums[2])) return;
+    const a = Math.round(nums[0]) - stats.minI, b = Math.round(nums[1]) - stats.minJ, c = Math.round(nums[2]) - stats.minK;
+    if(a < 0 || b < 0 || c < 0 || a >= shape[0] || b >= shape[1] || c >= shape[2]) return;
+    const val = valueFromRmcDiffuse3dRow(file.name, nums, header);
+    if(!Number.isFinite(val)) return;
+    const p = idx3(shape, a, b, c);
+    if(!Number.isFinite(I[p])) filled++;
+    I[p] = val;
+    if(!hSeen[a]){ hAxis[a] = nums[3]; hSeen[a] = 1; }
+    if(!kSeen[b]){ kAxis[b] = nums[4]; kSeen[b] = 1; }
+    if(!lSeen[c]){ lAxis[c] = nums[5]; lSeen[c] = 1; }
+  }, {progress, phase:"Filling indexed grid"});
+  fillMissingAxis(hAxis, hSeen);
+  fillMissingAxis(kAxis, kSeen);
+  fillMissingAxis(lAxis, lSeen);
+  const coordKind = inferCoordKind(file.name, commentText || sampleText || "", "indexed 3ds");
+  return finalizeResult({file:file.name, header, skipped, rows:stats.rows, filled, format:"indexed text stream", coordKind, shape, h:hAxis, k:kAxis, l:lAxis, I, rawMin:stats.rawMin, rawMax:stats.rawMax, ...meta});
+}
+
+async function buildStreamedPlainResult(file, sampleText, header, skipped, commentText, stats, meta, progress=null){
+  const hAxis = sortedAxisFromMap(stats.h), kAxis = sortedAxisFromMap(stats.k), lAxis = sortedAxisFromMap(stats.l);
+  const nH = hAxis.length, nK = kAxis.length, nL = lAxis.length;
+  const {total} = assertVolumeFits([nH,nK,nL], "4-column grid");
+  const hMap = new Map(hAxis.map((v,i) => [numKey(v), i]));
+  const kMap = new Map(kAxis.map((v,i) => [numKey(v), i]));
+  const lMap = new Map(lAxis.map((v,i) => [numKey(v), i]));
+  const I = new Float64Array(total);
+  I.fill(NaN);
+  let firstNumeric = true, filled = 0;
+  await forEachFileLine(file, line => {
+    const s = line.trim();
+    if(!s || s[0] === "#" || s[0] === "!" || s[0] === ";") return;
+    const nums = parseNumbers(s);
+    if(!nums) return;
+    if(firstNumeric){
+      firstNumeric = false;
+      if(looksLikeHeader(nums)) return;
+    }
+    if(nums.length < 4) return;
+    if(nums.length >= 7 && isIntLike(nums[0]) && isIntLike(nums[1]) && isIntLike(nums[2])) return;
+    const val = nums[nums.length - 1];
+    if(!Number.isFinite(val)) return;
+    const a = hMap.get(numKey(nums[0])), b = kMap.get(numKey(nums[1])), c = lMap.get(numKey(nums[2]));
+    if(a === undefined || b === undefined || c === undefined) return;
+    const p = idx3([nH,nK,nL], a, b, c);
+    if(!Number.isFinite(I[p])) filled++;
+    I[p] = val;
+  }, {progress, phase:"Filling 4-column grid"});
+  const coordKind = inferCoordKind(file.name, commentText || sampleText || "", "calculator dat");
+  return finalizeResult({file:file.name, header, skipped, rows:stats.rows, filled, format:"4-column text stream", coordKind, shape:[nH,nK,nL], h:Float64Array.from(hAxis), k:Float64Array.from(kAxis), l:Float64Array.from(lAxis), I, rawMin:stats.rawMin, rawMax:stats.rawMax, ...meta});
+}
+
+async function buildStreamedTriplet2dResult(file, sampleText, header, skipped, commentText, stats, meta, progress=null){
+  const xAxis = sortedAxisFromMap(stats.x), yAxis = sortedAxisFromMap(stats.y), zAxis = [0];
+  const nX = xAxis.length, nY = yAxis.length, nZ = 1;
+  const {total} = assertVolumeFits([nX,nY,nZ], "3-column grid");
+  const xMap = new Map(xAxis.map((v,i) => [numKey(v), i]));
+  const yMap = new Map(yAxis.map((v,i) => [numKey(v), i]));
+  const I = new Float64Array(total);
+  I.fill(NaN);
+  let firstNumeric = true, filled = 0;
+  await forEachFileLine(file, line => {
+    const s = line.trim();
+    if(!s || s[0] === "#" || s[0] === "!" || s[0] === ";") return;
+    const nums = parseNumbers(s);
+    if(!nums) return;
+    if(firstNumeric){
+      firstNumeric = false;
+      if(looksLikeHeader(nums)) return;
+    }
+    if(nums.length !== 3) return;
+    const val = nums[2];
+    if(!Number.isFinite(val)) return;
+    const a = xMap.get(numKey(nums[0])), b = yMap.get(numKey(nums[1]));
+    if(a === undefined || b === undefined) return;
+    const p = idx3([nX,nY,nZ], a, b, 0);
+    if(!Number.isFinite(I[p])) filled++;
+    I[p] = val;
+  }, {progress, phase:"Filling 3-column grid"});
+  const coordKind = inferCoordKind(file.name, commentText || sampleText || "", "3-column text");
+  return finalizeResult({file:file.name, header, skipped, rows:stats.rows, filled, format:"3-column text stream", coordKind, shape:[nX,nY,nZ], h:Float64Array.from(xAxis), k:Float64Array.from(yAxis), l:Float64Array.from(zAxis), I, rawMin:stats.rawMin, rawMax:stats.rawMax, ...meta});
+}
+
+async function parseStreamedTextData(file, sampleText, progress=null){
+  const sample = sampleText.trimStart();
+  if(/^#\s*vtk\b/i.test(sample) || /\bDATASET\s+STRUCTURED_POINTS\b/i.test(sample)) return parseStreamedVtkVolume(file, sampleText, progress);
+  if(looksLikeIndexed3dRows(sampleText)){
+    try{
+      const ordered = await parseOrderedIndexedTextFile(file, sampleText, progress);
+      if(ordered) return ordered;
+    }catch(err){
+      console.warn("Ordered indexed parser failed; trying fallback parser:", err && err.message || err);
+      if(progress) progress({phase:"Ordered parser failed, using fallback", offset:0, size:file.size, force:true});
+    }
+    if(file.size >= PARALLEL_INDEXED_MIN_BYTES){
+      try{
+        const parallel = await parseParallelIndexedTextFile(file, sampleText, progress);
+        if(parallel) return parallel;
+      }catch(err){
+        console.warn("Parallel indexed parser failed; falling back to single-thread parser:", err && err.message || err);
+        if(progress) progress({phase:"Parallel failed, using single thread", offset:0, size:file.size, force:true});
+      }
+    }
+    return parseFastIndexedTextFile(file, sampleText, progress);
+  }
+  if(looksLikeNumericMatrix(sampleText)) return parseStreamedMatrixFile(file, sampleText, progress);
+  return parseStreamedPointTextFile(file, sampleText, progress);
 }
 
 async function ensureH5wasm(){
@@ -1133,7 +2483,7 @@ function readH5Array(file, candidates){
   for(const path of candidates){
     const obj = h5Lookup(file, path);
     const arr = flatNumericArray(h5Value(obj));
-    if(arr.length) return arr;
+    if(arr.length) return Array.from(arr);
   }
   return [];
 }
@@ -1165,6 +2515,9 @@ function parseH5AxesNames(value){
 
 function readH5CellBasis(file, prefixes){
   for(const prefix of prefixes){
+    const cell = readH5Array(file, [`${prefix}/unit_cell`, `${prefix}/cell`, `${prefix}/unit_cell_parameters`]);
+    const directBasis = basisFromCell(cell);
+    if(directBasis) return {...directBasis, basisSource:`${prefix}/unit_cell`};
     const lengths = readH5Array(file, [`${prefix}/unit_cell_lengths`, `${prefix}/cell_lengths`, `${prefix}/lattice_lengths`]);
     const angles = readH5Array(file, [`${prefix}/unit_cell_angles`, `${prefix}/cell_angles`, `${prefix}/lattice_angles`]);
     if(lengths.length >= 3 && angles.length >= 3){
@@ -1229,8 +2582,15 @@ function readH5Basis(file){
 function h5AxisKindFromNames(space, axesNames, fallbackName){
   const names = axesNames.map(s => String(s).toLowerCase());
   if(names.some(s => ["h","k","l"].includes(s))) return "hkl";
-  if(String(space || "").toLowerCase() === "reciprocal" && names.length && names.every(s => ["h","k","l"].includes(s))) return "hkl";
+  if(String(space || "").toLowerCase() === "reciprocal") return "hkl";
   return inferCoordKind(fallbackName, `${space || ""} ${axesNames.join(" ")}`, "hdf5 unified");
+}
+
+function defaultAxesForH5Space(space){
+  const s = String(space || "").toLowerCase();
+  if(s === "direct") return ["x","y","z"];
+  if(s === "patterson") return ["u","v","w"];
+  return ["h","k","l"];
 }
 
 function matrix3FromH5(flat, transpose=false){
@@ -1247,7 +2607,7 @@ function h5RegularAxisFromGrid(n, corner, vectors, dataDim, component){
 }
 
 function normalizeShape3(shape, fallbackTotal=0){
-  const dims = (shape || []).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  const dims = Array.from(shape || []).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
   if(!dims.length && fallbackTotal > 0) dims.push(fallbackTotal);
   while(dims.length < 3) dims.push(1);
   return dims.slice(0, 3);
@@ -1263,7 +2623,7 @@ function compactReducedShape(shape){
 }
 
 function compactFortranRawShape(shape){
-  const dims = (shape || []).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  const dims = Array.from(shape || []).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
   while(dims.length > 1 && dims[0] === 1) dims.shift();
   return dims;
 }
@@ -1275,7 +2635,7 @@ function sameShape(a, b){
 }
 
 function fortranRawShapeMatches(rawShape, dims){
-  const raw = (rawShape || []).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  const raw = Array.from(rawShape || []).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
   if(!raw.length) return false;
   const full = [dims[2], dims[1], dims[0]];
   const reduced = compactFortranRawShape(full);
@@ -1300,15 +2660,7 @@ function reorderFortranCube(flat, rawShape, dims){
 function reorderCOrderCube(flat, dims){
   const total = dims[0] * dims[1] * dims[2];
   if(flat.length < total) return flat;
-  const out = new Float64Array(total);
-  for(let i=0;i<dims[0];i++){
-    for(let j=0;j<dims[1];j++){
-      for(let k=0;k<dims[2];k++){
-        out[idx3(dims, i, j, k)] = flat[(i * dims[1] + j) * dims[2] + k];
-      }
-    }
-  }
-  return out;
+  return flat;
 }
 
 function discusStepVectorsFromH5(h5file){
@@ -1338,22 +2690,26 @@ function parseFortranUnifiedH5(h5file, name){
   if(!dataObj) return null;
   const dimArr = readH5Array(h5file, ["entry/data/data_dimension"]);
   let shape = dimArr.slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  const rawShapeMeta = h5Shape(dataObj, null);
+  if(!shape.length && rawShapeMeta.length){
+    shape = rawShapeMeta.slice(0, 3).reverse();
+  }
+  if(shape.length) assertVolumeFits(normalizeShape3(shape), "RMCProfile/DiffuseCode unified HDF5 grid");
   const rawValue = h5Value(dataObj);
   const rawFlat = flatNumericArray(rawValue);
-  const rawShape = h5Shape(dataObj, rawValue);
-  if(!shape.length){
-    const raw = rawShape.slice(0, 3);
-    shape = raw.length ? raw.slice().reverse() : [rawFlat.length];
-  }
+  const rawShape = rawShapeMeta.length ? rawShapeMeta : h5Shape(dataObj, rawValue);
+  if(!shape.length) shape = rawFlat.length ? [rawFlat.length] : [];
   shape = normalizeShape3(shape, rawFlat.length);
+  shape = assertVolumeFits(shape, "RMCProfile/DiffuseCode unified HDF5 grid").dims;
   const values = reorderFortranCube(rawFlat, rawShape, shape);
   const corner = readH5Array(h5file, ["entry/data/data_corner"]).slice(0, 3);
   while(corner.length < 3) corner.push(0);
   const vecFlat = readH5Array(h5file, ["entry/data/data_increment_vector"]);
   const vectors = matrix3FromH5(vecFlat, true);
-  const axesCodes = readH5Array(h5file, ["entry/data/data_axes"]).slice(0, 3).map(v => Math.round(Number(v)));
-  const axesNames = axesCodes.map(v => ["h","k","l"][v - 1] || "");
   const space = readH5Text(h5file, ["entry/data/data_type_reciprocal"]);
+  const axesCodes = readH5Array(h5file, ["entry/data/data_axes"]).slice(0, 3).map(v => Math.round(Number(v)));
+  let axesNames = axesCodes.map(v => defaultAxesForH5Space(space)[v - 1] || "");
+  if(!axesNames.some(Boolean)) axesNames = defaultAxesForH5Space(space);
   const content = readH5Text(h5file, ["entry/data/data_type_content"]);
   const radiation = readH5Text(h5file, ["entry/data/data_radiation"]);
   const dataKind = classifyDataKind({content, space, name, format:"RMCProfile/DiffuseCode unified HDF5", shape});
@@ -1396,11 +2752,13 @@ function parseDiscusH5(h5file, name){
   const format = readH5Text(h5file, ["format"]);
   if(format && !/yell\s*1\.0/i.test(format)) return null;
   if(!format && !h5Lookup(h5file, "lower_limits") && !h5Lookup(h5file, "step_sizes")) return null;
+  const rawShapeMeta = h5Shape(dataObj, null).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  if(rawShapeMeta.length) assertVolumeFits(normalizeShape3(rawShapeMeta.slice().reverse()), "DISCUS/Yell HDF5 grid");
   const rawValue = h5Value(dataObj);
   const rawFlat = flatNumericArray(rawValue);
-  const rawShape = h5Shape(dataObj, rawValue).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  const rawShape = rawShapeMeta.length ? rawShapeMeta : h5Shape(dataObj, rawValue).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
   if(!rawShape.length) return null;
-  const shape = normalizeShape3(rawShape.slice().reverse(), rawFlat.length);
+  const shape = assertVolumeFits(normalizeShape3(rawShape.slice().reverse(), rawFlat.length), "DISCUS/Yell HDF5 grid").dims;
   const values = reorderFortranCube(rawFlat, rawShape, shape);
   const corner = readH5Array(h5file, ["lower_limits"]).slice(0, 3);
   while(corner.length < 3) corner.push(0);
@@ -1443,20 +2801,24 @@ function parseCommonScatteringH5(h5file, name){
   const dataGroup = h5Lookup(h5file, "scattering/data");
   const dataObj = h5Lookup(h5file, "scattering/data/data");
   if(!dataGroup || !dataObj) return null;
+  const rawShapeMeta = h5Shape(dataObj, null).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  if(rawShapeMeta.length) assertVolumeFits(normalizeShape3(rawShapeMeta), "DiffuseDevelopers unified HDF5 grid");
   const rawValue = h5Value(dataObj);
   const rawFlat = flatNumericArray(rawValue);
-  let shape = h5Shape(dataObj, rawValue).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  let shape = rawShapeMeta.length ? rawShapeMeta : h5Shape(dataObj, rawValue).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
   shape = normalizeShape3(shape, rawFlat.length);
+  shape = assertVolumeFits(shape, "DiffuseDevelopers unified HDF5 grid").dims;
   const values = reorderCOrderCube(rawFlat, shape);
-  const axesNames = parseH5AxesNames(h5AttrValue(dataGroup, "axes"));
   const space = h5Text(h5AttrValue(dataGroup, "space"));
+  let axesNames = parseH5AxesNames(h5AttrValue(dataGroup, "axes"));
+  if(!axesNames.length) axesNames = defaultAxesForH5Space(space);
   const content = h5Text(h5AttrValue(dataGroup, "content"));
   const radiation = h5Text(h5AttrValue(dataGroup, "radiation"));
   const dataKind = classifyDataKind({content, space, name, format:"DiffuseDevelopers unified HDF5", shape});
   const axis0 = axesNames[0] || "h", axis1 = axesNames[1] || "k", axis2 = axesNames[2] || "l";
-  const hAxis = readH5Axis(h5file, shape[0], [`scattering/data/${axis0}`, "scattering/data/h", "scattering/data/qx", "scattering/data/x"]);
-  const kAxis = readH5Axis(h5file, shape[1], [`scattering/data/${axis1}`, "scattering/data/k", "scattering/data/qy", "scattering/data/y"]);
-  const lAxis = readH5Axis(h5file, shape[2], [`scattering/data/${axis2}`, "scattering/data/l", "scattering/data/qz", "scattering/data/z"]);
+  const hAxis = readH5Axis(h5file, shape[0], [`scattering/data/${axis0}`, "scattering/data/h", "scattering/data/indices_abs", "scattering/data/qx", "scattering/data/x"]);
+  const kAxis = readH5Axis(h5file, shape[1], [`scattering/data/${axis1}`, "scattering/data/k", "scattering/data/indices_ord", "scattering/data/qy", "scattering/data/y"]);
+  const lAxis = readH5Axis(h5file, shape[2], [`scattering/data/${axis2}`, "scattering/data/l", "scattering/data/indices_top", "scattering/data/qz", "scattering/data/z"]);
   const corner = readH5Array(h5file, ["scattering/data/lower_limits"]).slice(0, 3);
   while(corner.length < 3) corner.push(0);
   const vectors = matrix3FromH5(readH5Array(h5file, ["scattering/data/step_vectors"]));
@@ -1531,11 +2893,18 @@ async function parseNexusFile(file){
   if(!h5 || !h5.File || !h5.FS || typeof h5.FS.writeFile !== "function"){
     throw new Error("h5wasm loaded, but its virtual filesystem API is unavailable.");
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
   const safeName = `/tmp/${Date.now()}_${file.name.replace(/[^A-Za-z0-9_.-]/g, "_")}`;
+  let bytes = null;
   let h5file = null;
   try{
+    try{
+      bytes = new Uint8Array(await file.arrayBuffer());
+    }catch(err){
+      if(isLikelyMemoryError(err)) throw new Error(`HDF5/NeXus file could not be copied into browser memory (${formatBytes(file.size)}). Crop, downsample, or convert before loading.`);
+      throw err;
+    }
     h5.FS.writeFile(safeName, bytes);
+    bytes = null;
     h5file = new h5.File(safeName, "r");
     const commonUnified = parseCommonScatteringH5(h5file, file.name);
     if(commonUnified) return commonUnified;
@@ -1556,10 +2925,13 @@ async function parseNexusFile(file){
       if(signalObj){ signalPath = path; break; }
     }
     if(!signalObj) throw new Error("No signal dataset found. Tried MDHistoWorkspace/data/signal and entry/data/signal.");
+    const shapeMeta = h5Shape(signalObj, null);
+    if(shapeMeta.length) assertVolumeFits(normalizeShape3(shapeMeta), "NeXus signal grid");
     const signalValue = h5Value(signalObj);
     const values = flatNumericArray(signalValue);
     let shape = h5Shape(signalObj, signalValue);
     shape = normalizeShape3(shape, values.length);
+    shape = assertVolumeFits(shape, "NeXus signal grid").dims;
     const [nH,nK,nL] = shape;
     const axesAttr = h5Text(h5AttrValue(signalObj, "axes"));
     const axesNames = axesAttr.split(/[:\s,]+/).map(s => s.trim()).filter(Boolean);
@@ -1577,23 +2949,53 @@ async function parseNexusFile(file){
     const result = makeVolumeResult(file.name, shape, hAxis, kAxis, lAxis, values, `NeXus signal (${signalPath})`, coordKind, null, 0, meta);
     result.header = {points:values.length, sections:1, scale:null, offset:null};
     return result;
+  }catch(err){
+    if(isLikelyMemoryError(err)){
+      throw new Error(`HDF5/NeXus load ran out of browser memory while reading ${file.name} (${formatBytes(file.size)}). Crop, downsample, or convert the volume before loading.`);
+    }
+    throw err;
   }finally{
+    bytes = null;
     try{ if(h5file && typeof h5file.close === "function") h5file.close(); }catch(_){}
     try{ if(h5.FS && typeof h5.FS.unlink === "function") h5.FS.unlink(safeName); }catch(_){}
   }
 }
 
-async function parseFile(file){
-  if(/\.(nx|nxs|h5|hdf5)$/i.test(file.name)) return parseNexusFile(file);
+async function readWholeTextFile(file){
+  try{
+    return await file.text();
+  }catch(err){
+    if(isLikelyMemoryError(err)){
+      throw new Error(`Text file could not be copied into browser memory (${formatBytes(file.size)}). Numeric row formats are streamed in chunks; whole-document text formats such as JSON still require a single browser string.`);
+    }
+    throw err;
+  }
+}
+
+async function parseFile(file, progress=null){
+  const cached = await readCachedResult(file, progress);
+  if(cached) return cached;
+  let parsed;
+  if(/\.(nx|nxs|h5|hdf5)$/i.test(file.name)){
+    parsed = await parseNexusFile(file);
+    queueCacheSave(file, parsed);
+    return parsed;
+  }
   if(file.size > STREAM_TEXT_THRESHOLD){
+    if(progress) progress({phase:"Sampling file", offset:0, size:file.size, force:true});
     const sampleText = await file.slice(0, Math.min(file.size, 262144)).text();
     const sample = sampleText.trimStart();
-    if(!sample.startsWith("{") && !sample.startsWith("[") && !/^#\s*vtk\b/i.test(sample) && !/\bDATASET\s+STRUCTURED_POINTS\b/i.test(sample) && looksLikeIndexed3dRows(sampleText)){
-      return parseIndexedTextFile(file, sampleText);
+    if(!sample.startsWith("{") && !sample.startsWith("[")){
+      parsed = await parseStreamedTextData(file, sampleText, progress);
+      queueCacheSave(file, parsed);
+      return parsed;
     }
   }
-  const text = await file.text();
-  return parseTextData(file.name, text);
+  if(progress) progress({phase:"Reading file", offset:0, size:file.size, force:true});
+  const text = await readWholeTextFile(file);
+  parsed = parseTextData(file.name, text);
+  queueCacheSave(file, parsed);
+  return parsed;
 }
 
 function parse3dsDat(name, text){
@@ -1833,8 +3235,7 @@ function isNonOrthBq(Bq){
 
 function buildIndexedResult(name, header, skipped, pi, pj, pk, hs, ks, ls, vals, minI, minJ, minK, maxI, maxJ, maxK, rawMin, rawMax, coordKind="q", format="indexed text", meta={}){
   const nH = maxI - minI + 1, nK = maxJ - minJ + 1, nL = maxK - minK + 1;
-  const total = nH * nK * nL;
-  if(total > 60000000) throw new Error(`Grid ${nH} x ${nK} x ${nL} is too large for browser plotting.`);
+  const {total} = assertVolumeFits([nH,nK,nL], "Indexed 3DS grid");
   const I = new Float64Array(total);
   I.fill(NaN);
   const hAxis = new Float64Array(nH), kAxis = new Float64Array(nK), lAxis = new Float64Array(nL);
@@ -1864,8 +3265,7 @@ function uniqueSorted(values){
 function buildPlainResult(name, header, skipped, hs, ks, ls, vals, rawMin, rawMax, coordKind="hkl", format="4-column text", meta={}){
   const hAxis = uniqueSorted(hs), kAxis = uniqueSorted(ks), lAxis = uniqueSorted(ls);
   const nH = hAxis.length, nK = kAxis.length, nL = lAxis.length;
-  const total = nH * nK * nL;
-  if(total > 60000000) throw new Error(`Grid ${nH} x ${nK} x ${nL} is too large for browser plotting.`);
+  const {total} = assertVolumeFits([nH,nK,nL], "4-column grid");
   const hMap = new Map(hAxis.map((v,i) => [numKey(v), i]));
   const kMap = new Map(kAxis.map((v,i) => [numKey(v), i]));
   const lMap = new Map(lAxis.map((v,i) => [numKey(v), i]));
@@ -1885,9 +3285,10 @@ function buildPlainResult(name, header, skipped, hs, ks, ls, vals, rawMin, rawMa
 function buildTriplet2dResult(name, header, skipped, xs, ys, vals, rawMin, rawMax, coordKind="q", meta={}){
   const xAxis = uniqueSorted(xs), yAxis = uniqueSorted(ys), zAxis = [0];
   const nX = xAxis.length, nY = yAxis.length, nZ = 1;
+  const {total} = assertVolumeFits([nX,nY,nZ], "3-column grid");
   const xMap = new Map(xAxis.map((v,i) => [numKey(v), i]));
   const yMap = new Map(yAxis.map((v,i) => [numKey(v), i]));
-  const I = new Float64Array(nX * nY * nZ);
+  const I = new Float64Array(total);
   I.fill(NaN);
   let filled = 0;
   for(let n=0;n<vals.length;n++){
@@ -1909,15 +3310,27 @@ function transformedValue(v, mode){
 }
 
 function computeGlobalDisplayBounds(res){
-  const out = {};
-  for(const mode of ["linear","sqrt","log","log1p"]){
-    let mn = Infinity, mx = -Infinity;
-    for(let i=0;i<res.I.length;i++){
-      const v = transformedValue(res.I[i], mode);
-      if(!Number.isFinite(v)) continue;
-      if(v < mn) mn = v;
-      if(v > mx) mx = v;
-    }
+  const out = {
+    linear:{min:Infinity, max:-Infinity},
+    sqrt:{min:Infinity, max:-Infinity},
+    log:{min:Infinity, max:-Infinity},
+    log1p:{min:Infinity, max:-Infinity}
+  };
+  const update = (mode, v) => {
+    if(!Number.isFinite(v)) return;
+    if(v < out[mode].min) out[mode].min = v;
+    if(v > out[mode].max) out[mode].max = v;
+  };
+  for(let i=0;i<res.I.length;i++){
+    const raw = res.I[i];
+    if(!Number.isFinite(raw)) continue;
+    update("linear", raw);
+    update("sqrt", raw >= 0 ? Math.sqrt(raw) : -Math.sqrt(-raw));
+    if(raw > 0) update("log", Math.log10(raw));
+    update("log1p", Math.log10(Math.max(0, raw) + 1));
+  }
+  for(const mode of Object.keys(out)){
+    let mn = out[mode].min, mx = out[mode].max;
     if(!Number.isFinite(mn) || !Number.isFinite(mx)){ mn = 0; mx = 1; }
     if(Math.abs(mx - mn) < 1e-30) mx = mn + 1;
     out[mode] = {min:mn, max:mx};
@@ -1944,9 +3357,10 @@ function axisToFraction(axis, meta, x){
 function sampleTrilinear(res, h, k, l){
   let fx, fy, fz;
   if(res.gridInv && Array.isArray(res.gridOrigin)){
-    const rel = [h - res.gridOrigin[0], k - res.gridOrigin[1], l - res.gridOrigin[2]];
-    const f = matVec(res.gridInv, rel);
-    fx = f[0]; fy = f[1]; fz = f[2];
+    const x = h - res.gridOrigin[0], y = k - res.gridOrigin[1], z = l - res.gridOrigin[2], m = res.gridInv;
+    fx = m[0][0]*x + m[0][1]*y + m[0][2]*z;
+    fy = m[1][0]*x + m[1][1]*y + m[1][2]*z;
+    fz = m[2][0]*x + m[2][1]*y + m[2][2]*z;
   }else{
     fx = axisToFraction(res.h, res.axes.h, h);
     fy = axisToFraction(res.k, res.axes.k, k);
@@ -1955,17 +3369,59 @@ function sampleTrilinear(res, h, k, l){
   if(!Number.isFinite(fx) || !Number.isFinite(fy) || !Number.isFinite(fz)) return NaN;
   let i0 = Math.floor(fx), j0 = Math.floor(fy), k0 = Math.floor(fz);
   const rx = fx - i0, ry = fy - j0, rz = fz - k0;
+  const nH = res.shape[0], nK = res.shape[1], nL = res.shape[2], nKL = nK * nL, I = res.I;
   let sum = 0, wsum = 0;
   for(let dz=0; dz<=1; dz++) for(let dy=0; dy<=1; dy++) for(let dx=0; dx<=1; dx++){
     const ii = i0 + dx, jj = j0 + dy, kk = k0 + dz;
-    if(ii < 0 || jj < 0 || kk < 0 || ii >= res.shape[0] || jj >= res.shape[1] || kk >= res.shape[2]) continue;
-    const v = res.I[idx3(res.shape, ii, jj, kk)];
+    if(ii < 0 || jj < 0 || kk < 0 || ii >= nH || jj >= nK || kk >= nL) continue;
+    const v = I[ii * nKL + jj * nL + kk];
     if(!Number.isFinite(v)) continue;
     const w = (dx ? rx : 1-rx) * (dy ? ry : 1-ry) * (dz ? rz : 1-rz);
     sum += v * w;
     wsum += w;
   }
   return wsum > 0 ? sum / wsum : NaN;
+}
+
+function makeTrilinearSampler(res){
+  const nH = res.shape[0], nK = res.shape[1], nL = res.shape[2], nKL = nK * nL, I = res.I;
+  const at = (fx, fy, fz) => {
+    if(!Number.isFinite(fx) || !Number.isFinite(fy) || !Number.isFinite(fz)) return NaN;
+    const i0 = Math.floor(fx), j0 = Math.floor(fy), k0 = Math.floor(fz);
+    const rx = fx - i0, ry = fy - j0, rz = fz - k0;
+    let sum = 0, wsum = 0;
+    for(let dz=0; dz<=1; dz++) for(let dy=0; dy<=1; dy++) for(let dx=0; dx<=1; dx++){
+      const ii = i0 + dx, jj = j0 + dy, kk = k0 + dz;
+      if(ii < 0 || jj < 0 || kk < 0 || ii >= nH || jj >= nK || kk >= nL) continue;
+      const v = I[ii * nKL + jj * nL + kk];
+      if(!Number.isFinite(v)) continue;
+      const w = (dx ? rx : 1-rx) * (dy ? ry : 1-ry) * (dz ? rz : 1-rz);
+      sum += v * w;
+      wsum += w;
+    }
+    return wsum > 0 ? sum / wsum : NaN;
+  };
+  if(res.gridInv && Array.isArray(res.gridOrigin)){
+    const o = res.gridOrigin, m = res.gridInv;
+    return (h, k, l) => {
+      const x = h - o[0], y = k - o[1], z = l - o[2];
+      return at(
+        m[0][0]*x + m[0][1]*y + m[0][2]*z,
+        m[1][0]*x + m[1][1]*y + m[1][2]*z,
+        m[2][0]*x + m[2][1]*y + m[2][2]*z
+      );
+    };
+  }
+  const ah = res.axes && res.axes.h, ak = res.axes && res.axes.k, al = res.axes && res.axes.l;
+  if(ah && ak && al && ah.uniform && ak.uniform && al.uniform && Math.abs(ah.step) > 1e-30 && Math.abs(ak.step) > 1e-30 && Math.abs(al.step) > 1e-30){
+    const h0 = res.h[0], k0 = res.k[0], l0 = res.l[0], ih = 1 / ah.step, ik = 1 / ak.step, il = 1 / al.step;
+    return (h, k, l) => at((h - h0) * ih, (k - k0) * ik, (l - l0) * il);
+  }
+  return (h, k, l) => at(
+    axisToFraction(res.h, (res.axes && res.axes.h) || {}, h),
+    axisToFraction(res.k, (res.axes && res.axes.k) || {}, k),
+    axisToFraction(res.l, (res.axes && res.axes.l) || {}, l)
+  );
 }
 
 function planeBasisFromNormal(n){
@@ -2151,53 +3607,97 @@ function applyAvgVolInputs(){
   rebuildAvgVolSlider();
 }
 
-function buildAxisSlice(res, axisName, fixed){
+function chooseSliceStrides(rows, cols, cap=MAX_AXIS_SLICE_CELLS){
+  const strides = [1,1];
+  const limit = Math.max(1, Math.floor(Number(cap) || MAX_AXIS_SLICE_CELLS));
+  const count = () => Math.ceil(rows / strides[0]) * Math.ceil(cols / strides[1]);
+  while(count() > limit){
+    const r = Math.ceil(rows / strides[0]);
+    const c = Math.ceil(cols / strides[1]);
+    if(r >= c) strides[0]++;
+    else strides[1]++;
+  }
+  return strides;
+}
+
+function sampledAxisIndex(pos, count, fullCount){
+  if(fullCount <= 1 || count <= 1) return 0;
+  return Math.min(fullCount - 1, Math.round(pos * (fullCount - 1) / (count - 1)));
+}
+
+function buildAxisSlice(res, axisName, fixed, maxCells=MAX_AXIS_SLICE_CELLS, include3d=true){
   const [nH,nK,nL] = res.shape;
   const labels = nativeAxisLabels(res);
   fixed = Math.round(fixed);
+  const sampled = (fullRows, fullCols) => {
+    const strides = chooseSliceStrides(fullRows, fullCols, maxCells);
+    return {
+      rows:Math.ceil(fullRows / strides[0]),
+      cols:Math.ceil(fullCols / strides[1]),
+      strides,
+      decimated:strides[0] > 1 || strides[1] > 1,
+      fullRows,
+      fullCols
+    };
+  };
   if(axisName === "h"){
     fixed = clamp(fixed, 0, nH - 1);
-    const rows = nK, cols = nL, d = new Float64Array(rows * cols);
-    const x3 = new Array(rows), y3 = new Array(rows), z3 = new Array(rows);
+    const smp = sampled(nK, nL);
+    const rows = smp.rows, cols = smp.cols, d = new Float64Array(rows * cols);
+    const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
     for(let r=0;r<rows;r++){
-      x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols);
+      const rr = sampledAxisIndex(r, rows, nK);
+      if(include3d){ x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols); }
       for(let c=0;c<cols;c++){
-        d[r*cols+c] = res.I[idx3(res.shape, fixed, r, c)];
-        const p = pointAtIndex(res, fixed, r, c);
-        x3[r][c] = p[0]; y3[r][c] = p[1]; z3[r][c] = p[2];
+        const cc = sampledAxisIndex(c, cols, nL);
+        d[r*cols+c] = res.I[idx3(res.shape, fixed, rr, cc)];
+        if(include3d){
+          const p = pointAtIndex(res, fixed, rr, cc);
+          x3[r][c] = p[0]; y3[r][c] = p[1]; z3[r][c] = p[2];
+        }
       }
     }
-    return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[0]}[${fixed}] = ${fmt(res.h[fixed])}`, xLabel:labels[2], yLabel:labels[1], xMin:res.l[0], xMax:res.l[nL-1], yMin:res.k[0], yMax:res.k[nK-1], xVec:gridVector(res,2), yVec:gridVector(res,1)};
+    return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[0]}[${fixed}] = ${fmt(res.h[fixed])}`, xLabel:labels[2], yLabel:labels[1], xMin:res.l[0], xMax:res.l[nL-1], yMin:res.k[0], yMax:res.k[nK-1], xVec:gridVector(res,2), yVec:gridVector(res,1), ...smp};
   }
   if(axisName === "k"){
     fixed = clamp(fixed, 0, nK - 1);
-    const rows = nH, cols = nL, d = new Float64Array(rows * cols);
-    const x3 = new Array(rows), y3 = new Array(rows), z3 = new Array(rows);
+    const smp = sampled(nH, nL);
+    const rows = smp.rows, cols = smp.cols, d = new Float64Array(rows * cols);
+    const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
     for(let r=0;r<rows;r++){
-      x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols);
+      const rr = sampledAxisIndex(r, rows, nH);
+      if(include3d){ x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols); }
       for(let c=0;c<cols;c++){
-        d[r*cols+c] = res.I[idx3(res.shape, r, fixed, c)];
-        const p = pointAtIndex(res, r, fixed, c);
-        x3[r][c] = p[0]; y3[r][c] = p[1]; z3[r][c] = p[2];
+        const cc = sampledAxisIndex(c, cols, nL);
+        d[r*cols+c] = res.I[idx3(res.shape, rr, fixed, cc)];
+        if(include3d){
+          const p = pointAtIndex(res, rr, fixed, cc);
+          x3[r][c] = p[0]; y3[r][c] = p[1]; z3[r][c] = p[2];
+        }
       }
     }
-    return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[1]}[${fixed}] = ${fmt(res.k[fixed])}`, xLabel:labels[2], yLabel:labels[0], xMin:res.l[0], xMax:res.l[nL-1], yMin:res.h[0], yMax:res.h[nH-1], xVec:gridVector(res,2), yVec:gridVector(res,0)};
+    return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[1]}[${fixed}] = ${fmt(res.k[fixed])}`, xLabel:labels[2], yLabel:labels[0], xMin:res.l[0], xMax:res.l[nL-1], yMin:res.h[0], yMax:res.h[nH-1], xVec:gridVector(res,2), yVec:gridVector(res,0), ...smp};
   }
   fixed = clamp(fixed, 0, nL - 1);
-  const rows = nH, cols = nK, d = new Float64Array(rows * cols);
-  const x3 = new Array(rows), y3 = new Array(rows), z3 = new Array(rows);
+  const smp = sampled(nH, nK);
+  const rows = smp.rows, cols = smp.cols, d = new Float64Array(rows * cols);
+  const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
   for(let r=0;r<rows;r++){
-      x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols);
+      const rr = sampledAxisIndex(r, rows, nH);
+      if(include3d){ x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols); }
       for(let c=0;c<cols;c++){
-        d[r*cols+c] = res.I[idx3(res.shape, r, c, fixed)];
-        const p = pointAtIndex(res, r, c, fixed);
-        x3[r][c] = p[0]; y3[r][c] = p[1]; z3[r][c] = p[2];
+        const cc = sampledAxisIndex(c, cols, nK);
+        d[r*cols+c] = res.I[idx3(res.shape, rr, cc, fixed)];
+        if(include3d){
+          const p = pointAtIndex(res, rr, cc, fixed);
+          x3[r][c] = p[0]; y3[r][c] = p[1]; z3[r][c] = p[2];
+        }
       }
     }
-  return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[2]}[${fixed}] = ${fmt(res.l[fixed])}`, xLabel:labels[1], yLabel:labels[0], xMin:res.k[0], xMax:res.k[nK-1], yMin:res.h[0], yMax:res.h[nH-1], xVec:gridVector(res,1), yVec:gridVector(res,0)};
+  return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[2]}[${fixed}] = ${fmt(res.l[fixed])}`, xLabel:labels[1], yLabel:labels[0], xMin:res.k[0], xMax:res.k[nK-1], yMin:res.h[0], yMax:res.h[nH-1], xVec:gridVector(res,1), yVec:gridVector(res,0), ...smp};
 }
 
-function buildNormalPlaneSlice(res, resOverride=null){
+function buildNormalPlaneSlice(res, resOverride=null, include3d=true){
   if(!state.plane) resetPlaneState();
   const p = state.plane;
   const n = p.normalUnit, basis = planeBasisFromNormal(n), u = basis.u, v = basis.v;
@@ -2211,24 +3711,27 @@ function buildNormalPlaneSlice(res, resOverride=null){
   const nRes = Math.max(32, Math.min(520, Math.floor(Number.isFinite(resOverride) ? resOverride : Number($("pRes").value) || 220)));
   const size = range * scale, half = size / 2, step = nRes > 1 ? size / (nRes - 1) : 0;
   const rows = nRes, cols = nRes, d = new Float64Array(rows * cols);
-  const x3 = new Array(rows), y3 = new Array(rows), z3 = new Array(rows);
+  const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
+  const sample = makeTrilinearSampler(res);
   let valid = 0;
   for(let r=0;r<rows;r++){
     const vv = -half + r * step;
-    x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols);
+    if(include3d){ x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols); }
     for(let c=0;c<cols;c++){
       const uu = -half + c * step;
-      const pt = add3(p.center, add3(scale3(u, uu), scale3(v, vv)));
-      const value = sampleTrilinear(res, pt[0], pt[1], pt[2]);
+      const h = p.center[0] + u[0] * uu + v[0] * vv;
+      const k = p.center[1] + u[1] * uu + v[1] * vv;
+      const l = p.center[2] + u[2] * uu + v[2] * vv;
+      const value = sample(h, k, l);
       d[r*cols+c] = value;
-      x3[r][c] = pt[0]; y3[r][c] = pt[1]; z3[r][c] = pt[2];
+      if(include3d){ x3[r][c] = h; y3[r][c] = k; z3[r][c] = l; }
       if(Number.isFinite(value)) valid++;
     }
   }
   return {type:"plane", rows, cols, d, x3, y3, z3, plane:`Plane c=(${fmt(p.center[0])}, ${fmt(p.center[1])}, ${fmt(p.center[2])}) n=(${fmt(n[0],3)}, ${fmt(n[1],3)}, ${fmt(n[2],3)})`, xLabel:"u", yLabel:"v", xMin:-half, xMax:half, yMin:-half, yMax:half, xVec:u, yVec:v, valid};
 }
 
-function buildAvgVolSlice(res, resOverride=null){
+function buildAvgVolSlice(res, resOverride=null, include3d=true, options={}){
   if(!state.avgvol) resetAvgVolState();
   const p = state.avgvol;
   const n = p.normalUnit, basis = planeBasisFromNormal(n), u = basis.u, v = basis.v;
@@ -2241,23 +3744,26 @@ function buildAvgVolSlice(res, resOverride=null){
   const scale = Math.max(0.2, Math.min(4, Number($("avScale").value) || 1.2));
   const nRes = Math.max(32, Math.min(420, Math.floor(Number.isFinite(resOverride) ? resOverride : Number($("avRes").value) || 180)));
   const slabHalf = Math.max(0.001, Math.min(20, Number($("slabWidth").value) || 0.25));
-  const slabN = Math.max(3, Math.min(101, Math.floor(Number($("slabN").value) || 9)));
+  const fullSlabN = Math.max(3, Math.min(101, Math.floor(Number($("slabN").value) || 9)));
+  const slabN = options.fast ? Math.min(fullSlabN, 3) : fullSlabN;
   const size = range * scale, half = size / 2, step = nRes > 1 ? size / (nRes - 1) : 0;
   const slabStep = slabN > 1 ? 2 * slabHalf / (slabN - 1) : 0;
   const rows = nRes, cols = nRes, d = new Float64Array(rows * cols);
-  const x3 = new Array(rows), y3 = new Array(rows), z3 = new Array(rows);
+  const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
+  const sample = makeTrilinearSampler(res);
   let valid = 0;
   for(let r=0;r<rows;r++){
     const vv = -half + r * step;
-    x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols);
+    if(include3d){ x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols); }
     for(let c=0;c<cols;c++){
       const uu = -half + c * step;
-      const center = add3(p.center, add3(scale3(u, uu), scale3(v, vv)));
+      const h0 = p.center[0] + u[0] * uu + v[0] * vv;
+      const k0 = p.center[1] + u[1] * uu + v[1] * vv;
+      const l0 = p.center[2] + u[2] * uu + v[2] * vv;
       let sum = 0, count = 0;
       for(let s=0;s<slabN;s++){
         const t = -slabHalf + s * slabStep;
-        const pt = add3(center, scale3(n, t));
-        const value = sampleTrilinear(res, pt[0], pt[1], pt[2]);
+        const value = sample(h0 + n[0] * t, k0 + n[1] * t, l0 + n[2] * t);
         if(Number.isFinite(value)){
           sum += value;
           count++;
@@ -2265,18 +3771,34 @@ function buildAvgVolSlice(res, resOverride=null){
       }
       const avg = count ? sum / count : NaN;
       d[r*cols+c] = avg;
-      x3[r][c] = center[0]; y3[r][c] = center[1]; z3[r][c] = center[2];
+      if(include3d){ x3[r][c] = h0; y3[r][c] = k0; z3[r][c] = l0; }
       if(Number.isFinite(avg)) valid++;
     }
   }
   return {type:"avgvol", rows, cols, d, x3, y3, z3, plane:`VolAvg c=(${fmt(p.center[0])}, ${fmt(p.center[1])}, ${fmt(p.center[2])}) n=(${fmt(n[0],3)}, ${fmt(n[1],3)}, ${fmt(n[2],3)}) slab=+/-${fmt(slabHalf,3)} (${slabN} pt)`, xLabel:"u", yLabel:"v", xMin:-half, xMax:half, yMin:-half, yMax:half, xVec:u, yVec:v, valid};
 }
 
-function currentSlice(resOverride=null){
+function currentSlice(resOverride=null, axisCellCap=MAX_AXIS_SLICE_CELLS, include3d=true, options={}){
   if(!state.res) return null;
-  if($("sliceMode").value === "plane") return buildNormalPlaneSlice(state.res, resOverride);
-  if($("sliceMode").value === "avgvol") return buildAvgVolSlice(state.res, resOverride);
-  return buildAxisSlice(state.res, $("axis").value, Number($("idx").value));
+  if($("sliceMode").value === "plane") return buildNormalPlaneSlice(state.res, resOverride, include3d);
+  if($("sliceMode").value === "avgvol") return buildAvgVolSlice(state.res, resOverride, include3d, options);
+  return buildAxisSlice(state.res, $("axis").value, Number($("idx").value), axisCellCap, include3d);
+}
+
+function fastMoveSliceResolution(){
+  const mode = $("sliceMode").value;
+  if(mode === "plane") return Math.max(32, Math.min(72, Math.floor(Number($("pRes").value) || 220)));
+  if(mode === "avgvol") return Math.max(32, Math.min(44, Math.floor(Number($("avRes").value) || 180)));
+  return null;
+}
+
+function scheduleDraw2d(options={}){
+  if(state.drawRaf) cancelAnimationFrame(state.drawRaf);
+  state.drawRaf = requestAnimationFrame(() => {
+    state.drawRaf = 0;
+    draw2d(options);
+    if(options && options.sync3d) updatePlane3dFast().catch(err => set3dStatus(`Fast plane update failed: ${err.message}`));
+  });
 }
 
 function rgbFromStops(stops, t){
@@ -2292,6 +3814,18 @@ function rgbFromStops(stops, t){
     }
   }
   return stops[stops.length - 1][1];
+}
+
+function colorLutFromStops(stops, n=256){
+  const lut = new Uint8ClampedArray(n * 3);
+  for(let i=0;i<n;i++){
+    const rgb = rgbFromStops(stops, i / Math.max(1, n - 1));
+    const p = i * 3;
+    lut[p] = rgb[0];
+    lut[p + 1] = rgb[1];
+    lut[p + 2] = rgb[2];
+  }
+  return lut;
 }
 
 function plotlyColorscale(){
@@ -2502,8 +4036,8 @@ function onHeatmapPointerUp(ev){
   if(moved) scheduleRender3d(0);
 }
 
-function draw2d(){
-  const cv = $("heatmap"), ctx = cv.getContext("2d", {willReadFrequently:true});
+function draw2d(options={}){
+  const cv = $("heatmap"), ctx = cv.getContext("2d");
   const rect = cv.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const cssW = Math.max(1, Math.round(rect.width)), cssH = Math.max(1, Math.round(rect.height));
@@ -2523,25 +4057,33 @@ function draw2d(){
     return;
   }
 
-  const sl = currentSlice();
+  const fast = !!(options && options.fast);
+  const resOverride = fast ? fastMoveSliceResolution() : null;
+  const axisCap = fast ? MAX_LIVE_AXIS_SLICE_CELLS : MAX_AXIS_SLICE_CELLS;
+  const sl = currentSlice(resOverride, axisCap, false, {fast});
   const mode = $("scale").value;
   const stats = sliceTransformed(sl, mode);
   const levels = displayLevels(stats, mode);
   const stops = COLOR_MAPS[$("colorMap").value] || COLOR_MAPS.viridis;
+  const lut = colorLutFromStops(stops, 256);
   const den = levels.max - levels.min || 1;
   if(!state.offscreen) state.offscreen = document.createElement("canvas");
   const off = state.offscreen;
   if(off.width !== sl.cols) off.width = sl.cols;
   if(off.height !== sl.rows) off.height = sl.rows;
-  const octx = off.getContext("2d", {willReadFrequently:true});
-  const img = octx.createImageData(sl.cols, sl.rows);
+  const octx = off.getContext("2d");
+  let img = state.offscreenImage;
+  if(!img || img.width !== sl.cols || img.height !== sl.rows){
+    img = octx.createImageData(sl.cols, sl.rows);
+    state.offscreenImage = img;
+  }
   for(let r=0;r<sl.rows;r++) for(let c=0;c<sl.cols;c++){
     const p = r * sl.cols + c;
     const v = stats.values[p];
     const q = p * 4;
     if(Number.isFinite(v)){
-      const rgb = rgbFromStops(stops, (v - levels.min) / den);
-      img.data[q] = rgb[0]; img.data[q+1] = rgb[1]; img.data[q+2] = rgb[2]; img.data[q+3] = 255;
+      const li = Math.max(0, Math.min(255, Math.round((v - levels.min) / den * 255))) * 3;
+      img.data[q] = lut[li]; img.data[q+1] = lut[li+1]; img.data[q+2] = lut[li+2]; img.data[q+3] = 255;
     }else{
       img.data[q] = 0; img.data[q+1] = 0; img.data[q+2] = 0; img.data[q+3] = 0;
     }
@@ -2613,8 +4155,9 @@ function draw2d(){
   drawColorbar(ctx, stops, levels, stats, barX, 20, barW, cssH - 40);
 
   const validText = sl.type !== "axis" ? ` | valid=${sl.valid}/${sl.rows*sl.cols}` : "";
+  const sampleText = sl.decimated ? ` | sampled ${sl.rows}x${sl.cols} from ${sl.fullRows}x${sl.fullCols} (${sl.strides.join("x")})` : "";
   const shown = `[${levels.min.toExponential(3)}, ${levels.max.toExponential(3)}]`;
-  $("sliceStats").textContent = `${sl.plane} | display=${mode} | slice min=${stats.min.toExponential(4)} max=${stats.max.toExponential(4)} | shown ${shown}${validText} | ${sl.xLabel}: ${fmt(sl.xMin)}..${fmt(sl.xMax)} | ${sl.yLabel}: ${fmt(sl.yMin)}..${fmt(sl.yMax)}`;
+  $("sliceStats").textContent = `${sl.plane} | display=${mode} | slice min=${stats.min.toExponential(4)} max=${stats.max.toExponential(4)} | shown ${shown}${validText}${sampleText} | ${sl.xLabel}: ${fmt(sl.xMin)}..${fmt(sl.xMax)} | ${sl.yLabel}: ${fmt(sl.yMin)}..${fmt(sl.yMax)}`;
   $("levelInfo").textContent = `${levels.source} levels ${shown} | range [${levels.rawMin.toExponential(3)}, ${levels.rawMax.toExponential(3)}]`;
   if($("levelMode").value !== "manual"){
     $("levelMin").value = fmt(levels.min, 7);
@@ -2785,9 +4328,11 @@ function updateMeta(){
 function scheduleRender3d(delay=180){
   if(!state.res) return;
   if($("auto3d") && $("auto3d").value !== "1") return;
+  if(state.moveActive) return;
   if(state.renderTimer) clearTimeout(state.renderTimer);
   state.renderTimer = setTimeout(() => {
     state.renderTimer = 0;
+    if(state.moveActive) return;
     render3d().catch(err => {
       set3dStatus("3D render failed");
       setIsoStatus("3D render failed");
@@ -2861,7 +4406,7 @@ function decimateSliceFor3d(sl){
   const maxRes = 180;
   if(sl.rows <= maxRes && sl.cols <= maxRes) return sl;
   if(sl.type !== "axis"){
-    return currentSlice(maxRes);
+    return currentSlice(maxRes, MAX_3D_SLICE_CELLS, true);
   }
   return sl;
 }
@@ -2976,6 +4521,116 @@ function wireCamera(plotId, key){
   gd._rmcCameraHooked = true;
 }
 
+function makePlane3dTrace(sl, stats, levels){
+  const plot = plotMeshFromSlice(state.res, sl, stats.values);
+  const labels = renderAxisLabels(state.res);
+  const nativeLabels = nativeAxisLabels(state.res);
+  const valLabel = valueLabel(state.res);
+  if(!plot.i.length){
+    if(!plot.x.length) return {trace:null, plot};
+    return {
+      plot,
+      trace:{
+        type:"scatter3d",
+        mode:sl.rows === 1 || sl.cols === 1 ? "lines+markers" : "markers",
+        x:plot.x,
+        y:plot.y,
+        z:plot.z,
+        customdata:plot.custom,
+        marker:{size:3.2, color:plot.intensity, colorscale:plotlyColorscale(), cmin:levels.min, cmax:levels.max},
+        line:{width:3, color:"#dbeafe"},
+        hovertemplate:plot.transformed
+          ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
+          : `${labels[0]}=%{customdata[3]:.5g}<br>${labels[1]}=%{customdata[4]:.5g}<br>${labels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
+      }
+    };
+  }
+  return {
+    plot,
+    trace:{
+      type:"mesh3d",
+      x:plot.x,
+      y:plot.y,
+      z:plot.z,
+      i:plot.i,
+      j:plot.j,
+      k:plot.k,
+      intensity:plot.intensity,
+      intensitymode:"vertex",
+      customdata:plot.custom,
+      hovertemplate:plot.transformed
+        ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
+        : `${labels[0]}=%{customdata[3]:.5g}<br>${labels[1]}=%{customdata[4]:.5g}<br>${labels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`,
+      colorscale:plotlyColorscale(),
+      cmin:levels.min,
+      cmax:levels.max,
+      showscale:true,
+      flatshading:false,
+      lighting:{ambient:0.9, diffuse:0.35, specular:0.05, roughness:0.9}
+    }
+  };
+}
+
+async function updatePlane3dFast(){
+  if(!state.res || $("showPlane3d").value !== "1") return;
+  if(!window.Plotly && !state.plotlyPromise) return;
+  state.planeFastQueued = true;
+  if(state.planeFastBusy) return;
+  state.planeFastBusy = true;
+  try{
+    const Plotly = await ensurePlotly();
+    while(state.planeFastQueued){
+      state.planeFastQueued = false;
+      if(!state.res || $("showPlane3d").value !== "1") break;
+      const resHint = fastMoveSliceResolution();
+      const sl = currentSlice(resHint || 72, MAX_3D_SLICE_CELLS, true, {fast:true});
+      const mode = $("scale").value;
+      const stats = sliceTransformed(sl, mode);
+      const levels = displayLevels(stats, mode);
+      const built = makePlane3dTrace(sl, stats, levels);
+      const gd = $("plot3dPlane");
+      if(!built.trace || !gd) break;
+      const current = Array.isArray(gd.data) && gd.data.length ? gd.data[0] : null;
+      if(current && current.type === built.trace.type && typeof Plotly.restyle === "function"){
+        if(built.trace.type === "mesh3d"){
+          await Plotly.restyle(gd, {
+            x:[built.trace.x],
+            y:[built.trace.y],
+            z:[built.trace.z],
+            i:[built.trace.i],
+            j:[built.trace.j],
+            k:[built.trace.k],
+            intensity:[built.trace.intensity],
+            customdata:[built.trace.customdata],
+            cmin:[built.trace.cmin],
+            cmax:[built.trace.cmax],
+            colorscale:[built.trace.colorscale]
+          }, [0]);
+        }else{
+          await Plotly.restyle(gd, {
+            x:[built.trace.x],
+            y:[built.trace.y],
+            z:[built.trace.z],
+            customdata:[built.trace.customdata],
+            "marker.color":[built.trace.marker.color],
+            "marker.cmin":[built.trace.marker.cmin],
+            "marker.cmax":[built.trace.marker.cmax],
+            "marker.colorscale":[built.trace.marker.colorscale]
+          }, [0]);
+        }
+      }else{
+        await Plotly.react("plot3dPlane", [built.trace], sceneLayout(`Slice Plane (${sl.type})`, state.cameras.plane), plotlyConfig());
+        wireCamera("plot3dPlane", "plane");
+      }
+      $("empty3dPlane").style.display = "none";
+      const sampled = sl.decimated ? `, sampled ${sl.rows}x${sl.cols} from ${sl.fullRows}x${sl.fullCols}` : "";
+      set3dStatus(`Moving plane ${built.plot.i.length ? built.plot.i.length.toLocaleString() + " triangles" : built.plot.x.length.toLocaleString() + " points"}${sampled}`);
+    }
+  }finally{
+    state.planeFastBusy = false;
+  }
+}
+
 async function renderPlane3d(Plotly){
   if(!state.res) return;
   if($("showPlane3d").value !== "1"){
@@ -2986,8 +4641,7 @@ async function renderPlane3d(Plotly){
     return;
   }
   set3dStatus("Rendering plane...");
-  const sl0 = currentSlice();
-  const sl = decimateSliceFor3d(sl0);
+  const sl = currentSlice(180, MAX_3D_SLICE_CELLS, true);
   const mode = $("scale").value;
   const stats = sliceTransformed(sl, mode);
   const levels = displayLevels(stats, mode);
@@ -3013,7 +4667,8 @@ async function renderPlane3d(Plotly){
       await Plotly.react("plot3dPlane", [trace], sceneLayout(`Slice Points (${sl.type})`, state.cameras.plane), plotlyConfig());
       wireCamera("plot3dPlane", "plane");
       $("empty3dPlane").style.display = "none";
-      set3dStatus(`Rendered ${plot.x.length.toLocaleString()} slice points`);
+      const sampled = sl.decimated ? `, sampled ${sl.rows}x${sl.cols} from ${sl.fullRows}x${sl.fullCols}` : "";
+      set3dStatus(`Rendered ${plot.x.length.toLocaleString()} slice points${sampled}`);
     }else{
       await Plotly.react("plot3dPlane", [], sceneLayout("No valid slice plane cells", state.cameras.plane), plotlyConfig());
       $("empty3dPlane").textContent = "No valid values for 3D plane.";
@@ -3046,7 +4701,8 @@ async function renderPlane3d(Plotly){
   await Plotly.react("plot3dPlane", [trace], sceneLayout(`Slice Plane (${sl.type})`, state.cameras.plane), plotlyConfig());
   wireCamera("plot3dPlane", "plane");
   $("empty3dPlane").style.display = "none";
-  set3dStatus(`${sl === sl0 ? "Rendered" : "Rendered, decimated"} mesh ${plot.i.length.toLocaleString()} triangles`);
+  const sampled = sl.decimated ? `, sampled ${sl.rows}x${sl.cols} from ${sl.fullRows}x${sl.fullCols}` : "";
+  set3dStatus(`${sl.decimated ? "Rendered sampled" : "Rendered"} mesh ${plot.i.length.toLocaleString()} triangles${sampled}`);
 }
 
 async function renderIso3d(Plotly){
@@ -3149,6 +4805,7 @@ async function renderIso3d(Plotly){
 
 async function render3d(){
   if(!state.res) return;
+  if(state.moveActive) return;
   const Plotly = await ensurePlotly();
   await renderPlane3d(Plotly);
   await renderIso3d(Plotly);
@@ -3191,8 +4848,7 @@ function savePng(){
 }
 
 function saveCsv(){
-  if(!state.lastSlice) draw2d();
-  const sl = state.lastSlice && state.lastSlice.slice;
+  const sl = currentSlice(null, MAX_AXIS_SLICE_CELLS, true);
   if(!sl) return;
   const labels = renderAxisLabels().map(s => s.toLowerCase());
   const out = [`${labels[0]},${labels[1]},${labels[2]},${valueColumnName(state.res)}`];
@@ -3290,7 +4946,10 @@ async function onFile(file){
   status(`Reading ${file.name} ...`);
   status(`Parsing ${file.name} ...`);
   await nextFrame();
-  const parsed = await parseFile(file);
+  const progress = makeLoadProgress(file);
+  const parsed = await parseFile(file, progress);
+  status(`Finalizing ${file.name} ...`);
+  await nextFrame();
   state.res = parsed;
   state.cameras = {plane:null, iso:null};
   state.lastSlice = null;
@@ -3308,7 +4967,8 @@ async function onFile(file){
   updateMeta();
   syncControls();
   draw2d();
-  status(`Loaded ${file.name}. ${parsed.shape[0]} x ${parsed.shape[1]} x ${parsed.shape[2]} grid, ${parsed.rows.toLocaleString()} rows, ${dataKindText(parsed)}, ${parsed.format || "data"}, ${(parsed.coordKind || "q").toUpperCase()}.`, parsed.skipped ? "warn" : "ok");
+  const cacheText = parsed.fromCache ? " from cache" : "";
+  status(`Loaded${cacheText} ${file.name}. ${parsed.shape[0]} x ${parsed.shape[1]} x ${parsed.shape[2]} grid, ${parsed.rows.toLocaleString()} rows, ${dataKindText(parsed)}, ${parsed.format || "data"}, ${(parsed.coordKind || "q").toUpperCase()}.`, parsed.skipped ? "warn" : "ok");
   scheduleRender3d(0);
 }
 
@@ -3327,7 +4987,16 @@ function bind(){
   $("coordMode").addEventListener("change", () => { updateAxisOptionText(); updateMeta(); draw2d(); scheduleRender3d(0); });
   $("sliceMode").addEventListener("change", () => { syncControls(); draw2d(); scheduleRender3d(); });
   $("axis").addEventListener("change", () => { updateAxisIndexBounds(); draw2d(); scheduleRender3d(); });
-  $("idx").addEventListener("input", () => { draw2d(); scheduleRender3d(); });
+  $("idx").addEventListener("input", () => {
+    state.moveActive = true;
+    if(state.renderTimer){ clearTimeout(state.renderTimer); state.renderTimer = 0; }
+    scheduleDraw2d({fast:true, sync3d:true});
+  });
+  $("idx").addEventListener("change", () => {
+    state.moveActive = false;
+    draw2d();
+    scheduleRender3d();
+  });
   $("scale").addEventListener("change", () => { resetDisplayLevels(false); draw2d(); scheduleRender3d(); });
   $("colorMap").addEventListener("change", () => { draw2d(); scheduleRender3d(); });
   $("levelMode").addEventListener("change", () => {
@@ -3344,14 +5013,34 @@ function bind(){
   $("heatmap").addEventListener("pointermove", onHeatmapPointerMove);
   $("heatmap").addEventListener("pointerup", onHeatmapPointerUp);
   $("heatmap").addEventListener("pointercancel", onHeatmapPointerUp);
-  $("planeApply").addEventListener("click", () => { applyPlaneInputs(); draw2d(); scheduleRender3d(); });
-  $("planeReset").addEventListener("click", () => { resetPlaneState(); draw2d(); scheduleRender3d(); });
-  $("planeMove").addEventListener("input", () => { movePlane(Number($("planeMove").value)); draw2d(); scheduleRender3d(120); });
+  $("planeApply").addEventListener("click", () => { state.moveActive = false; applyPlaneInputs(); draw2d(); scheduleRender3d(); });
+  $("planeReset").addEventListener("click", () => { state.moveActive = false; resetPlaneState(); draw2d(); scheduleRender3d(); });
+  $("planeMove").addEventListener("input", () => {
+    state.moveActive = true;
+    if(state.renderTimer){ clearTimeout(state.renderTimer); state.renderTimer = 0; }
+    movePlane(Number($("planeMove").value));
+    scheduleDraw2d({fast:true, sync3d:true});
+  });
+  $("planeMove").addEventListener("change", () => {
+    state.moveActive = false;
+    draw2d();
+    scheduleRender3d();
+  });
   $("pRes").addEventListener("change", () => { draw2d(); scheduleRender3d(); });
   $("pScale").addEventListener("change", () => { draw2d(); scheduleRender3d(); });
-  $("avgApply").addEventListener("click", () => { applyAvgVolInputs(); draw2d(); scheduleRender3d(); });
-  $("avgReset").addEventListener("click", () => { resetAvgVolState(); draw2d(); scheduleRender3d(); });
-  $("avgMove").addEventListener("input", () => { moveAvgVol(Number($("avgMove").value)); draw2d(); scheduleRender3d(120); });
+  $("avgApply").addEventListener("click", () => { state.moveActive = false; applyAvgVolInputs(); draw2d(); scheduleRender3d(); });
+  $("avgReset").addEventListener("click", () => { state.moveActive = false; resetAvgVolState(); draw2d(); scheduleRender3d(); });
+  $("avgMove").addEventListener("input", () => {
+    state.moveActive = true;
+    if(state.renderTimer){ clearTimeout(state.renderTimer); state.renderTimer = 0; }
+    moveAvgVol(Number($("avgMove").value));
+    scheduleDraw2d({fast:true, sync3d:true});
+  });
+  $("avgMove").addEventListener("change", () => {
+    state.moveActive = false;
+    draw2d();
+    scheduleRender3d();
+  });
   for(const id of ["avRes","avScale","slabWidth","slabN"]){
     $(id).addEventListener("change", () => { setAvgVolInputs(); draw2d(); scheduleRender3d(); });
   }
