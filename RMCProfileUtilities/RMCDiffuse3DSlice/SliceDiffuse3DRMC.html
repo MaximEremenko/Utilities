@@ -385,6 +385,7 @@ const state = {
   offscreenImage:null,
   drawRaf:0,
   moveActive:false,
+  planeMoveCameraLock:null,
   planeFastBusy:false,
   planeFastQueued:false,
   renderTimer:0,
@@ -3479,7 +3480,7 @@ function resetPlaneState(){
   setPlaneInputs();
 }
 
-function rebuildPlaneSlider(){
+function rebuildPlaneSlider(targetT=0){
   const res = state.res, p = state.plane;
   if(!res || !p) return;
   p.normalUnit = norm3(p.normal);
@@ -3488,10 +3489,37 @@ function rebuildPlaneSlider(){
   p.slider = Array.from({length:count}, (_,i) => iv[0] + (iv[1] - iv[0]) * i / (count - 1));
   let best = 0, bestAbs = Infinity;
   for(let i=0;i<count;i++){
-    const a = Math.abs(p.slider[i]);
+    const a = Math.abs(p.slider[i] - targetT);
     if(a < bestAbs){ bestAbs = a; best = i; }
   }
   movePlane(best);
+}
+
+function readPlaneInputsIntoState(){
+  if(!state.res) return false;
+  const prev = state.plane;
+  const raw = [Number($("pNH").value), Number($("pNK").value), Number($("pNL").value)];
+  const prevNormal = prev && Array.isArray(prev.normal) ? prev.normal : [1,0,0];
+  const normal = Math.hypot(raw[0], raw[1], raw[2]) > 1e-12 ? raw : prevNormal.slice();
+  const originRaw = [Number($("pOH").value), Number($("pOK").value), Number($("pOL").value)];
+  const fallback = centerOfRes(state.res);
+  const prevOrigin = prev && Array.isArray(prev.origin) ? prev.origin : fallback;
+  const origin = originRaw.map((v,i) => Number.isFinite(v) ? v : prevOrigin[i]);
+  const center = prev && Array.isArray(prev.center) ? prev.center.slice() : origin.slice();
+  state.plane = {
+    normal,
+    normalUnit:norm3(normal),
+    origin,
+    center,
+    slider:[],
+    sliderIndex:prev ? prev.sliderIndex : 0
+  };
+  const p = state.plane;
+  const iv = planeSliderInterval(p.origin, p.normalUnit, state.res.bounds);
+  const count = 401;
+  p.slider = Array.from({length:count}, (_,i) => iv[0] + (iv[1] - iv[0]) * i / (count - 1));
+  p.sliderIndex = clamp(Math.round(p.sliderIndex), 0, p.slider.length - 1);
+  return true;
 }
 
 function movePlane(index){
@@ -3547,7 +3575,7 @@ function resetAvgVolState(){
   setAvgVolInputs();
 }
 
-function rebuildAvgVolSlider(){
+function rebuildAvgVolSlider(targetT=0){
   const res = state.res, p = state.avgvol;
   if(!res || !p) return;
   p.normalUnit = norm3(p.normal);
@@ -3556,10 +3584,37 @@ function rebuildAvgVolSlider(){
   p.slider = Array.from({length:count}, (_,i) => iv[0] + (iv[1] - iv[0]) * i / (count - 1));
   let best = 0, bestAbs = Infinity;
   for(let i=0;i<count;i++){
-    const a = Math.abs(p.slider[i]);
+    const a = Math.abs(p.slider[i] - targetT);
     if(a < bestAbs){ bestAbs = a; best = i; }
   }
   moveAvgVol(best);
+}
+
+function readAvgVolInputsIntoState(){
+  if(!state.res) return false;
+  const prev = state.avgvol;
+  const raw = [Number($("avNH").value), Number($("avNK").value), Number($("avNL").value)];
+  const prevNormal = prev && Array.isArray(prev.normal) ? prev.normal : [1,0,0];
+  const normal = Math.hypot(raw[0], raw[1], raw[2]) > 1e-12 ? raw : prevNormal.slice();
+  const originRaw = [Number($("avOH").value), Number($("avOK").value), Number($("avOL").value)];
+  const fallback = centerOfRes(state.res);
+  const prevOrigin = prev && Array.isArray(prev.origin) ? prev.origin : fallback;
+  const origin = originRaw.map((v,i) => Number.isFinite(v) ? v : prevOrigin[i]);
+  const center = prev && Array.isArray(prev.center) ? prev.center.slice() : origin.slice();
+  state.avgvol = {
+    normal,
+    normalUnit:norm3(normal),
+    origin,
+    center,
+    slider:[],
+    sliderIndex:prev ? prev.sliderIndex : 0
+  };
+  const p = state.avgvol;
+  const iv = planeSliderInterval(p.origin, p.normalUnit, state.res.bounds);
+  const count = 401;
+  p.slider = Array.from({length:count}, (_,i) => iv[0] + (iv[1] - iv[0]) * i / (count - 1));
+  p.sliderIndex = clamp(Math.round(p.sliderIndex), 0, p.slider.length - 1);
+  return true;
 }
 
 function moveAvgVol(index){
@@ -4512,12 +4567,100 @@ function sceneLayout(title, camera){
   };
 }
 
+function cloneCamera(cam){
+  if(!cam || typeof cam !== "object") return null;
+  try{ return JSON.parse(JSON.stringify(cam)); }catch(_){ return null; }
+}
+
+function mergeCameraRelayout(current, ev){
+  if(!ev || typeof ev !== "object") return null;
+  if(ev["scene.camera"] && typeof ev["scene.camera"] === "object") return cloneCamera(ev["scene.camera"]);
+  const out = cloneCamera(current) || {};
+  let changed = false;
+  for(const key of Object.keys(ev)){
+    if(!key.startsWith("scene.camera.")) continue;
+    const path = key.slice("scene.camera.".length).split(".");
+    if(!path.length) continue;
+    let target = out;
+    for(let i=0;i<path.length-1;i++){
+      const part = path[i];
+      if(!target[part] || typeof target[part] !== "object") target[part] = {};
+      target = target[part];
+    }
+    const leaf = path[path.length-1];
+    const value = ev[key];
+    target[leaf] = value && typeof value === "object" ? cloneCamera(value) : value;
+    changed = true;
+  }
+  return changed ? out : null;
+}
+
+function readSceneCamera(plotId){
+  const gd = $(plotId);
+  if(!gd) return null;
+  try{
+    const scene = gd._fullLayout && gd._fullLayout.scene;
+    if(scene && scene._scene && typeof scene._scene.getCamera === "function"){
+      const cam = scene._scene.getCamera();
+      if(cam) return cloneCamera(cam);
+    }
+    if(scene && scene.camera) return cloneCamera(scene.camera);
+  }catch(_){}
+  if(gd.layout && gd.layout.scene && gd.layout.scene.camera) return cloneCamera(gd.layout.scene.camera);
+  return null;
+}
+
+function captureSceneCamera(plotId, key){
+  const cam = readSceneCamera(plotId);
+  if(cam) state.cameras[key] = cam;
+  return cam;
+}
+
+function startSliceMoveCameraLock(){
+  if(!state.moveActive){
+    const liveCam = readSceneCamera("plot3dPlane") || state.cameras.plane;
+    state.planeMoveCameraLock = liveCam ? cloneCamera(liveCam) : null;
+  }
+  state.moveActive = true;
+}
+
+function finishSliceMoveCameraLock(){
+  if(state.planeMoveCameraLock) state.cameras.plane = cloneCamera(state.planeMoveCameraLock);
+  state.moveActive = false;
+  state.planeMoveCameraLock = null;
+}
+
+async function finalizeSliceMoveCameraLock(){
+  try{
+    if(state.renderTimer){ clearTimeout(state.renderTimer); state.renderTimer = 0; }
+    draw2d();
+    await updatePlane3dFast();
+  }catch(err){
+    set3dStatus(`Fast plane update failed: ${err.message}`);
+  }finally{
+    finishSliceMoveCameraLock();
+    scheduleRender3d(0);
+  }
+}
+
 function wireCamera(plotId, key){
   const gd = $(plotId);
   if(!gd || gd._rmcCameraHooked || typeof gd.on !== "function") return;
-  gd.on("plotly_relayout", ev => {
-    if(ev && ev["scene.camera"]) state.cameras[key] = ev["scene.camera"];
-  });
+  const onCamera = ev => {
+    if(key === "plane" && state.moveActive) return;
+    const cam = mergeCameraRelayout(state.cameras[key], ev);
+    if(cam) state.cameras[key] = cam;
+    setTimeout(() => {
+      if(key === "plane" && state.moveActive) return;
+      captureSceneCamera(plotId, key);
+    }, 0);
+  };
+  gd.on("plotly_relayout", onCamera);
+  gd.on("plotly_relayouting", onCamera);
+  gd.on("plotly_doubleclick", () => setTimeout(() => {
+    if(key === "plane" && state.moveActive) return;
+    captureSceneCamera(plotId, key);
+  }, 0));
   gd._rmcCameraHooked = true;
 }
 
@@ -4590,10 +4733,13 @@ async function updatePlane3dFast(){
       const built = makePlane3dTrace(sl, stats, levels);
       const gd = $("plot3dPlane");
       if(!built.trace || !gd) break;
+      const keepCamera = state.planeMoveCameraLock ? cloneCamera(state.planeMoveCameraLock) : null;
+      const liveCamera = keepCamera || readSceneCamera("plot3dPlane") || state.cameras.plane;
+      if(liveCamera) state.cameras.plane = liveCamera;
       const current = Array.isArray(gd.data) && gd.data.length ? gd.data[0] : null;
       if(current && current.type === built.trace.type && typeof Plotly.restyle === "function"){
         if(built.trace.type === "mesh3d"){
-          await Plotly.restyle(gd, {
+          const update = {
             x:[built.trace.x],
             y:[built.trace.y],
             z:[built.trace.z],
@@ -4605,9 +4751,11 @@ async function updatePlane3dFast(){
             cmin:[built.trace.cmin],
             cmax:[built.trace.cmax],
             colorscale:[built.trace.colorscale]
-          }, [0]);
+          };
+          if(keepCamera && typeof Plotly.update === "function") await Plotly.update(gd, update, {"scene.camera":keepCamera}, [0]);
+          else await Plotly.restyle(gd, update, [0]);
         }else{
-          await Plotly.restyle(gd, {
+          const update = {
             x:[built.trace.x],
             y:[built.trace.y],
             z:[built.trace.z],
@@ -4616,12 +4764,16 @@ async function updatePlane3dFast(){
             "marker.cmin":[built.trace.marker.cmin],
             "marker.cmax":[built.trace.marker.cmax],
             "marker.colorscale":[built.trace.marker.colorscale]
-          }, [0]);
+          };
+          if(keepCamera && typeof Plotly.update === "function") await Plotly.update(gd, update, {"scene.camera":keepCamera}, [0]);
+          else await Plotly.restyle(gd, update, [0]);
         }
       }else{
-        await Plotly.react("plot3dPlane", [built.trace], sceneLayout(`Slice Plane (${sl.type})`, state.cameras.plane), plotlyConfig());
+        await Plotly.react("plot3dPlane", [built.trace], sceneLayout(`Slice Plane (${sl.type})`, keepCamera || liveCamera || state.cameras.plane), plotlyConfig());
         wireCamera("plot3dPlane", "plane");
       }
+      if(keepCamera) state.cameras.plane = cloneCamera(keepCamera);
+      else captureSceneCamera("plot3dPlane", "plane");
       $("empty3dPlane").style.display = "none";
       const sampled = sl.decimated ? `, sampled ${sl.rows}x${sl.cols} from ${sl.fullRows}x${sl.fullCols}` : "";
       set3dStatus(`Moving plane ${built.plot.i.length ? built.plot.i.length.toLocaleString() + " triangles" : built.plot.x.length.toLocaleString() + " points"}${sampled}`);
@@ -4633,8 +4785,10 @@ async function updatePlane3dFast(){
 
 async function renderPlane3d(Plotly){
   if(!state.res) return;
+  const planeCamera = readSceneCamera("plot3dPlane") || state.cameras.plane;
+  if(planeCamera) state.cameras.plane = planeCamera;
   if($("showPlane3d").value !== "1"){
-    await Plotly.react("plot3dPlane", [], sceneLayout("Slice plane OFF", state.cameras.plane), plotlyConfig());
+    await Plotly.react("plot3dPlane", [], sceneLayout("Slice plane OFF", planeCamera || state.cameras.plane), plotlyConfig());
     $("empty3dPlane").textContent = "Slice plane OFF.";
     $("empty3dPlane").style.display = "flex";
     set3dStatus("Plane off");
@@ -4664,13 +4818,13 @@ async function renderPlane3d(Plotly){
           ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
           : `${labels[0]}=%{customdata[3]:.5g}<br>${labels[1]}=%{customdata[4]:.5g}<br>${labels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
       };
-      await Plotly.react("plot3dPlane", [trace], sceneLayout(`Slice Points (${sl.type})`, state.cameras.plane), plotlyConfig());
+      await Plotly.react("plot3dPlane", [trace], sceneLayout(`Slice Points (${sl.type})`, planeCamera || state.cameras.plane), plotlyConfig());
       wireCamera("plot3dPlane", "plane");
       $("empty3dPlane").style.display = "none";
       const sampled = sl.decimated ? `, sampled ${sl.rows}x${sl.cols} from ${sl.fullRows}x${sl.fullCols}` : "";
       set3dStatus(`Rendered ${plot.x.length.toLocaleString()} slice points${sampled}`);
     }else{
-      await Plotly.react("plot3dPlane", [], sceneLayout("No valid slice plane cells", state.cameras.plane), plotlyConfig());
+      await Plotly.react("plot3dPlane", [], sceneLayout("No valid slice plane cells", planeCamera || state.cameras.plane), plotlyConfig());
       $("empty3dPlane").textContent = "No valid values for 3D plane.";
       $("empty3dPlane").style.display = "flex";
       set3dStatus("No valid plane cells");
@@ -4698,8 +4852,9 @@ async function renderPlane3d(Plotly){
     flatshading:false,
     lighting:{ambient:0.9, diffuse:0.35, specular:0.05, roughness:0.9}
   };
-  await Plotly.react("plot3dPlane", [trace], sceneLayout(`Slice Plane (${sl.type})`, state.cameras.plane), plotlyConfig());
+  await Plotly.react("plot3dPlane", [trace], sceneLayout(`Slice Plane (${sl.type})`, planeCamera || state.cameras.plane), plotlyConfig());
   wireCamera("plot3dPlane", "plane");
+  captureSceneCamera("plot3dPlane", "plane");
   $("empty3dPlane").style.display = "none";
   const sampled = sl.decimated ? `, sampled ${sl.rows}x${sl.cols} from ${sl.fullRows}x${sl.fullCols}` : "";
   set3dStatus(`${sl.decimated ? "Rendered sampled" : "Rendered"} mesh ${plot.i.length.toLocaleString()} triangles${sampled}`);
@@ -4707,16 +4862,18 @@ async function renderPlane3d(Plotly){
 
 async function renderIso3d(Plotly){
   if(!state.res) return;
+  const isoCamera = readSceneCamera("plot3dIso") || state.cameras.iso;
+  if(isoCamera) state.cameras.iso = isoCamera;
   if(dimensionLabel(state.res.shape) !== "3D"){
     const dim = dimensionLabel(state.res.shape);
-    await Plotly.react("plot3dIso", [], sceneLayout(`${dim} data: no 3D isosurface`, state.cameras.iso), plotlyConfig());
+    await Plotly.react("plot3dIso", [], sceneLayout(`${dim} data: no 3D isosurface`, isoCamera || state.cameras.iso), plotlyConfig());
     $("empty3dIso").textContent = `${dim} data has no 3D isosurface.`;
     $("empty3dIso").style.display = "flex";
     setIsoStatus(`${dim} data`);
     return;
   }
   if($("showIso3d").value !== "1"){
-    await Plotly.react("plot3dIso", [], sceneLayout("Isosurface OFF", state.cameras.iso), plotlyConfig());
+    await Plotly.react("plot3dIso", [], sceneLayout("Isosurface OFF", isoCamera || state.cameras.iso), plotlyConfig());
     $("empty3dIso").textContent = "Isosurface OFF.";
     $("empty3dIso").style.display = "flex";
     setIsoStatus("Iso off");
@@ -4729,7 +4886,7 @@ async function renderIso3d(Plotly){
   const count = Math.max(1, Math.min(12, Math.floor(Number($("isoCount").value) || 4)));
   const sample = buildVolumeSample(state.res, mode, cap);
   if(!sample.count){
-    await Plotly.react("plot3dIso", [], sceneLayout("No finite isosurface values", state.cameras.iso), plotlyConfig());
+    await Plotly.react("plot3dIso", [], sceneLayout("No finite isosurface values", isoCamera || state.cameras.iso), plotlyConfig());
     $("empty3dIso").textContent = "No finite values for isosurface.";
     $("empty3dIso").style.display = "flex";
     setIsoStatus("No finite values");
@@ -4795,8 +4952,9 @@ async function renderIso3d(Plotly){
         : `${labels[0]}=%{x:.5g}<br>${labels[1]}=%{y:.5g}<br>${labels[2]}=%{z:.5g}<br>${valLabel}=%{value:.5g}<extra></extra>`
     };
   }
-  await Plotly.react("plot3dIso", [trace], sceneLayout(`Isosurface P${fmt(pct,2)} (${mode})`, state.cameras.iso), plotlyConfig());
+  await Plotly.react("plot3dIso", [trace], sceneLayout(`Isosurface P${fmt(pct,2)} (${mode})`, isoCamera || state.cameras.iso), plotlyConfig());
   wireCamera("plot3dIso", "iso");
+  captureSceneCamera("plot3dIso", "iso");
   $("empty3dIso").style.display = "none";
   const invalidText = sample.invalid ? `, masked ${sample.invalid.toLocaleString()}` : "";
   const skippedText = sample.skippedGeometry ? `, skipped geometry ${sample.skippedGeometry.toLocaleString()}` : "";
@@ -4814,7 +4972,7 @@ async function render3d(){
 function zoomPlot(plotId, key, factor){
   if(!window.Plotly) return;
   const gd = $(plotId);
-  const cam = gd && gd.layout && gd.layout.scene && gd.layout.scene.camera;
+  const cam = readSceneCamera(plotId) || state.cameras[key] || (gd && gd.layout && gd.layout.scene && gd.layout.scene.camera);
   const eye = cam && cam.eye ? cam.eye : {x:1.25,y:1.25,z:1.25};
   const next = {...(cam || {}), eye:{x:eye.x*factor, y:eye.y*factor, z:eye.z*factor}};
   state.cameras[key] = next;
@@ -4988,15 +5146,11 @@ function bind(){
   $("sliceMode").addEventListener("change", () => { syncControls(); draw2d(); scheduleRender3d(); });
   $("axis").addEventListener("change", () => { updateAxisIndexBounds(); draw2d(); scheduleRender3d(); });
   $("idx").addEventListener("input", () => {
-    state.moveActive = true;
+    startSliceMoveCameraLock();
     if(state.renderTimer){ clearTimeout(state.renderTimer); state.renderTimer = 0; }
     scheduleDraw2d({fast:true, sync3d:true});
   });
-  $("idx").addEventListener("change", () => {
-    state.moveActive = false;
-    draw2d();
-    scheduleRender3d();
-  });
+  $("idx").addEventListener("change", () => { finalizeSliceMoveCameraLock(); });
   $("scale").addEventListener("change", () => { resetDisplayLevels(false); draw2d(); scheduleRender3d(); });
   $("colorMap").addEventListener("change", () => { draw2d(); scheduleRender3d(); });
   $("levelMode").addEventListener("change", () => {
@@ -5013,34 +5167,30 @@ function bind(){
   $("heatmap").addEventListener("pointermove", onHeatmapPointerMove);
   $("heatmap").addEventListener("pointerup", onHeatmapPointerUp);
   $("heatmap").addEventListener("pointercancel", onHeatmapPointerUp);
-  $("planeApply").addEventListener("click", () => { state.moveActive = false; applyPlaneInputs(); draw2d(); scheduleRender3d(); });
-  $("planeReset").addEventListener("click", () => { state.moveActive = false; resetPlaneState(); draw2d(); scheduleRender3d(); });
+  $("planeApply").addEventListener("click", () => { finishSliceMoveCameraLock(); applyPlaneInputs(); draw2d(); scheduleRender3d(); });
+  $("planeReset").addEventListener("click", () => { finishSliceMoveCameraLock(); resetPlaneState(); draw2d(); scheduleRender3d(); });
   $("planeMove").addEventListener("input", () => {
-    state.moveActive = true;
+    const requestedIndex = Number($("planeMove").value);
+    startSliceMoveCameraLock();
     if(state.renderTimer){ clearTimeout(state.renderTimer); state.renderTimer = 0; }
-    movePlane(Number($("planeMove").value));
+    readPlaneInputsIntoState();
+    movePlane(requestedIndex);
     scheduleDraw2d({fast:true, sync3d:true});
   });
-  $("planeMove").addEventListener("change", () => {
-    state.moveActive = false;
-    draw2d();
-    scheduleRender3d();
-  });
+  $("planeMove").addEventListener("change", () => { finalizeSliceMoveCameraLock(); });
   $("pRes").addEventListener("change", () => { draw2d(); scheduleRender3d(); });
   $("pScale").addEventListener("change", () => { draw2d(); scheduleRender3d(); });
-  $("avgApply").addEventListener("click", () => { state.moveActive = false; applyAvgVolInputs(); draw2d(); scheduleRender3d(); });
-  $("avgReset").addEventListener("click", () => { state.moveActive = false; resetAvgVolState(); draw2d(); scheduleRender3d(); });
+  $("avgApply").addEventListener("click", () => { finishSliceMoveCameraLock(); applyAvgVolInputs(); draw2d(); scheduleRender3d(); });
+  $("avgReset").addEventListener("click", () => { finishSliceMoveCameraLock(); resetAvgVolState(); draw2d(); scheduleRender3d(); });
   $("avgMove").addEventListener("input", () => {
-    state.moveActive = true;
+    const requestedIndex = Number($("avgMove").value);
+    startSliceMoveCameraLock();
     if(state.renderTimer){ clearTimeout(state.renderTimer); state.renderTimer = 0; }
-    moveAvgVol(Number($("avgMove").value));
+    readAvgVolInputsIntoState();
+    moveAvgVol(requestedIndex);
     scheduleDraw2d({fast:true, sync3d:true});
   });
-  $("avgMove").addEventListener("change", () => {
-    state.moveActive = false;
-    draw2d();
-    scheduleRender3d();
-  });
+  $("avgMove").addEventListener("change", () => { finalizeSliceMoveCameraLock(); });
   for(const id of ["avRes","avScale","slabWidth","slabN"]){
     $(id).addEventListener("change", () => { setAvgVolInputs(); draw2d(); scheduleRender3d(); });
   }
