@@ -1,0 +1,27 @@
+(Version 6f format configuration file)
+Metadata title:     Format converter example structure
+Metadata owner:     RMCProfile Utilities
+Number of types of atoms:           2
+Atom types present:                 Na  Cl
+Number of each atom type:           4  4
+Number of moves generated:           0
+Number of moves tried:               0
+Number of moves accepted:            0
+Number of prior configuration saves: 0
+Number of atoms:                     8
+Number density (Ang^-3):             0.005604
+Supercell dimensions:                2  2  2
+Cell (Ang/deg):    11.260000  11.260000  11.260000  90.000000  90.000000  90.000000
+Lattice vectors (Ang):
+   11.260000    0.000000    0.000000
+    0.000000   11.260000    0.000000
+    0.000000    0.000000   11.260000
+Atoms:
+       1 Na   [1]  0.000000000000000  0.000000000000000  0.000000000000000       1    0    0    0
+       2 Na   [1]  0.500000000000000  0.000000000000000  0.000000000000000       2    1    0    0
+       3 Na   [1]  0.000000000000000  0.500000000000000  0.000000000000000       3    0    1    0
+       4 Na   [1]  0.000000000000000  0.000000000000000  0.500000000000000       4    0    0    1
+       5 Cl   [1]  0.250000000000000  0.250000000000000  0.250000000000000       5    0    0    0
+       6 Cl   [1]  0.750000000000000  0.250000000000000  0.250000000000000       6    1    0    0
+       7 Cl   [1]  0.250000000000000  0.750000000000000  0.250000000000000       7    0    1    0
+       8 Cl   [1]  0.250000000000000  0.250000000000000  0.750000000000000       8    0    0    1

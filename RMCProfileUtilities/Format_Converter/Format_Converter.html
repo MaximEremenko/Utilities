@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diffuse Scattering Format Converter</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1a2333;
+    --muted2: #5b6577; --line: #dde2ea; --accent: #2456a6; --accent2: #1a4080;
+    --ok: #1a7f42; --err: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181f; --panel: #1d232d; --text: #e8ecf3; --muted2: #9aa5b5;
+      --line: #313a48; --accent: #7aa7e8; --accent2: #a8c4f0; --ok: #6fce96; --err: #f0908a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  .sub { color: var(--muted2); margin: 0 0 1.5rem; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1rem 1.25rem; margin-bottom: 1rem;
+  }
+  .panel h2 { font-size: 1rem; margin: 0 0 .75rem; }
+  label { display: block; font-weight: 600; margin: .5rem 0 .2rem; }
+  .hint { font-weight: 400; color: var(--muted2); font-size: .85rem; }
+  input[type=file], select {
+    display: block; width: 100%; padding: .4rem; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--bg); color: var(--text);
+  }
+  .cellgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: .4rem; max-width: 34rem; }
+  .cellgrid input {
+    width: 100%; padding: .35rem; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .row > div { flex: 1 1 16rem; }
+  button {
+    margin-top: 1rem; padding: .55rem 1.6rem; font: inherit; font-weight: 600;
+    color: #fff; background: var(--accent); border: 0; border-radius: 8px; cursor: pointer;
+  }
+  button:hover { background: var(--accent2); }
+  button:disabled { opacity: .45; cursor: default; }
+  #log {
+    white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: .85rem;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+    padding: .75rem; min-height: 3rem; max-height: 18rem; overflow-y: auto;
+  }
+  .ok { color: var(--ok); } .err { color: var(--err); }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: .85em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Diffuse Scattering Format Converter</h1>
+  <p class="sub">
+    Converts 3-D diffuse scattering data between the <b>unified HDF5</b> format
+    (<code>/scattering/data</code> and <code>/entry/data</code> layouts, RMCProfile / DiffuseCode),
+    <b>Yell&nbsp;1.0</b> HDF5 (DISCUS / Yell / Meerkat), and the
+    <b>RMCProfile old text</b> format. Everything runs locally in your browser &mdash; no upload.
+  </p>
+
+  <div class="panel">
+    <h2>1 &middot; Data file</h2>
+    <label>Diffuse data
+      <span class="hint">(unified .h5 / Yell .h5 / old-format .dat / Scatty .vtk &mdash; auto-detected)</span></label>
+    <input type="file" id="dataFile">
+    <div id="dataInfo" class="hint"></div>
+  </div>
+
+  <div class="panel">
+    <h2>2 &middot; Unit cell
+      <span class="hint">&mdash; needed when the data file has no real cell (old .dat, or Yell files
+      with unit metric <code>1 1 1 90 90 90</code>)</span></h2>
+    <div class="row">
+      <div>
+        <label>Structure file
+          <span class="hint">(.rmc6f or unified structure .h5; parent cell = supercell / dimensions)</span></label>
+        <input type="file" id="structFile">
+        <div id="structInfo" class="hint"></div>
+      </div>
+      <div>
+        <label>&hellip;or enter the parent cell directly
+          <span class="hint">(a, b, c in &Aring;; &alpha;, &beta;, &gamma; in &deg;)</span></label>
+        <div class="cellgrid">
+          <input id="ca" placeholder="a"><input id="cb" placeholder="b"><input id="cc" placeholder="c">
+          <input id="cal" placeholder="&#945;"><input id="cbe" placeholder="&#946;"><input id="cga" placeholder="&#947;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>3 &middot; Output</h2>
+    <div class="row">
+      <div>
+        <label>Output format</label>
+        <select id="outFormat">
+          <option value="unified">Unified data format (.h5)</option>
+          <option value="yell">Yell 1.0 (.h5)</option>
+          <option value="dat">RMCProfile old format (.dat)</option>
+          <option value="vtk">Scatty VTK (.vtk)</option>
+        </select>
+      </div>
+      <div>
+        <label>Radiation <span class="hint">(metadata for HDF5 output)</span></label>
+        <select id="radiation">
+          <option value="">keep from input / unknown</option>
+          <option value="neutron">neutron</option>
+          <option value="xray">xray</option>
+          <option value="electron">electron</option>
+        </select>
+      </div>
+    </div>
+    <button id="convertBtn" disabled>Convert &amp; download</button>
+  </div>
+
+  <div class="panel">
+    <h2>Log</h2>
+    <div id="log">Loading HDF5 engine&hellip;</div>
+  </div>
+</main>
+
+<script src="js/h5wasm.js"></script>
+<script src="js/converter.js"></script>
+<script>
+'use strict';
+(async function () {
+  const $ = id => document.getElementById(id);
+  const logEl = $('log');
+  let seq = 0;
+
+  function log(msg, cls) {
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function clearLog() { logEl.textContent = ''; }
+
+  await h5wasm.ready;
+  const FS = h5wasm.FS;
+  logEl.textContent = 'Ready.';
+
+  const state = { data: null, struct: null };
+
+  function fmtCell(c) {
+    return c.lengths.map(x => x.toPrecision(6)).join(' ') + ' / ' +
+           c.angles.map(x => x.toPrecision(4)).join(' ');
+  }
+
+  function openH5(bytes) {
+    const name = 'mem_' + (seq++) + '.h5';
+    FS.writeFile(name, new Uint8Array(bytes));
+    return { file: new h5wasm.File(name, 'r'), name };
+  }
+
+  function isHdf5(bytes) {
+    const u = new Uint8Array(bytes.slice(0, 8));
+    return u[0] === 0x89 && u[1] === 0x48 && u[2] === 0x44 && u[3] === 0x46;
+  }
+
+  $('dataFile').addEventListener('change', async ev => {
+    const fileObj = ev.target.files[0];
+    if (!fileObj) return;
+    $('dataInfo').textContent = '';
+    state.data = null;
+    try {
+      const bytes = await fileObj.arrayBuffer();
+      if (isHdf5(bytes)) {
+        const { file, name } = openH5(bytes);
+        const kind = Converter.detectH5Kind(file);
+        if (kind === 'yell') {
+          state.data = { kind, model: Converter.readYell(file) };
+        } else if (kind === 'unified') {
+          state.data = { kind, model: Converter.readUnifiedData(file) };
+        } else if (kind === 'structure') {
+          throw new Error('this is a structure file - load it in section 2');
+        } else {
+          throw new Error('unrecognized HDF5 layout');
+        }
+        file.close(); FS.unlink(name);
+      } else {
+        const text = new TextDecoder().decode(bytes);
+        state.data = Converter.isVtk(text) ? { kind: 'vtk', text } : { kind: 'dat', text };
+      }
+      state.data.baseName = fileObj.name.replace(/\.(h5|hdf5|nx|dat|txt|vtk)$/i, '');
+      let info;
+      if (state.data.kind === 'dat') {
+        info = 'RMCProfile old text format (grid parsed on convert)';
+      } else if (state.data.kind === 'vtk') {
+        info = 'Scatty VTK, STRUCTURED_POINTS (grid parsed on convert)';
+      } else {
+        const m = state.data.model;
+        info = (state.data.kind === 'yell' ? 'Yell 1.0' : 'Unified data format') +
+               ` | grid ${m.dims.join(' x ')}` +
+               ` | stored cell: ${m.cellLengths.map(x => x.toPrecision(6)).join(' ')} / ` +
+               m.cellAngles.map(x => x.toPrecision(4)).join(' ') +
+               (Converter.isUnitMetric(m.cellLengths, m.cellAngles) ? '  (unit metric)' : '');
+      }
+      $('dataInfo').textContent = info;
+      log(`Data file "${fileObj.name}": ${info}`);
+    } catch (e) {
+      $('dataInfo').textContent = 'Error: ' + e.message;
+      log('Error reading data file: ' + e.message, 'err');
+    }
+    updateButton();
+  });
+
+  $('structFile').addEventListener('change', async ev => {
+    const fileObj = ev.target.files[0];
+    if (!fileObj) return;
+    $('structInfo').textContent = '';
+    state.struct = null;
+    try {
+      const bytes = await fileObj.arrayBuffer();
+      let parent;
+      if (isHdf5(bytes)) {
+        const { file, name } = openH5(bytes);
+        parent = Converter.readUnifiedStructure(file);
+        file.close(); FS.unlink(name);
+      } else {
+        parent = Converter.parseRmc6f(new TextDecoder().decode(bytes));
+      }
+      state.struct = parent;
+      const info = `parent cell ${fmtCell(parent)}` +
+        (parent.supercell ? ` (supercell ${parent.supercell.join(' x ')})` : '');
+      $('structInfo').textContent = info;
+      log(`Structure "${fileObj.name}": ${info}`);
+    } catch (e) {
+      $('structInfo').textContent = 'Error: ' + e.message;
+      log('Error reading structure file: ' + e.message, 'err');
+    }
+    updateButton();
+  });
+
+  function manualCell() {
+    const raw = ['ca', 'cb', 'cc', 'cal', 'cbe', 'cga'].map(id => $(id).value.trim());
+    if (raw.some(v => v === '')) return null;
+    const vals = raw.map(Number);
+    if (vals.some(v => !isFinite(v) || v <= 0)) return null;
+    return { lengths: vals.slice(0, 3), angles: vals.slice(3, 6) };
+  }
+
+  function updateButton() {
+    $('convertBtn').disabled = !state.data;
+  }
+
+  function resolveCell(model) {
+    // Preference: cell stored with the data (unless unit metric) > structure file > manual entry.
+    const manual = manualCell();
+    if (model && model.cellLengths &&
+        !Converter.isUnitMetric(model.cellLengths, model.cellAngles)) {
+      return { cell: { lengths: model.cellLengths, angles: model.cellAngles }, source: 'data file' };
+    }
+    if (state.struct) return { cell: state.struct, source: 'structure file' };
+    if (manual) return { cell: manual, source: 'manual entry' };
+    return null;
+  }
+
+  function download(bytes, filename, mime) {
+    const blob = new Blob([bytes], { type: mime });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
+  $('convertBtn').addEventListener('click', () => {
+    clearLog();
+    try {
+      const outFmt = $('outFormat').value;
+      let model, resolved;
+
+      if (state.data.kind === 'dat' || state.data.kind === 'vtk') {
+        const manual = manualCell();
+        const parent = state.struct || manual;
+        if (!parent) {
+          throw new Error((state.data.kind === 'vtk' ? 'Scatty VTK' : 'old-format .dat') +
+            ' input needs a structure file or a manual parent cell');
+        }
+        if (state.data.kind === 'vtk') {
+          model = Converter.parseVtk(state.data.text, parent);
+        } else {
+          model = Converter.parseOldDat(state.data.text, parent);
+          if (model.nsecOriginal > 1) {
+            log(`Note: input has ${model.nsecOriginal} symmetry sections; section 1 Q coordinates used.`);
+          }
+        }
+        resolved = { cell: parent, source: state.struct ? 'structure file' : 'manual entry' };
+      } else {
+        model = state.data.model;
+        resolved = resolveCell(model);
+        if (!resolved) {
+          if (outFmt === 'dat' || outFmt === 'vtk') {
+            throw new Error('data file stores the unit metric - supply a structure file or a manual parent cell');
+          }
+          // pass the unit metric through for h5 -> h5 conversions
+          resolved = { cell: { lengths: model.cellLengths, angles: model.cellAngles }, source: 'data file (unit metric, passed through)' };
+        }
+      }
+
+      const radSel = $('radiation').value;
+      if (radSel) model.radiation = radSel;
+
+      log(`Grid ${model.dims.join(' x ')} (${model.dims[0] * model.dims[1] * model.dims[2]} points)`);
+      log(`Cell for hkl <-> Q: ${fmtCell(resolved.cell)}  [from ${resolved.source}]`);
+
+      const base = state.data.baseName || 'converted';
+      if (outFmt === 'dat' || outFmt === 'vtk') {
+        if (Converter.isUnitMetric(resolved.cell.lengths, resolved.cell.angles)) {
+          throw new Error('cannot write ' + outFmt + ' with a unit-metric cell - supply a structure file or a manual parent cell');
+        }
+        const text = outFmt === 'dat'
+          ? Converter.writeOldDat(model, resolved.cell)
+          : Converter.writeVtk(model, resolved.cell);
+        const outName = base + (outFmt === 'dat' ? '_diffuse3d.dat' : '_diffuse.vtk');
+        download(text, outName, 'text/plain');
+        log('Wrote ' + outName, 'ok');
+      } else {
+        const name = 'out_' + (seq++) + '.h5';
+        const f = new h5wasm.File(name, 'w');
+        if (outFmt === 'unified') {
+          Converter.writeUnifiedData(f, model, resolved.cell, {});
+        } else {
+          Converter.writeYell(f, model, resolved.cell);
+        }
+        f.flush(); f.close();
+        const bytes = FS.readFile(name);
+        FS.unlink(name);
+        const suffix = outFmt === 'unified' ? '_unified.h5' : '_yell.h5';
+        download(bytes, base + suffix, 'application/x-hdf5');
+        log('Wrote ' + base + suffix, 'ok');
+      }
+    } catch (e) {
+      log('Error: ' + e.message, 'err');
+    }
+  });
+})();
+</script>
+</body>
+</html>
