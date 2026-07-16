@@ -366,11 +366,12 @@
         return axes;
     }
 
-    function writeOldDat(model, cell) {
+    function* writeOldDatChunks(model, cell, linesPerChunk) {
         const A = cellToLattice(cell.lengths, cell.angles);
         const B = reciprocalBasis(A);
         const [nh, nk, nl] = model.dims;
-        const out = [`${nh * nk * nl} 1`];
+        const chunkSize = Math.max(1, Number(linesPerChunk) || 16384);
+        let out = [`${nh * nk * nl} 1`];
         for (let k = 0; k < nl; k++) {
             for (let j = 0; j < nk; j++) {
                 for (let i = 0; i < nh; i++) {
@@ -379,10 +380,20 @@
                     const q = hklToQ(B, hkl);
                     const v = model.values[(k * nk + j) * nh + i];
                     out.push(`${i + 1} ${j + 1} ${k + 1} ${q[0].toExponential(16)} ${q[1].toExponential(16)} ${q[2].toExponential(16)} ${v.toExponential(16)}`);
+                    if (out.length >= chunkSize) {
+                        yield out.join('\n') + '\n';
+                        out = [];
+                    }
                 }
             }
         }
-        return out.join('\n') + '\n';
+        if (out.length) yield out.join('\n') + '\n';
+    }
+
+    function writeOldDat(model, cell) {
+        // Kept for callers that need one string. The browser UI uses the
+        // chunk iterator so large grids never exceed JavaScript's string limit.
+        return Array.from(writeOldDatChunks(model, cell)).join('');
     }
 
     // ------------------------------------------------------------- Scatty VTK
@@ -619,7 +630,7 @@
         cellToLattice, latticeToCell, reciprocalBasis, hklToQ, qToHkl, isUnitMetric,
         parseRmc6f, readUnifiedStructure,
         detectH5Kind, readUnifiedData, readYell,
-        parseOldDat, writeOldDat,
+        parseOldDat, writeOldDat, writeOldDatChunks,
         isVtk, parseVtk, writeVtk,
         writeUnifiedData, writeYell,
     };

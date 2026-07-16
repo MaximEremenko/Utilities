@@ -267,7 +267,7 @@
   }
 
   function download(bytes, filename, mime) {
-    const blob = new Blob([bytes], { type: mime });
+    const blob = new Blob(Array.isArray(bytes) ? bytes : [bytes], { type: mime });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = filename;
@@ -275,7 +275,36 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 
-  $('convertBtn').addEventListener('click', () => {
+  async function downloadTextChunks(chunks, filename) {
+    if ('showSaveFilePicker' in window) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{
+          description: 'RMCProfile old diffuse text format',
+          accept: { 'text/plain': ['.dat'] },
+        }],
+      });
+      const writable = await handle.createWritable();
+      try {
+        for (const chunk of chunks) await writable.write(chunk);
+        await writable.close();
+      } catch (e) {
+        try { await writable.abort(); } catch (_) {}
+        throw e;
+      }
+      return 'streamed directly to disk';
+    }
+
+    // Firefox/Safari fallback: separate strings avoid the maximum string
+    // length failure, although the completed Blob still has to fit in memory.
+    log('Direct file streaming is unavailable in this browser; building a chunked download in memory.');
+    const parts = [];
+    for (const chunk of chunks) parts.push(chunk);
+    download(parts, filename, 'text/plain');
+    return 'prepared as a chunked browser download';
+  }
+
+  $('convertBtn').addEventListener('click', async () => {
     clearLog();
     try {
       const outFmt = $('outFormat').value;
@@ -320,12 +349,15 @@
         if (Converter.isUnitMetric(resolved.cell.lengths, resolved.cell.angles)) {
           throw new Error('cannot write ' + outFmt + ' with a unit-metric cell - supply a structure file or a manual parent cell');
         }
-        const text = outFmt === 'dat'
-          ? Converter.writeOldDat(model, resolved.cell)
-          : Converter.writeVtk(model, resolved.cell);
         const outName = base + (outFmt === 'dat' ? '_diffuse3d.dat' : '_diffuse.vtk');
-        download(text, outName, 'text/plain');
-        log('Wrote ' + outName, 'ok');
+        if (outFmt === 'dat') {
+          const result = await downloadTextChunks(
+            Converter.writeOldDatChunks(model, resolved.cell), outName);
+          log('Wrote ' + outName + ' (' + result + ')', 'ok');
+        } else {
+          download(Converter.writeVtk(model, resolved.cell), outName, 'text/plain');
+          log('Wrote ' + outName, 'ok');
+        }
       } else {
         const name = 'out_' + (seq++) + '.h5';
         const f = new h5wasm.File(name, 'w');
