@@ -323,6 +323,7 @@ input[type=range]{padding:0;border:0;accent-color:var(--brand)}
           <div class="btns">
             <button id="savePng" class="alt" disabled>Save PNG</button>
             <button id="saveCsv" class="alt" disabled>Save CSV</button>
+            <button id="saveUnified" class="alt" disabled>Save Unified .h5</button>
             <button id="savePlaneSvg" class="alt" disabled>Plane SVG</button>
             <button id="saveIsoSvg" class="alt" disabled>Iso SVG</button>
             <button id="savePlaneHtml" class="alt" disabled>Plane HTML</button>
@@ -374,6 +375,7 @@ input[type=range]{padding:0;border:0;accent-color:var(--brand)}
   </section>
 </main>
 
+<script src="../Format_Converter/js/unified_hdf5.js"></script>
 <script>
 const PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js";
 const H5WASM_CDN = "https://cdn.jsdelivr.net/npm/h5wasm@0.7.5/dist/esm/hdf5_hl.js";
@@ -4393,7 +4395,7 @@ function syncControls(){
   const cellAllowed = has && !isRealSpaceData(state.res) && state.res.coordKind === "hkl";
   const sm = $("sliceMode").value;
   const axisMode = sm === "axis", planeMode = sm === "plane", avgMode = sm === "avgvol";
-  for(const id of ["coordMode","sliceMode","scale","colorMap","levelMode","resetLevels","render3d","savePng","saveCsv","savePlaneSvg","saveIsoSvg","savePlaneHtml","saveIsoHtml","isoPct","isoCount","voxelCap","auto3d","showPlane3d","showIso3d"]){
+  for(const id of ["coordMode","sliceMode","scale","colorMap","levelMode","resetLevels","render3d","savePng","saveCsv","saveUnified","savePlaneSvg","saveIsoSvg","savePlaneHtml","saveIsoHtml","isoPct","isoCount","voxelCap","auto3d","showPlane3d","showIso3d"]){
     $(id).disabled = !has;
   }
   if(has && isRealSpaceData(state.res)) $("coordMode").disabled = true;
@@ -5326,6 +5328,84 @@ function saveCsv(){
   status("Saved slice CSV.", "ok");
 }
 
+function unifiedAxesTypeForResult(res){
+  const explicit = res && res.h5 && res.h5.axesType;
+  if(explicit) return explicit;
+  const kind = String(res && res.coordKind || "").toLowerCase();
+  if(kind === "q") return "Q";
+  if(kind === "xyz") return "xyz";
+  if(kind === "uvw") return "uvw";
+  return "hkl";
+}
+
+function unifiedGridForResult(res){
+  let corner, vectors;
+  if(validMatrix3(res.gridVectors) && Array.isArray(res.gridOrigin)){
+    corner = res.gridOrigin.slice(0, 3);
+    vectors = [0,1,2].map(axis => [
+      res.gridVectors[0][axis],
+      res.gridVectors[1][axis],
+      res.gridVectors[2][axis]
+    ]);
+  }else{
+    const infos = [res.h,res.k,res.l].map(axisMeta);
+    if(infos.some(info => !info.uniform)){
+      throw new Error("Unified data output requires regular axes or affine grid vectors.");
+    }
+    corner = [res.h[0], res.k[0], res.l[0]];
+    vectors = [
+      [infos[0].step,0,0],
+      [0,infos[1].step,0],
+      [0,0,infos[2].step]
+    ];
+  }
+  return {corner, vectors};
+}
+
+async function saveUnified(){
+  if(!state.res) return;
+  if(!window.UnifiedH5 || typeof window.UnifiedH5.writeData !== "function"){
+    status("Unified HDF5 writer module is unavailable.", "err");
+    return;
+  }
+  const button = $("saveUnified");
+  button.disabled = true;
+  try{
+    status("Writing unified HDF5 data ...");
+    const h5 = await ensureH5wasm();
+    const res = state.res;
+    const grid = unifiedGridForResult(res);
+    const cell = Array.isArray(res.cellDeg) && res.cellDeg.length >= 6
+      ? res.cellDeg.slice(0, 6) : [1,1,1,90,90,90];
+    const bytes = window.UnifiedH5.writeData(h5, {
+      dims:res.shape,
+      corner:grid.corner,
+      vectors:grid.vectors,
+      values:res.I,
+      cell,
+      axesType:unifiedAxesTypeForResult(res),
+      content:res.h5 && res.h5.content || valueColumnName(res),
+      radiation:res.h5 && res.h5.radiation || "unknown",
+      experiment:"calculated",
+      creationMethod:"RMCDiffuse3DSlice unified data export"
+    });
+    const blob = new Blob([bytes], {type:"application/x-hdf5"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${baseName()}_unified.h5`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    status("Saved unified HDF5 volume.", "ok");
+  }catch(err){
+    status(`Unified HDF5 export failed: ${err.message}`, "err");
+  }finally{
+    button.disabled = !state.res;
+  }
+}
+
 function downloadDataUrl(name, dataUrl){
   const a = document.createElement("a");
   a.href = dataUrl;
@@ -5515,6 +5595,7 @@ function bind(){
   $("render3d").addEventListener("click", () => render3d().catch(err => status(`3D render failed: ${err.message}`, "err")));
   $("savePng").addEventListener("click", savePng);
   $("saveCsv").addEventListener("click", saveCsv);
+  $("saveUnified").addEventListener("click", saveUnified);
   $("savePlaneSvg").addEventListener("click", () => savePlotSvg("plot3dPlane", "plane3d"));
   $("saveIsoSvg").addEventListener("click", () => savePlotSvg("plot3dIso", "iso3d"));
   $("savePlaneHtml").addEventListener("click", () => savePlotHtml("plot3dPlane", "plane3d", "3DS Plotter Slice Plane"));
