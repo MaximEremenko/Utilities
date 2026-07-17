@@ -2833,19 +2833,21 @@ function parseDiscusH5(h5file, name){
   if(format && !/yell\s*1\.0/i.test(format)) return null;
   if(!format && !h5Lookup(h5file, "lower_limits") && !h5Lookup(h5file, "step_sizes")) return null;
   const rawShapeMeta = h5Shape(dataObj, null).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
-  if(rawShapeMeta.length) assertVolumeFits(normalizeShape3(rawShapeMeta.slice().reverse()), "DISCUS/Yell HDF5 grid");
+  if(rawShapeMeta.length) assertVolumeFits(normalizeShape3(rawShapeMeta), "DISCUS/Yell HDF5 grid");
   const rawValue = h5Value(dataObj);
   const rawFlat = flatNumericArray(rawValue);
   const rawShape = rawShapeMeta.length ? rawShapeMeta : h5Shape(dataObj, rawValue).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
   if(!rawShape.length) return null;
-  const shape = assertVolumeFits(normalizeShape3(rawShape.slice().reverse(), rawFlat.length), "DISCUS/Yell HDF5 grid").dims;
-  const values = reorderFortranCube(rawFlat, rawShape, shape);
+  // Yell /data uses logical disk shape [axis0,axis1,axis2], with axis2
+  // fastest. This is already the slice tool's internal value order.
+  const shape = assertVolumeFits(normalizeShape3(rawShape, rawFlat.length), "DISCUS/Yell HDF5 grid").dims;
+  const values = reorderCOrderCube(rawFlat, shape);
   const corner = readH5Array(h5file, ["lower_limits"]).slice(0, 3);
   while(corner.length < 3) corner.push(0);
   const vectorInfo = discusStepVectorsFromH5(h5file);
   const vectors = vectorInfo && vectorInfo.vectors;
   const isDirectRaw = readH5Array(h5file, ["is_direct"]);
-  const isDirect = isDirectRaw.length ? Math.abs(Math.round(isDirectRaw[0])) % 2 === 1 : false;
+  const isDirect = isDirectRaw.length ? Number(isDirectRaw[0]) !== 0 : false;
   const program = readH5Text(h5file, ["PROGRAM"]);
   const dataKind = classifyDataKind({isDirect, name, format:"DISCUS/Yell HDF5", shape});
   const coordKind = isDirect ? "xyz" : "hkl";
@@ -2873,7 +2875,13 @@ function parseDiscusH5(h5file, name){
     {...meta, ...gridMeta, dataKind, axisLabels:axisLabelsMeta}
   );
   result.header = {points:values.length, sections:1, scale:null, offset:null};
-  result.h5 = {format, program, isDirect, axes:["h","k","l"]};
+  result.h5 = {
+    format,
+    program,
+    isDirect,
+    axes:isDirect ? ["x","y","z"] : ["h","k","l"],
+    axesType:isDirect ? "xyz" : "hkl"
+  };
   return result;
 }
 
