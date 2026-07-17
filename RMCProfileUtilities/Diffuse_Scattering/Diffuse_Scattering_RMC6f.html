@@ -1451,6 +1451,7 @@ QX[r]=rowX;QY[r]=rowY;QZ[r]=rowZ;
 return{x:QX,y:QY,z:QZ};
 }
 function cell2vec(a,b,c,al,be,ga){const v=[[0,0,0],[0,0,0],[0,0,0]];v[2][0]=a*Math.cos(be);v[1][1]=b*Math.sin(al);v[2][1]=b*Math.cos(al);v[2][2]=c;v[1][0]=(a*b*Math.cos(ga)-v[2][0]*v[2][1])/v[1][1];v[0][0]=Math.sqrt(Math.max(0,a*a-v[1][0]*v[1][0]-v[2][0]*v[2][0]));return[[v[0][0],v[1][0],v[2][0]],[v[0][1],v[1][1],v[2][1]],[v[0][2],v[1][2],v[2][2]]];}
+function transpose3(m){return[[m[0][0],m[1][0],m[2][0]],[m[0][1],m[1][1],m[2][1]],[m[0][2],m[1][2],m[2][2]]];}
 function vec2space(v){const av=col3(v,0),bv=col3(v,1),cv=col3(v,2),den=dot(av,cross(bv,cv));if(!Number.isFinite(den)||Math.abs(den)<1e-20)throw new Error("Invalid reciprocal basis");const ap=cross(bv,cv).map(x=>x/den),bp=cross(cv,av).map(x=>x/den),cp=cross(av,bv).map(x=>x/den),Bp=[ap,bp,cp];return{B:inv3(Bp),Bp};}
 function wrapDelta(x){if(x<-0.5)return x+1;if(x>0.5)return x-1;return x;}
 function axis(min,max,step){
@@ -1486,7 +1487,7 @@ return window.h5wasm;
 
 function parseUnifiedRMC(name,model){
 needDiffuseCore();
-const supercell=model.unitCells.slice(0,3),parent=model.cellLengths.slice(0,3),angles=model.cellAngles.slice(0,3),anglesRad=angles.map(v=>v*Math.PI/180),parentDirect=cell2vec(parent[0],parent[1],parent[2],anglesRad[0],anglesRad[1],anglesRad[2]),sp=vec2space(parentDirect),fullDirect=scaleCols(sp.B,supercell),Bq=scaleMat(sp.Bp,PI2),n=model.atomCount,x=new Float64Array(n),y=new Float64Array(n),z=new Float64Array(n),xa=new Float64Array(n),ya=new Float64Array(n),za=new Float64Array(n),dx=new Float64Array(n),dy=new Float64Array(n),dz=new Float64Array(n);
+const supercell=model.unitCells.slice(0,3),parent=model.cellLengths.slice(0,3),angles=model.cellAngles.slice(0,3),anglesRad=angles.map(v=>v*Math.PI/180),parentDirect=cell2vec(parent[0],parent[1],parent[2],anglesRad[0],anglesRad[1],anglesRad[2]),sp=vec2space(transpose3(parentDirect)),fullDirect=scaleCols(sp.B,supercell),Bq=scaleMat(sp.Bp,PI2),n=model.atomCount,x=new Float64Array(n),y=new Float64Array(n),z=new Float64Array(n),xa=new Float64Array(n),ya=new Float64Array(n),za=new Float64Array(n),dx=new Float64Array(n),dy=new Float64Array(n),dz=new Float64Array(n);
 for(let i=0;i<n;i++){
 const p=model.atomPosition[i],uc=model.atomUnitCell[i],actualWhole=model.coordinatesAreSupercellFractional?[p[0],p[1],p[2]]:[p[0]/supercell[0],p[1]/supercell[1],p[2]/supercell[2]],idealWhole=[(Math.round(uc[0])-1)/supercell[0],(Math.round(uc[1])-1)/supercell[1],(Math.round(uc[2])-1)/supercell[2]],delta=[wrapDelta(actualWhole[0]-idealWhole[0]),wrapDelta(actualWhole[1]-idealWhole[1]),wrapDelta(actualWhole[2]-idealWhole[2])],pA=mul(idealWhole,fullDirect),pD=mul(delta,fullDirect);
 xa[i]=pA[0];ya[i]=pA[1];za[i]=pA[2];dx[i]=pD[0];dy[i]=pD[1];dz[i]=pD[2];x[i]=pA[0]+pD[0];y[i]=pA[1]+pD[1];z[i]=pA[2]+pD[2];
