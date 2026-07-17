@@ -564,7 +564,7 @@ html[data-theme="light"] .topbar-chip{background:#3a4d66;color:#c8d5e2}
       <div class="sb-col">
         <section class="sb-section">
           <h2 class="sb-heading">File Input</h2>
-          <div id="drop" class="drop" tabindex="0">Drop .rmc6f here or click<input id="file" type="file" accept=".rmc6f" hidden /></div>
+          <div id="drop" class="drop" tabindex="0">Drop .rmc6f or unified structure .h5 here or click<input id="file" type="file" accept=".rmc6f,.h5,.hdf5,.data,.lmp,.lammps" hidden /></div>
           <div class="meta">
             <div class="k">File</div><div id="mFile">-</div>
             <div class="k">Atoms</div><div id="mAtoms">-</div>
@@ -740,6 +740,7 @@ html[data-theme="light"] .topbar-chip{background:#3a4d66;color:#c8d5e2}
         <div class="btns sb-export-btns">
           <button id="saveDat" class="alt" disabled>Save .dat</button>
           <button id="saveJson" class="alt" disabled>Save .json</button>
+          <button id="saveUnified" class="alt" disabled>Save Unified .h5</button>
           <button id="saveVtk" class="alt" disabled>Save .vtk</button>
           <button id="saveCube" class="alt" disabled>Save .cube</button>
         </div>
@@ -962,8 +963,10 @@ html[data-theme="light"] .topbar-chip{background:#3a4d66;color:#c8d5e2}
 <script src="./js/diffuse_core.js"></script>
 <script src="./js/diffuse_amplitude.js"></script>
 <script src="./js/rmc6f_reader.js"></script>
+<script src="./js/lammps_data_reader.js"></script>
 <script src="./js/scattering_coeff_db.js"></script>
 <script src="./js/scattering_coeff_sources.js"></script>
+<script src="../Format_Converter/js/unified_hdf5.js"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id), PI2=2*Math.PI, EPS=1e-15;
@@ -1035,7 +1038,7 @@ throw new Error(`webgpufft API missing.${serveHint} ${errs.join(" | ")}`.trim())
 async function ensurePlotly(){if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;const errs=[];try{await loadScriptOnce(PLOTLY_CDN);}catch(e){errs.push(e&&e.message?e.message:String(e));}if(window.Plotly&&typeof window.Plotly.react==="function")return window.Plotly;throw new Error(`Plotly is unavailable${errs.length?`: ${errs.join(" | ")}`:""}.`);}
 function applyBackendDefaults(backend,announce=false){const p=BACKEND_PRESETS[backend];if(!p)return;let changed=false;if($("tol").value!==p.tol){$("tol").value=p.tol;changed=true;}if($("upsamp").value!==p.upsamp){$("upsamp").value=p.upsamp;changed=true;}if($("gridLimit").value!==p.gridLimit){$("gridLimit").value=p.gridLimit;changed=true;}if(announce&&changed){const n=backend==="webgpu_fft"?"WebGPU":"CPU";status(`Applied ${n} preset: tol=${p.tol}, upsamp=${p.upsamp}, grid limit=${p.gridLimit}.`,"ok");}}
 function formatWebgpuStageTotals(stages){const parts=[];for(const k of WEBGPU_STAGE_ORDER){const v=stages[k]||0;if(v>0)parts.push(`${WEBGPU_STAGE_LABEL[k]||k}=${fmtMs(v)}`);}return parts.join(", ");}
-function syncResultControls(){const has=!!state.res,sm=getSliceMode(),planeMode=sm==="plane",avgMode=sm==="avgvol";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("saveVtk").disabled=!has;$("saveCube").disabled=!has;$("saveSliceSvg").disabled=!has;$("saveSliceCsv").disabled=!has;$("savePlaneSvg").disabled=!has;$("saveIsoSvg").disabled=!has;$("savePlaneHtml").disabled=!has;$("saveIsoHtml").disabled=!has;$("axis").disabled=!has||planeMode||avgMode;$("idx").disabled=!has||planeMode||avgMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("planeApply").disabled=!has||(!planeMode&&!avgMode);$("planeReset").disabled=!has||(!planeMode&&!avgMode);for(const id of["avNX","avNY","avNZ","avOX","avOY","avOZ","avCX","avCY","avCZ","avRes","avScale","slabWidth","slabN"]){const el=$(id);if(el)el.disabled=!has||!avgMode;}const avMove=$("avgVolMove");if(avMove)avMove.disabled=!has||!avgMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
+function syncResultControls(){const has=!!state.res,sm=getSliceMode(),planeMode=sm==="plane",avgMode=sm==="avgvol";$("saveDat").disabled=!has;$("saveJson").disabled=!has;$("saveUnified").disabled=!has;$("saveVtk").disabled=!has;$("saveCube").disabled=!has;$("saveSliceSvg").disabled=!has;$("saveSliceCsv").disabled=!has;$("savePlaneSvg").disabled=!has;$("saveIsoSvg").disabled=!has;$("savePlaneHtml").disabled=!has;$("saveIsoHtml").disabled=!has;$("axis").disabled=!has||planeMode||avgMode;$("idx").disabled=!has||planeMode||avgMode;$("scale").disabled=!has;$("render3d").disabled=!has;$("openSliceWin").disabled=!has;$("colorMap").disabled=!has;$("resetLevels").disabled=!has;$("sliceMode").disabled=!has;for(const id of["pNX","pNY","pNZ","pOX","pOY","pOZ","pCX","pCY","pCZ","pRes","pScale"]){$(id).disabled=!has||!planeMode;}$("planeMove").disabled=!has||!planeMode;$("planeApply").disabled=!has||(!planeMode&&!avgMode);$("planeReset").disabled=!has||(!planeMode&&!avgMode);for(const id of["avNX","avNY","avNZ","avOX","avOY","avOZ","avCX","avCY","avCZ","avRes","avScale","slabWidth","slabN"]){const el=$(id);if(el)el.disabled=!has||!avgMode;}const avMove=$("avgVolMove");if(avMove)avMove.disabled=!has||!avgMode;$("closeSliceWin").disabled=!(state.sliceWin&&!state.sliceWin.closed);}
 function clamp01(v){return v<0?0:(v>1?1:v);}function lerp(a,b,t){return a+(b-a)*t;}
 function cleanNumber(v){return Number.isFinite(v)?Number(v.toPrecision(15)):v;}
 function formatInputNumber(v){return Number.isFinite(v)?cleanNumber(v).toString():"";}
@@ -1471,9 +1474,29 @@ function inter3(x,y,z){needDiffuseCore();return window.DiffuseCore.interleave3(x
 function creal(a){needDiffuseCore();return window.DiffuseCore.complexReal(a);}
 
 function parseRMC(name,text){needRmcReader();needDiffuseCore();const parsed=window.RMC6fReader.parse(name,text);return window.DiffuseCore.attachNeutronCoefficients(parsed,10);}
+function parseLammps(name,text){if(!window.LammpsDataReader||typeof window.LammpsDataReader.parse!=="function")throw new Error("LAMMPS data reader missing. Check ./js/lammps_data_reader.js");needDiffuseCore();const parsed=window.LammpsDataReader.parse(name,text);return window.DiffuseCore.attachNeutronCoefficients(parsed,10);}
+
+async function ensureUnifiedH5(){
+if(!window.UnifiedH5)throw new Error("Unified HDF5 helper failed to load.");
+if(!window.h5wasm)await loadScriptOnce("../Format_Converter/js/h5wasm.js");
+if(!window.h5wasm)throw new Error("HDF5 engine failed to load.");
+await window.h5wasm.ready;
+return window.h5wasm;
+}
+
+function parseUnifiedRMC(name,model){
+needDiffuseCore();
+const supercell=model.unitCells.slice(0,3),parent=model.cellLengths.slice(0,3),angles=model.cellAngles.slice(0,3),anglesRad=angles.map(v=>v*Math.PI/180),parentDirect=cell2vec(parent[0],parent[1],parent[2],anglesRad[0],anglesRad[1],anglesRad[2]),sp=vec2space(parentDirect),fullDirect=scaleCols(sp.B,supercell),Bq=scaleMat(sp.Bp,PI2),n=model.atomCount,x=new Float64Array(n),y=new Float64Array(n),z=new Float64Array(n),xa=new Float64Array(n),ya=new Float64Array(n),za=new Float64Array(n),dx=new Float64Array(n),dy=new Float64Array(n),dz=new Float64Array(n);
+for(let i=0;i<n;i++){
+const p=model.atomPosition[i],uc=model.atomUnitCell[i],actualWhole=model.coordinatesAreSupercellFractional?[p[0],p[1],p[2]]:[p[0]/supercell[0],p[1]/supercell[1],p[2]/supercell[2]],idealWhole=[(Math.round(uc[0])-1)/supercell[0],(Math.round(uc[1])-1)/supercell[1],(Math.round(uc[2])-1)/supercell[2]],delta=[wrapDelta(actualWhole[0]-idealWhole[0]),wrapDelta(actualWhole[1]-idealWhole[1]),wrapDelta(actualWhole[2]-idealWhole[2])],pA=mul(idealWhole,fullDirect),pD=mul(delta,fullDirect);
+xa[i]=pA[0];ya[i]=pA[1];za[i]=pA[2];dx[i]=pD[0];dy[i]=pD[1];dz[i]=pD[2];x[i]=pA[0]+pD[0];y[i]=pA[1]+pD[1];z[i]=pA[2]+pD[2];
+}
+const parsed={file:String(name||""),atoms:n,super:supercell,cellDeg:[parent[0]*supercell[0],parent[1]*supercell[1],parent[2]*supercell[2],angles[0],angles[1],angles[2]],Bp:sp.Bp,Bq,x,y,z,xa,ya,za,dx,dy,dz,elements:model.elements.slice(),sourceFormat:"unified structure HDF5",legacyContract:model.legacyContract};
+return window.DiffuseCore.attachNeutronCoefficients(parsed,10);
+}
 
 function formatAxisStep(v){return Number.isFinite(v)&&v>0?formatInputNumber(v):"0.1";}
-function meta(r){$("mFile").textContent=r.file;$("mAtoms").textContent=String(r.atoms);$("mSuper").textContent=r.super.join(" × ");const c=r.cellDeg.map((v,i)=>i<3?v.toFixed(5):v.toFixed(3));$("mCell").textContent=`${c[0]}, ${c[1]}, ${c[2]} ; ${c[3]}, ${c[4]}, ${c[5]}`;$("mElem").textContent=r.present.join(", ");$("hStep").value=formatAxisStep(1/r.super[0]);$("kStep").value=formatAxisStep(1/r.super[1]);$("lStep").value=formatAxisStep(1/r.super[2]);if($("tbFile"))$("tbFile").textContent=r.file;if($("tbAtoms"))$("tbAtoms").textContent=String(r.atoms);if($("tbSuper"))$("tbSuper").textContent=r.super.join(" \u00d7 ");}
+function meta(r){const hasSuper=r.hasSupercell!==false,superText=hasSuper?r.super.join(" × "):"not defined (LAMMPS box)";$("mFile").textContent=r.file;$("mAtoms").textContent=String(r.atoms);$("mSuper").textContent=superText;const c=r.cellDeg.map((v,i)=>i<3?v.toFixed(5):v.toFixed(3));$("mCell").textContent=c[0]+", "+c[1]+", "+c[2]+" ; "+c[3]+", "+c[4]+", "+c[5];$("mElem").textContent=r.present.join(", ");$("hStep").value=hasSuper?formatAxisStep(1/r.super[0]):"0.1";$("kStep").value=hasSuper?formatAxisStep(1/r.super[1]):"0.1";$("lStep").value=hasSuper?formatAxisStep(1/r.super[2]):"0.1";if($("tbFile"))$("tbFile").textContent=r.file;if($("tbAtoms"))$("tbAtoms").textContent=String(r.atoms);if($("tbSuper"))$("tbSuper").textContent=superText;}
 
 function buildElementCheckboxes(present){
 const wrap=$("mElemFilter");
@@ -1771,7 +1794,7 @@ function webgpuStage(stage,details){if(stage==="spread_setup")return`WebGPU spre
 async function runType3(spec,opts,backend,onStageTiming){if(backend==="webgpu_fft"){if(!navigator.gpu)throw new Error("navigator.gpu unavailable. Select a CPU backend.");await ensureWebgpuFftApi();if(typeof window.type3NufftWebgpuGpuFft!=="function")throw new Error(`WebGPU Type-3 bridge not loaded. Check ${WEBGPU_NUFFT_CDN_BASE}/lib/type3_webgpu_gpufft.js`);const o={...opts,wgslBasePath:WEBGPU_WGSL_BASE};const stageMs={};let prevStage=null,prevTs=performance.now();const onStage=(stage,details)=>{const now=performance.now();if(prevStage){const dt=now-prevTs;stageMs[prevStage]=(stageMs[prevStage]||0)+dt;if(typeof onStageTiming==="function")onStageTiming(prevStage,dt);}prevStage=stage;prevTs=now;const msg=webgpuStage(stage,details||{});if(msg)status(msg);};const out=await window.type3NufftWebgpuGpuFft(spec,o,onStage);const endTs=performance.now();if(prevStage){const dt=endTs-prevTs;stageMs[prevStage]=(stageMs[prevStage]||0)+dt;if(typeof onStageTiming==="function")onStageTiming(prevStage,dt);}return{out,stageMs};}if(backend==="direct"){needType3(window.type3NufftCpuDirect);return{out:type3NufftCpuDirect(spec,opts),stageMs:null};}needType3(window.type3NufftCpu);return{out:type3NufftCpu(spec,opts),stageMs:null};}
 
 async function compute(){
-if(!state.rmc){status("Load an .rmc6f file first.","warn");return;}
+if(!state.rmc){status("Load an .rmc6f or unified structure .h5 file first.","warn");return;}
 if(state.render3dTimer){clearTimeout(state.render3dTimer);state.render3dTimer=null;}
 capture3dCameras();
 const prevPlaneState=state.plane?JSON.parse(JSON.stringify(state.plane)):null;
@@ -1784,7 +1807,7 @@ const h=axis(hMinReq,hMaxReq,hStepReq),k=axis(kMinReq,kMaxReq,kStepReq),l=axis(l
 if(!Number.isFinite(limit)||limit<1)throw new Error("Grid safety limit must be positive");
 const useWebgpuChunking=backend==="webgpu_fft"&&grid>limit;
 if(backend!=="webgpu_fft"&&grid>limit){const rec=Math.ceil(grid*1.1);throw new Error(`Grid ${grid} exceeds limit ${limit}. Set Grid safety limit >= ${rec} (or choose WebGPU preset).`);}
-$("run").disabled=true;$("saveDat").disabled=true;$("saveJson").disabled=true;$("saveVtk").disabled=true;$("saveCube").disabled=true;$("saveSliceSvg").disabled=true;$("saveSliceCsv").disabled=true;$("savePlaneSvg").disabled=true;$("saveIsoSvg").disabled=true;$("savePlaneHtml").disabled=true;$("saveIsoHtml").disabled=true;$("axis").disabled=true;$("idx").disabled=true;$("scale").disabled=true;$("render3d").disabled=true;$("openSliceWin").disabled=true;$("sliceMode").disabled=true;$("planeMove").disabled=true;$("planeApply").disabled=true;
+$("run").disabled=true;$("saveDat").disabled=true;$("saveJson").disabled=true;$("saveUnified").disabled=true;$("saveVtk").disabled=true;$("saveCube").disabled=true;$("saveSliceSvg").disabled=true;$("saveSliceCsv").disabled=true;$("savePlaneSvg").disabled=true;$("saveIsoSvg").disabled=true;$("savePlaneHtml").disabled=true;$("saveIsoHtml").disabled=true;$("axis").disabled=true;$("idx").disabled=true;$("scale").disabled=true;$("render3d").disabled=true;$("openSliceWin").disabled=true;$("sliceMode").disabled=true;$("planeMove").disabled=true;$("planeApply").disabled=true;
 const opts={tol:Number($("tol").value),upsampfac:Number($("upsamp").value)},sub=$("subAvg").value==="1",avgNormMode=(($("avgNormN")&&$("avgNormN").value)||"included").toLowerCase(),normQ=$("normQ")?$("normQ").value==="1":true,smoothEnabled=$("smooth3d").value==="1",smoothType=$("smoothType").value,chebDb=Number.isFinite(Number($("chebDb").value))?Number($("chebDb").value):100,smoothScale=Math.max(1,Math.floor(Number($("smoothScale").value)||1)),t0=performance.now(),timings={prepare:0,a:0,aavg:0,adelta:0,finalize:0,smooth:0,webgpu:{}};
 const onStageTiming=(stage,dt)=>{timings.webgpu[stage]=(timings.webgpu[stage]||0)+dt;};
 status(`Preparing grid ${shape[0]}×${shape[1]}×${shape[2]} (${grid}) for ${scatteringCfg.type} ...`);await new Promise(r=>setTimeout(r,0));
@@ -2027,10 +2050,24 @@ state.lastSlice={sliceMode:sm,displayMode:mode,slice:sl};
 pushSliceWindow();
 }
 
-function base(){const m=$("baseName").value.trim();if(m)return m;return state.rmc?state.rmc.file.replace(/\.rmc6f$/i,"")+"_diffuse":"diffuse_result";}
+function base(){const m=$("baseName").value.trim();if(m)return m;return state.rmc?state.rmc.file.replace(/\.(?:rmc6f|h5|hdf5|data|lmp|lammps)$/i,"")+"_diffuse":"diffuse_result";}
 function saveText(name,text,mime){const b=new Blob([text],{type:mime}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);} 
 function saveDat(){if(!state.res)return;const r=state.res,[nh,nk,nl]=r.shape,out=["# h k l intensity"];for(let i=0;i<nh;i++)for(let j=0;j<nk;j++)for(let m=0;m<nl;m++){out.push(`${r.h[i]} ${r.k[j]} ${r.l[m]} ${r.I[idx(r.shape,i,j,m)]}`);}saveText(`${base()}.dat`,out.join("\n"),"text/plain;charset=utf-8");}
-function saveJson(){if(!state.res||!state.rmc)return;const r=state.res,p={sourceFile:state.rmc.file,atoms:state.rmc.atoms,supercell:state.rmc.super,cellDeg:state.rmc.cellDeg,shape:r.shape,hAxis:r.h,kAxis:r.k,lAxis:r.l,Bq:r.Bq,Bp:r.Bp,hklToQ:"Q = [h,k,l] * Bq",minI:r.min,maxI:r.max,backend:r.backend,options:r.opts,timings:r.timings||null,intensity:Array.from(r.I)};saveText(`${base()}.json`,JSON.stringify(p),"application/json;charset=utf-8");}
+function saveJson(){if(!state.res||!state.rmc)return;const r=state.res,p={sourceFile:state.rmc.file,atoms:state.rmc.atoms,supercell:state.rmc.hasSupercell===false?null:state.rmc.super,cellDeg:state.rmc.cellDeg,shape:r.shape,hAxis:r.h,kAxis:r.k,lAxis:r.l,Bq:r.Bq,Bp:r.Bp,hklToQ:"Q = [h,k,l] * Bq",minI:r.min,maxI:r.max,backend:r.backend,options:r.opts,timings:r.timings||null,intensity:Array.from(r.I)};saveText(`${base()}.json`,JSON.stringify(p),"application/json;charset=utf-8");}
+async function saveUnified(){
+if(!state.res||!state.rmc)return;
+const button=$("saveUnified");button.disabled=true;
+try{
+status("Writing unified HDF5 data ...");
+const h5=await ensureUnifiedH5(),r=state.res,ah=axisUniformInfo(r.h),ak=axisUniformInfo(r.k),al=axisUniformInfo(r.l);
+if(!ah.uniform||!ak.uniform||!al.uniform)throw new Error("Unified data output requires uniform H, K, and L axes.");
+const s=state.rmc.super,c=state.rmc.cellDeg,parentCell=[c[0]/s[0],c[1]/s[1],c[2]/s[2],c[3],c[4],c[5]],scattering=r.opts&&r.opts.scattering&&r.opts.scattering.type||"unknown";
+const bytes=window.UnifiedH5.writeData(h5,{dims:r.shape,corner:[r.h[0],r.k[0],r.l[0]],vectors:[[ah.step,0,0],[0,ak.step,0],[0,0,al.step]],values:r.I,cell:parentCell,axesType:"hkl",content:"intensity",radiation:scattering,experiment:"calculated",style:"single_diffraction",creationMethod:"Diffuse_Scattering_RMC6f unified data export"});
+saveText(`${base()}_unified.h5`,bytes,"application/x-hdf5");
+status("Saved unified HDF5 diffuse data.","ok");
+}catch(err){status(`Unified HDF5 export failed: ${err.message}`,"err");}
+finally{button.disabled=!state.res;}
+}
 function fmtNum(v){return Number.isFinite(v)?Number(v).toPrecision(12):"NaN";}
 function downloadDataUrl(name,dataUrl){const a=document.createElement("a");a.href=dataUrl;a.download=name;document.body.appendChild(a);a.click();a.remove();}
 function axisUniformInfo(arr){
@@ -2172,7 +2209,25 @@ saveText(`${base()}_slice_${axisName}${fix}.csv`,out.join("\n"),"text/csv;charse
 status("Saved axis slice CSV (ParaView Table input).","ok");
 }
 
-async function onFile(f){if(!f)return;status(`Reading ${f.name} ...`);const txt=await f.text(),parsed=parseRMC(f.name,txt);state.rmc=parsed;state.res=null;state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeMoving=false;state.planeMoveCameraLock=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};meta(parsed);buildElementCheckboxes(parsed.present);syncResultControls();draw();setPlot3dStatus("3D view is idle.");if(parsed.unknown.length)status(`Loaded ${f.name}. Unknown elements: ${parsed.unknown.join(", ")} -> fca=10.0.`,`warn`);else status(`Loaded ${f.name}. Ready to compute.`,`ok`);}
+async function onFile(f){
+if(!f)return;
+status(`Reading ${f.name} ...`);
+let parsed;
+if(/\.(?:h5|hdf5)$/i.test(f.name)){
+const h5=await ensureUnifiedH5(),bytes=new Uint8Array(await f.arrayBuffer()),model=window.UnifiedH5.readStructure(h5,bytes,f.name);
+parsed=parseUnifiedRMC(f.name,model);
+}else{
+const text=await f.text();
+parsed=/\.(?:data|lmp|lammps)$/i.test(f.name)||/LAMMPS\s+data\s+file/i.test(text.slice(0,512))?parseLammps(f.name,text):parseRMC(f.name,text);
+}
+if(parsed.lammps){$("subAvg").value="0";parsed.sourceWarnings=parsed.sourceWarnings||[];parsed.sourceWarnings.push("Subtract avg was set OFF because LAMMPS data has no ideal reference lattice.");}
+state.rmc=parsed;state.res=null;state.volCache=null;state.sliceLevels=null;state.lastBar=null;state.plane=null;state.planeSliceCache=null;state.planeMoving=false;state.planeMoveCameraLock=null;state.planeTraceBusy=false;state.planeTraceQueued=null;state.planeTraceReqId=0;state.render3dEpoch++;state.sceneCamera={iso:null,plane:null};meta(parsed);buildElementCheckboxes(parsed.present);syncResultControls();draw();setPlot3dStatus("3D view is idle.");
+const sourceWarning=parsed.sourceWarnings&&parsed.sourceWarnings.length?parsed.sourceWarnings.join(" "):"";
+if(parsed.unknown.length)status(`Loaded ${f.name}. Unknown elements: ${parsed.unknown.join(", ")} -> fca=10.0.`,"warn");
+else if(sourceWarning)status("Loaded "+f.name+". "+sourceWarning,"warn");
+else if(parsed.legacyContract)status(`Loaded legacy unified structure ${f.name}. Ready to compute.`,"warn");
+else status(`Loaded ${f.name}. Ready to compute.`,"ok");
+}
 
 const SCATTER_MODEL_OPTIONS={
 neutron:[{value:"fast",label:"Fast (neutron)"},{value:"grouped_exact",label:"Grouped exact (neutron)"}],
@@ -2259,7 +2314,7 @@ $("scatterType").addEventListener("change",updateScatteringUi);
 $("scatterModel").addEventListener("change",updateScatteringUi);
 $("smooth3d").addEventListener("change",updateSmoothUi);$("smoothType").addEventListener("change",updateSmoothUi);
 $("run").addEventListener("click",()=>compute().catch(err=>{$("run").disabled=false;syncResultControls();status(`Compute failed: ${err.message}`,"err");}));
-$("saveDat").addEventListener("click",saveDat);$("saveJson").addEventListener("click",saveJson);
+$("saveDat").addEventListener("click",saveDat);$("saveJson").addEventListener("click",saveJson);$("saveUnified").addEventListener("click",saveUnified);
 $("savePlaneSvg").addEventListener("click",()=>saveSinglePlotSvg("plot3dPlane","plane3d"));
 $("saveIsoSvg").addEventListener("click",()=>saveSinglePlotSvg("plot3dIso","iso3d"));
 $("savePlaneHtml").addEventListener("click",()=>saveSinglePlotHtml("plot3dPlane","plane3d","Diffuse 3D Plane Slice"));

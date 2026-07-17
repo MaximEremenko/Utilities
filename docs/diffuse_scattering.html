@@ -42,20 +42,20 @@
 
     <section>
       <h2>What This Tool Does</h2>
-      <p>The diffuse-scattering tool computes reciprocal-space diffuse intensity <code>I(h,k,l)</code> directly in the browser from an <code>.rmc6f</code> atomistic configuration. It is intended for interactive exploration of diffuse features rather than for inverse reconstruction.</p>
-      <div class="callout">Use this tool to compute, slice, visualize, and export diffuse-scattering volumes from RMC6f configurations without leaving the browser.</div>
+      <p>The diffuse-scattering tool computes reciprocal-space diffuse intensity <code>I(h,k,l)</code> directly in the browser from an <code>.rmc6f</code> atomistic configuration or a unified structure <code>.h5</code> file. It is intended for interactive exploration of diffuse features rather than for inverse reconstruction.</p>
+      <div class="callout">Use this tool to compute, slice, visualize, and export diffuse-scattering volumes from RMC6f or unified-HDF5 structures without leaving the browser.</div>
     </section>
     <section>
       <h2>Quick Start</h2>
       <ol>
         <li>Open the tool.</li>
-        <li>Load an <code>.rmc6f</code> file.</li>
+        <li>Load an <code>.rmc6f</code> or unified structure <code>.h5</code> file.</li>
         <li>Choose a backend: WebGPU first, CPU FFT if WebGPU is unavailable.</li>
         <li>Set the reciprocal-space grid and press <strong>Compute Diffuse</strong>.</li>
         <li>Inspect the <strong>3D Slice Plane</strong>, <strong>2D Slice Map</strong>, and <strong>3D Isosurface</strong>.</li>
       </ol>
-      <pre><code>Input:  .rmc6f
-Output: diffuse volume + slices + exports (.dat/.json/.vtk/.cube/.csv/.svg/.html)</code></pre>
+      <pre><code>Input:  .rmc6f or unified structure .h5
+Output: diffuse volume + slices + exports (.h5/.dat/.json/.vtk/.cube/.csv/.svg/.html)</code></pre>
       <figure>
         <img src="assets/diffuse_scattering_ui_annotated.png" alt="Diffuse scattering calculator interface after loading LiFeO2 and computing diffuse intensity" style="width:100%;border:1px solid #cbd5e1;border-radius:12px;">
         <figcaption class="small">Example live interface after computing diffuse scattering for <code>LiFeO2.rmc6f</code>. The main workflow areas are the input/setup panel on the left, the 3D Slice Plane at top center, the 2D Slice Map below it, and the 3D render/export controls on the right.</figcaption>
@@ -156,7 +156,7 @@ Output: diffuse volume + slices + exports (.dat/.json/.vtk/.cube/.csv/.svg/.html
     <section>
       <h2>Exports</h2>
       <ul>
-        <li>Diffuse volume: <code>.dat</code>, <code>.json</code>, <code>.vtk</code>, <code>.cube</code></li>
+        <li>Full diffuse volume: unified data <code>.h5</code>, <code>.dat</code>, <code>.json</code>, <code>.vtk</code>, and <code>.cube</code></li>
         <li>2D slice: CSV and SVG</li>
         <li>3D plots: Plotly HTML and SVG exports</li>
       </ul>

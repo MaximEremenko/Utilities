@@ -1,10 +1,11 @@
 # RMC6f Diffuse Scattering Tool
 
 This directory contains the browser-based diffuse-scattering calculator for
-`.rmc6f` configurations.
+`.rmc6f` configurations and unified structure `.h5` files.
 
 The tool computes diffuse intensity `I(h,k,l)` in reciprocal space, visualizes
-3D and 2D slices, renders 3D isosurfaces, and exports the resulting data.
+3D and 2D slices, renders 3D isosurfaces, and exports the resulting data,
+including the current unified data HDF5 contract.
 
 ## Start Here
 
@@ -19,8 +20,8 @@ The tool computes diffuse intensity `I(h,k,l)` in reciprocal space, visualizes
 - `Diffuse_Scattering_RMC6f.html`
   - Main browser app.
 - `js/`
-  - Modular source files for RMC6f parsing, scattering coefficients, and
-    diffuse-calculation logic.
+  - Modular source files for RMC6f/unified-HDF5 parsing, scattering
+    coefficients, and diffuse-calculation logic.
 - `Examples/`
   - Shipped `.rmc6f` profiles for external users of the Utilities docs surface.
 
