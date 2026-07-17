@@ -2882,13 +2882,16 @@ function parseCommonScatteringH5(h5file, name){
   const dataObj = h5Lookup(h5file, "scattering/data/data");
   if(!dataGroup || !dataObj) return null;
   const rawShapeMeta = h5Shape(dataObj, null).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
-  if(rawShapeMeta.length) assertVolumeFits(normalizeShape3(rawShapeMeta), "DiffuseDevelopers unified HDF5 grid");
+  if(rawShapeMeta.length) assertVolumeFits(normalizeShape3(rawShapeMeta.slice().reverse()), "DiffuseDevelopers unified HDF5 grid");
   const rawValue = h5Value(dataObj);
   const rawFlat = flatNumericArray(rawValue);
-  let shape = rawShapeMeta.length ? rawShapeMeta : h5Shape(dataObj, rawValue).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  const diskShape = rawShapeMeta.length ? rawShapeMeta : h5Shape(dataObj, rawValue).slice(0, 3).map(v => Math.floor(Number(v))).filter(v => v > 0);
+  let shape = diskShape.slice().reverse();
   shape = normalizeShape3(shape, rawFlat.length);
   shape = assertVolumeFits(shape, "DiffuseDevelopers unified HDF5 grid").dims;
-  const values = reorderCOrderCube(rawFlat, shape);
+  // /scattering/data/data is stored on disk as [L,K,H] with H fastest.
+  // The slice tool uses logical [H,K,L] with L fastest internally.
+  const values = reorderFortranCube(rawFlat, diskShape, shape);
   const space = h5Text(h5AttrValue(dataGroup, "space"));
   const contract = unifiedDataContract(h5file, dataGroup, space);
   let axesNames = parseH5AxesNames(h5AttrValue(dataGroup, "axes"));
