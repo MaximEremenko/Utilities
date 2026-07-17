@@ -82,7 +82,7 @@
     <div class="row">
       <div>
         <label>Structure file
-          <span class="hint">(.rmc6f or unified structure .h5; parent cell = supercell / dimensions)</span></label>
+          <span class="hint">(.rmc6f: parent cell = supercell / dimensions; unified .h5 stores the parent cell directly)</span></label>
         <input type="file" id="structFile">
         <div id="structInfo" class="hint"></div>
       </div>
@@ -202,12 +202,16 @@
         const m = state.data.model;
         info = (state.data.kind === 'yell' ? 'Yell 1.0' : 'Unified data format') +
                ` | grid ${m.dims.join(' x ')}` +
+               (state.data.kind === 'unified' ? ` | axes ${m.axesType || 'hkl'}` : '') +
                ` | stored cell: ${m.cellLengths.map(x => x.toPrecision(6)).join(' ')} / ` +
                m.cellAngles.map(x => x.toPrecision(4)).join(' ') +
                (Converter.isUnitMetric(m.cellLengths, m.cellAngles) ? '  (unit metric)' : '');
       }
       $('dataInfo').textContent = info;
       log(`Data file "${fileObj.name}": ${info}`);
+      if(state.data.model && state.data.model.legacyContract) {
+        log('Legacy unified metadata accepted; new unified output will write the mandatory current contract.');
+      }
     } catch (e) {
       $('dataInfo').textContent = 'Error: ' + e.message;
       log('Error reading data file: ' + e.message, 'err');
@@ -340,6 +344,14 @@
 
       const radSel = $('radiation').value;
       if (radSel) model.radiation = radSel;
+
+      if(model.axesType === 'Q') {
+        if(Converter.isUnitMetric(resolved.cell.lengths, resolved.cell.angles)) {
+          throw new Error('Q-axis unified data needs a real parent cell to convert Q to hkl');
+        }
+        model = Converter.modelAxesToHkl(model, resolved.cell);
+        log('Converted unified Cartesian Q axes to hkl using the selected parent cell.');
+      }
 
       log(`Grid ${model.dims.join(' x ')} (${model.dims[0] * model.dims[1] * model.dims[2]} points)`);
       log(`Cell for hkl <-> Q: ${fmtCell(resolved.cell)}  [from ${resolved.source}]`);

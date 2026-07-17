@@ -25,9 +25,19 @@ automatically from the file content.
 
 ### Format notes
 
-- **Unified data format**: both the current `/scattering/data` layout and the
-  older `/entry/data` layout are read; written files contain both, so they
-  are accepted by RMCProfile (`RMC_ENABLE_HDF5=ON`) and by DiffuseCode.
+- **Unified data format**: both the `/scattering/data` compatibility layout
+  and the RMCProfile/DISCUS `/entry/data` layout are read; written files
+  contain both. New output follows the current common contract: the mandatory
+  crystal-metadata audit datasets are written under `/entry/data`, with
+  `audit_conform_dict_name = Disorder unified data`,
+  `data_type_axes = hkl`, and `data_type_number = real`. Readers accept
+  the older `Disorder scattering` name and infer missing axes metadata as
+  RMCProfile does for legacy files, but reject a structure dictionary or an
+  unsupported axes/number type instead of silently treating it as HKL data.
+  Three-dimensional `Q` axes are converted to HKL using the real parent
+  cell; scalar or direct-space axis types are outside this diffuse converter.
+  Optional crystal flags do not control diffuse-grid interpretation; the
+  standard cell and symmetry fields are always written.
 - **Yell 1.0**: the flat layout with `/data`, `/lower_limits`, `/step_sizes`,
   and `/unit_cell` datasets. Files that store the unit metric
   (`unit_cell = 1 1 1 90 90 90`) are interpreted as hkl grids in reciprocal
@@ -52,8 +62,10 @@ automatically from the file content.
 2. **Unit cell**: some conversions need the parent (crystallographic) unit
    cell, because the text and VTK formats do not store one, and some Yell
    files store only the unit metric. Provide either
-   - a structure file: `.rmc6f` or unified structure `.h5`. The parent cell
-     is derived as the supercell cell divided by the supercell dimensions; or
+   - a structure file: `.rmc6f` or unified structure `.h5`. For `.rmc6f`,
+     the parent cell is the supercell divided by its dimensions. In the
+     unified structure contract, `unit_cell_lengths` already stores the
+     basic/parent cell and is used directly; or
    - the parent cell typed in directly (a, b, c in Angstrom; alpha, beta,
      gamma in degrees).
    When the data file already stores a real cell (for example RMCProfile
@@ -113,8 +125,9 @@ The conversion core was verified against real files from each producer:
   paired `*_list.txt` hkl output exactly, and the recovered hkl grid matches
   it to the 6-decimal precision of the VTK header.
 - RMCProfile: HDF5 files written by the converter follow the same dataset
-  layouts, axis ordering, and fixed-length string types as RMCProfile's
-  Fortran implementation (`unified_config/unified_hdf5_io.f90`), and
+  layouts, mandatory audit/type metadata, axis ordering, and fixed-length
+  string types as RMCProfile's Fortran implementation
+  (`unified_config/unified_hdf5_io.f90`), and
   round-trip conversions through every format are exact at double precision.
 
 ## Command-Line Equivalents

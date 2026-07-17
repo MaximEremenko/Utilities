@@ -39,6 +39,83 @@
 
     const DEG = Math.PI / 180.0;
     const UNIT_METRIC_TOL = 1e-6;
+    const UNIFIED_DATA_DICTIONARY = 'Disorder unified data';
+    const LEGACY_DATA_DICTIONARY = 'Disorder scattering';
+    const UNIFIED_STRUCTURE_DICTIONARY = 'Disorder structure';
+    const ALLOWED_DATA_AXES = new Set([
+        'hkl', 'Q', '2theta', 'dstar', 'sin(theta)/lambda', 'theta',
+        'xyz', 'uvw', 'r',
+    ]);
+
+    function textValue(value) {
+        if (value === null || value === undefined) return '';
+        if (ArrayBuffer.isView(value)) {
+            if (value instanceof Uint8Array || value instanceof Int8Array) {
+                const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+                const end = bytes.indexOf(0);
+                return new TextDecoder().decode(end >= 0 ? bytes.subarray(0, end) : bytes).trim();
+            }
+            value = Array.from(value);
+        }
+        if (Array.isArray(value)) {
+            if (!value.length) return '';
+            if (value.every(v => typeof v === 'number')) {
+                const bytes = Uint8Array.from(value);
+                const end = bytes.indexOf(0);
+                return new TextDecoder().decode(end >= 0 ? bytes.subarray(0, end) : bytes).trim();
+            }
+            return String(value[0]).replace(/\0+$/g, '').trim();
+        }
+        return String(value).replace(/\0+$/g, '').trim();
+    }
+
+    function datasetText(f, path) {
+        const ds = f.get(path);
+        return ds ? textValue(ds.value) : '';
+    }
+
+    function attributeText(obj, name) {
+        const attr = obj && obj.attrs && obj.attrs[name];
+        return attr ? textValue(attr.value) : '';
+    }
+
+    function unifiedDictionary(f) {
+        return datasetText(f, 'entry/data/audit_conform_dict_name') ||
+               attributeText(f, 'audit_conform_dict_name');
+    }
+
+    function validateUnifiedDictionary(f, expectedKind) {
+        const dict = unifiedDictionary(f);
+        // RMCProfile deliberately keeps a read fallback for pre-contract files.
+        if (!dict) return { dictionary: '', legacy: true };
+        if (expectedKind === 'structure') {
+            if (dict !== UNIFIED_STRUCTURE_DICTIONARY) {
+                throw new Error(`unified structure: wrong dictionary ${dict}`);
+            }
+        } else if (dict !== UNIFIED_DATA_DICTIONARY && dict !== LEGACY_DATA_DICTIONARY) {
+            throw new Error(`unified data: wrong dictionary ${dict}`);
+        }
+        return { dictionary: dict, legacy: dict === LEGACY_DATA_DICTIONARY };
+    }
+
+    function validateDataContract(f, groupObj, reciprocalFallback) {
+        const axesType = datasetText(f, 'entry/data/data_type_axes') ||
+            attributeText(groupObj, 'data_type_axes') ||
+            (String(reciprocalFallback || '').trim() === 'patterson' ? 'uvw' :
+             String(reciprocalFallback || '').trim() === 'direct' ? 'xyz' : 'hkl');
+        if (!ALLOWED_DATA_AXES.has(axesType)) {
+            throw new Error(`unified data: unsupported data_type_axes ${axesType}`);
+        }
+        const numberType = datasetText(f, 'entry/data/data_type_number') ||
+            attributeText(groupObj, 'data_type_number') || 'real';
+        if (numberType !== 'real') {
+            throw new Error(`unified data: unsupported data_type_number ${numberType}`);
+        }
+        if (axesType !== 'hkl' && axesType !== 'Q') {
+            throw new Error(`unified data axes are ${axesType}; this 3-D diffuse converter supports hkl or Q axes`);
+        }
+        return { axesType, numberType };
+    }
 
     // ----------------------------------------------------------------- cell math
 
@@ -117,6 +194,19 @@
                angles.every(x => Math.abs(x - 90) <= UNIT_METRIC_TOL);
     }
 
+    function modelAxesToHkl(model, cell) {
+        if (!model || model.axesType === 'hkl' || !model.axesType) return model;
+        if (model.axesType !== 'Q') {
+            throw new Error(`cannot convert ${model.axesType} axes to hkl`);
+        }
+        const A = cellToLattice(cell.lengths, cell.angles);
+        return Object.assign({}, model, {
+            corner: qToHkl(A, model.corner),
+            vectors: model.vectors.map(v => qToHkl(A, v)),
+            axesType: 'hkl',
+        });
+    }
+
     // ----------------------------------------------------------------- structure
 
     // Parse an .rmc6f header; returns parent cell = supercell / dimensions.
@@ -154,8 +244,10 @@
         };
     }
 
-    // Parent cell from a unified structure HDF5 file (h5wasm File object).
+    // Unified structure stores the basic/parent cell directly. unit_cells
+    // describes the supercell replication and must not divide these lengths.
     function readUnifiedStructure(f) {
+        validateUnifiedDictionary(f, 'structure');
         const need = p => {
             const d = f.get(p);
             if (!d) throw new Error('unified structure: missing ' + p);
@@ -166,7 +258,7 @@
         const cells = need('entry/data/unit_cells');
         if (cells.some(x => !(x > 0))) throw new Error('unified structure: invalid unit_cells');
         return {
-            lengths: [lengths[0] / cells[0], lengths[1] / cells[1], lengths[2] / cells[2]],
+            lengths: lengths.slice(0, 3),
             angles,
             supercell: cells,
         };
@@ -175,6 +267,9 @@
     // ----------------------------------------------------------------- readers
 
     function detectH5Kind(f) {
+        const dict = unifiedDictionary(f);
+        if (dict === UNIFIED_STRUCTURE_DICTIONARY) return 'structure';
+        if (dict === UNIFIED_DATA_DICTIONARY || dict === LEGACY_DATA_DICTIONARY) return 'unified';
         if (f.get('scattering/data/data')) return 'unified';
         if (f.get('entry/data/data_values')) return 'unified';
         if (f.get('data') && f.get('lower_limits') && f.get('unit_cell')) return 'yell';
@@ -183,8 +278,15 @@
     }
 
     function readUnifiedData(f) {
-        if (f.get('scattering/data/data')) return readScatteringGroup(f);
-        if (f.get('entry/data/data_values')) return readEntryGroup(f);
+        const identity = validateUnifiedDictionary(f, 'data');
+        let model = null;
+        if (f.get('scattering/data/data')) model = readScatteringGroup(f);
+        else if (f.get('entry/data/data_values')) model = readEntryGroup(f);
+        if (model) {
+            model.dictionary = identity.dictionary || UNIFIED_DATA_DICTIONARY;
+            model.legacyContract = identity.legacy;
+            return model;
+        }
         throw new Error('no unified diffuse data group found');
     }
 
@@ -209,9 +311,11 @@
             const v = attrs.radiation.value;
             radiation = String(Array.isArray(v) ? v[0] : v);
         }
+        const contract = validateDataContract(f, f.get('scattering/data'), 'reciprocal');
         return {
             dims: [nh, nk, nl], corner, vectors, values,
             cellLengths: lengths, cellAngles: angles, radiation, axes,
+            axesType: contract.axesType, numberType: contract.numberType,
         };
     }
 
@@ -240,9 +344,12 @@
             const v = radDs.value;
             radiation = String(Array.isArray(v) ? v[0] : v).trim() || 'unknown';
         }
+        const reciprocal = datasetText(f, g + 'data_type_reciprocal');
+        const contract = validateDataContract(f, f.get('entry/data'), reciprocal);
         return {
             dims, corner, vectors, values,
             cellLengths: lengths, cellAngles: angles, radiation, axes,
+            axesType: contract.axesType, numberType: contract.numberType,
         };
     }
 
@@ -507,6 +614,9 @@
 
     function writeUnifiedData(f, model, cell, meta) {
         meta = meta || {};
+        if (model.axesType && model.axesType !== 'hkl') {
+            throw new Error('unified writer requires hkl axes; convert Q axes with modelAxesToHkl first');
+        }
         const [nh, nk, nl] = model.dims;
         const names = axisNames(model);
         const today = new Date().toISOString().slice(0, 10);
@@ -514,8 +624,8 @@
         const author = meta.authorName || 'RMCProfile';
         const radiation = model.radiation && model.radiation !== '' ? model.radiation : 'unknown';
 
-        // ---- /scattering/data (current unified layout) ----
-        f.create_attribute('audit_conform_dict_name', 'Disorder scattering');
+        // ---- /scattering/data (NXdata compatibility layout) ----
+        f.create_attribute('audit_conform_dict_name', UNIFIED_DATA_DICTIONARY);
         f.create_attribute('audit_conform_dict_version', '0.0.0');
         f.create_attribute('audit_creation_date', today);
         f.create_attribute('audit_creation_method', method);
@@ -538,8 +648,10 @@
         sd.create_attribute('dimension', Math.max(1, model.dims.filter(d => d > 1).length), [], '<i');
         sd.create_attribute('data_type_experiment', meta.experiment || 'unknown');
         sd.create_attribute('data_type_style', 'single_diffraction');
+        sd.create_attribute('data_type_axes', 'hkl');
         sd.create_attribute('data_type_with_bragg', 'unknown');
         sd.create_attribute('data_type_symmetrized', 'none');
+        sd.create_attribute('data_type_number', 'real');
         sd.create_attribute('data_rad_symbol', 'unknown');
 
         sd.create_dataset({ name: 'lower_limits', data: model.corner, shape: [3], dtype: '<d' });
@@ -559,7 +671,7 @@
         sd.create_dataset({ name: 'unit_cell_angles', data: cell.angles, shape: [3], dtype: '<d' });
         sd.create_dataset({ name: 'data_rad_length', data: [0, 0, 0], shape: [3], dtype: '<d' });
 
-        // ---- /entry/data (older unified layout, kept for compatibility) ----
+        // ---- /entry/data (current common RMCProfile/DISCUS contract) ----
         const entry = f.create_group('entry');
         const ed = entry.create_group('data');
         const eds = (name, spec) => ed.create_dataset(Object.assign({ name }, spec));
@@ -574,10 +686,12 @@
         });
         eds('data_type_experiment', fixedStr(meta.experiment || 'unknown'));
         eds('data_type_style', fixedStr('single_diffraction'));
+        eds('data_type_axes', fixedStr('hkl'));
         eds('data_type_content', fixedStr('intensity'));
         eds('data_type_reciprocal', fixedStr('reciprocal'));
         eds('data_type_with_bragg', fixedStr('unknown'));
         eds('data_type_symmetrized', fixedStr('none'));
+        eds('data_type_number', fixedStr('real'));
         eds('data_radiation', fixedStr(radiation));
         eds('data_rad_symbol', fixedStr('unknown'));
         eds('data_rad_length', { data: [0, 0, 0], shape: [3], dtype: '<d' });
@@ -594,7 +708,7 @@
                 for (let ih = 0; ih < nh; ih++)
                     lv[(ih * nk + ik) * nl + il] = model.values[(il * nk + ik) * nh + ih];
         eds('data_values', { data: lv, shape: [nh, nk, nl], dtype: '<d' });
-        eds('audit_conform_dict_name', fixedStr('Disorder scattering'));
+        eds('audit_conform_dict_name', fixedStr(UNIFIED_DATA_DICTIONARY));
         eds('audit_conform_dict_version', fixedStr('0.0.0'));
         eds('audit_creation_date', fixedStr(today));
         eds('audit_creation_method', fixedStr(method));
@@ -627,7 +741,7 @@
     }
 
     return {
-        cellToLattice, latticeToCell, reciprocalBasis, hklToQ, qToHkl, isUnitMetric,
+        cellToLattice, latticeToCell, reciprocalBasis, hklToQ, qToHkl, isUnitMetric, modelAxesToHkl,
         parseRmc6f, readUnifiedStructure,
         detectH5Kind, readUnifiedData, readYell,
         parseOldDat, writeOldDat, writeOldDatChunks,
