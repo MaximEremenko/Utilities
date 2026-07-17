@@ -35,6 +35,12 @@ label{display:grid;gap:4px;font-size:.8rem;color:var(--muted)}
 input,select{min-width:0;width:100%;border:1px solid #b9c8da;border-radius:6px;background:#fff;color:var(--ink);padding:6px 7px}
 input[readonly]{background:#e8eef6;color:#5a6b82}
 input[type=range]{padding:0;border:0;accent-color:var(--brand)}
+.dualRange{position:relative;height:30px;--range-low:0%;--range-high:100%;touch-action:none;cursor:pointer}
+.dualRange:before{content:"";position:absolute;left:7px;right:7px;top:13px;height:5px;border-radius:5px;background:linear-gradient(to right,#41536b 0 var(--range-low),var(--brand) var(--range-low) var(--range-high),#41536b var(--range-high) 100%)}
+.dualThumb,.dualThumb:hover{position:absolute;top:6px;width:17px;height:17px;min-width:0;padding:0;transform:translateX(-50%);border:2px solid #dbeafe;border-radius:50%;background:var(--brand);cursor:grab;z-index:2}
+.dualThumb:focus-visible{outline:2px solid #f8fafc;outline-offset:2px}
+.dualThumb:disabled{opacity:.45;cursor:not-allowed}
+.dualRange.dragging,.dualRange.dragging .dualThumb{cursor:grabbing}
 .dashboard{
   height:100vh;width:100vw;display:grid;gap:2px;background:var(--frame);
   grid-template-areas:
@@ -269,6 +275,41 @@ input[type=range]{padding:0;border:0;accent-color:var(--brand)}
       </details>
 
       <details class="toolbox" open>
+        <summary>Shown Volume Limits</summary>
+        <div class="toolbody">
+          <div class="row2">
+            <label><span id="viewAxis0">Axis 1</span> min<input id="viewMin0" type="number" step="any" disabled></label>
+            <label><span id="viewAxis0b">Axis 1</span> max<input id="viewMax0" type="number" step="any" disabled></label>
+          </div>
+          <div class="dualRange" id="viewRange0">
+            <button id="viewMinSlider0" class="dualThumb" type="button" aria-label="Axis 1 lower limit" disabled></button>
+            <button id="viewMaxSlider0" class="dualThumb" type="button" aria-label="Axis 1 upper limit" disabled></button>
+          </div>
+          <div class="row2">
+            <label><span id="viewAxis1">Axis 2</span> min<input id="viewMin1" type="number" step="any" disabled></label>
+            <label><span id="viewAxis1b">Axis 2</span> max<input id="viewMax1" type="number" step="any" disabled></label>
+          </div>
+          <div class="dualRange" id="viewRange1">
+            <button id="viewMinSlider1" class="dualThumb" type="button" aria-label="Axis 2 lower limit" disabled></button>
+            <button id="viewMaxSlider1" class="dualThumb" type="button" aria-label="Axis 2 upper limit" disabled></button>
+          </div>
+          <div class="row2">
+            <label><span id="viewAxis2">Axis 3</span> min<input id="viewMin2" type="number" step="any" disabled></label>
+            <label><span id="viewAxis2b">Axis 3</span> max<input id="viewMax2" type="number" step="any" disabled></label>
+          </div>
+          <div class="dualRange" id="viewRange2">
+            <button id="viewMinSlider2" class="dualThumb" type="button" aria-label="Axis 3 lower limit" disabled></button>
+            <button id="viewMaxSlider2" class="dualThumb" type="button" aria-label="Axis 3 upper limit" disabled></button>
+          </div>
+          <div class="btns">
+            <button id="viewApply" class="alt" disabled>Apply Limits</button>
+            <button id="viewReset" class="alt" disabled>Show Full Volume</button>
+          </div>
+          <div id="viewInfo" class="mono fine">Load data to set the shown volume.</div>
+        </div>
+      </details>
+
+      <details class="toolbox" open>
         <summary>Color Levels</summary>
         <div class="toolbody">
           <div class="row2">
@@ -391,11 +432,13 @@ const ORDERED_INDEXED_SAMPLE_BYTES = 32 * 1024 * 1024;
 const ORDERED_INDEXED_TAIL_BYTES = 1024 * 1024;
 const CACHE_DB_NAME = "three_ds_plotter_cache_v1";
 const CACHE_STORE_NAME = "parsed_volumes";
-const CACHE_VERSION = 2;
+// Bump whenever parser semantics change so stale axis/data-kind metadata is not restored.
+const CACHE_VERSION = 6;
 const $ = (id) => document.getElementById(id);
 const state = {
   res:null,
   sourceBasis:null,
+  displayRanges:null,
   plane:null,
   avgvol:null,
   lastSlice:null,
@@ -568,6 +611,7 @@ function idx3(shape, i, j, k){ return (i * shape[1] + j) * shape[2] + k; }
 function dot(a,b){ return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
 function cross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
 function col3(m,j){ return [m[0][j], m[1][j], m[2][j]]; }
+function transpose3(m){ return [[m[0][0],m[1][0],m[2][0]],[m[0][1],m[1][1],m[2][1]],[m[0][2],m[1][2],m[2][2]]]; }
 function inv3(m){
   const a=m[0][0], b=m[0][1], c=m[0][2], d=m[1][0], e=m[1][1], f=m[1][2], g=m[2][0], h=m[2][1], i=m[2][2];
   const A=e*i-f*h, B=-(d*i-f*g), C=d*h-e*g, D=-(b*i-c*h), E=a*i-c*g, F=-(a*h-b*g), G=b*f-c*e, H=-(a*f-c*d), I=a*e-b*d;
@@ -667,8 +711,10 @@ function basisFromCell(cell, anglesAreDegrees=false){
   const angles = nums.slice(3).map(v => anglesAreDegrees || Math.abs(v) > Math.PI * 2 ? v * Math.PI / 180 : v);
   try{
     const direct = cell2vec(nums[0], nums[1], nums[2], angles[0], angles[1], angles[2]);
-    const sp = vec2space(direct);
-    return {cellDeg:[nums[0],nums[1],nums[2],angles[0]*180/Math.PI,angles[1]*180/Math.PI,angles[2]*180/Math.PI], Bq:sp.Bp, Bp:sp.Bp, basisSource:"cell parameters"};
+    // cell2vec returns direct basis vectors as rows; vec2space expects them as columns.
+    const sp = vec2space(transpose3(direct));
+    const Bq = sp.Bp.map(row => row.map(value => value * 2 * Math.PI));
+    return {cellDeg:[nums[0],nums[1],nums[2],angles[0]*180/Math.PI,angles[1]*180/Math.PI,angles[2]*180/Math.PI], Bq, Bp:direct, basisSource:"cell parameters"};
   }catch(_){
     return null;
   }
@@ -788,8 +834,17 @@ function dataKindText(res){
 }
 
 function isRealSpaceData(res=state.res){
+  const coordKind = String(res && res.coordKind || "").toLowerCase();
+  if(coordKind === "xyz" || coordKind === "uvw") return true;
   const code = res && res.dataKind && res.dataKind.code;
   return code === "delta_pdf" || code === "direct_space" || code === "scattering_density";
+}
+
+function dataKindForAxes(dataKind, coordKind, shape){
+  if((coordKind === "xyz" || coordKind === "uvw") && !isRealSpaceData({dataKind, coordKind:""})){
+    return {code:"direct_space", label:`${dimensionLabel(shape)} direct-space data`, source:"data_type_axes"};
+  }
+  return dataKind;
 }
 
 function valueLabel(res=state.res){
@@ -859,6 +914,14 @@ function axisTitle(i){
 
 function updateAxisOptionText(){
   const labels = nativeAxisLabels();
+  for(let axis=0;axis<3;axis++){
+    const a = $("viewAxis" + axis), b = $("viewAxis" + axis + "b");
+    if(a) a.textContent = labels[axis];
+    if(b) b.textContent = labels[axis];
+    const lo = $("viewMinSlider" + axis), hi = $("viewMaxSlider" + axis);
+    if(lo) lo.setAttribute("aria-label", labels[axis] + " lower limit");
+    if(hi) hi.setAttribute("aria-label", labels[axis] + " upper limit");
+  }
   const opts = $("axis") ? $("axis").options : null;
   if(opts && opts.length >= 3){
     opts[0].textContent = `Fix ${labels[2]}, show ${labels[0]}-${labels[1]}`;
@@ -2794,8 +2857,12 @@ function parseFortranUnifiedH5(h5file, name){
   if(!axesNames.some(Boolean)) axesNames = defaultNames;
   const content = readH5Text(h5file, ["entry/data/data_type_content"]);
   const radiation = readH5Text(h5file, ["entry/data/data_radiation"]);
-  const dataKind = classifyDataKind({content, space, name, format:"RMCProfile/DiffuseCode unified HDF5", shape});
   const coordKind = unifiedCoordKind(contract.axesType);
+  const dataKind = dataKindForAxes(
+    classifyDataKind({content, space, name, format:"RMCProfile/DiffuseCode unified HDF5", shape}),
+    coordKind,
+    shape
+  );
   const axisLabelsMeta = isRealSpaceData({dataKind, coordKind})
     ? realSpaceAxisLabelsFromNames(axesNames, coordKind)
     : axesNames.some(Boolean) ? axisLabelsFromNames(axesNames, axisLabels(coordKind, {dataKind, coordKind})) : null;
@@ -2906,7 +2973,12 @@ function parseCommonScatteringH5(h5file, name){
   if(!axesNames.length) axesNames = unifiedAxesNames(contract.axesType);
   const content = h5Text(h5AttrValue(dataGroup, "content"));
   const radiation = h5Text(h5AttrValue(dataGroup, "radiation"));
-  const dataKind = classifyDataKind({content, space, name, format:"DiffuseDevelopers unified HDF5", shape});
+  const coordKind = unifiedCoordKind(contract.axesType);
+  const dataKind = dataKindForAxes(
+    classifyDataKind({content, space, name, format:"DiffuseDevelopers unified HDF5", shape}),
+    coordKind,
+    shape
+  );
   const axis0 = axesNames[0] || "h", axis1 = axesNames[1] || "k", axis2 = axesNames[2] || "l";
   const hAxis = readH5Axis(h5file, shape[0], [`scattering/data/${axis0}`, "scattering/data/h", "scattering/data/indices_abs", "scattering/data/qx", "scattering/data/x"]);
   const kAxis = readH5Axis(h5file, shape[1], [`scattering/data/${axis1}`, "scattering/data/k", "scattering/data/indices_ord", "scattering/data/qy", "scattering/data/y"]);
@@ -2919,7 +2991,6 @@ function parseCommonScatteringH5(h5file, name){
     gridVectors:vectors,
     gridVectorSource:"scattering/data/step_vectors"
   } : {};
-  const coordKind = unifiedCoordKind(contract.axesType);
   const axisLabelsMeta = axesNames.length
     ? isRealSpaceData({dataKind, coordKind})
       ? realSpaceAxisLabelsFromNames(axesNames, coordKind)
@@ -3235,6 +3306,21 @@ function useBasisToQ(res=state.res){
   return !!(canTransformHklToQ(res) && activeCoordKind() === "q");
 }
 
+function directPlotBasis(res=state.res){
+  if(!res || !isRealSpaceData(res) || !validMatrix3(res.Bp)) return null;
+  if(String(res.coordKind || "").toLowerCase() === "uvw") return res.Bp;
+  if(res.h5 && res.h5.isDirect === true) return res.Bp.map(v => norm3(v));
+  return null;
+}
+
+function useBasisToDirect(res=state.res){
+  return !!directPlotBasis(res);
+}
+
+function usePlotBasis(res=state.res){
+  return useBasisToQ(res) || useBasisToDirect(res);
+}
+
 function hklToQ(h,k,l,Bq){
   return validMatrix3(Bq) ? mul([h,k,l], Bq) : [h,k,l];
 }
@@ -3244,11 +3330,15 @@ function hklVecToQ(v,Bq){
 }
 
 function plotPoint(res, h, k, l){
-  return useBasisToQ(res) ? hklToQ(h,k,l,res.Bq) : [h,k,l];
+  if(useBasisToQ(res)) return hklToQ(h,k,l,res.Bq);
+  const basis = directPlotBasis(res);
+  return basis ? mul([h,k,l], basis) : [h,k,l];
 }
 
 function plotVector(res, v){
-  return useBasisToQ(res) ? hklVecToQ(v,res.Bq) : v.slice();
+  if(useBasisToQ(res)) return hklVecToQ(v,res.Bq);
+  const basis = directPlotBasis(res);
+  return basis ? mul(v,basis) : v.slice();
 }
 
 function matVec(m, v){
@@ -3281,6 +3371,64 @@ function pointAtIndex(res, i, j, k){
   return [res.h[i], res.k[j], res.l[k]];
 }
 
+function fullDisplayRanges(res=state.res){
+  return res ? res.shape.map(n => [0, Math.max(0, n - 1)]) : [[0,0],[0,0],[0,0]];
+}
+
+function displayIndexRanges(res=state.res){
+  if(!res || !Array.isArray(state.displayRanges) || state.displayRanges.length !== 3) return fullDisplayRanges(res);
+  return state.displayRanges.map((range, axis) => {
+    const hi = Math.max(0, res.shape[axis] - 1);
+    const a = clamp(Math.round(Number(range && range[0])), 0, hi);
+    const b = clamp(Math.round(Number(range && range[1])), 0, hi);
+    return [Math.min(a,b), Math.max(a,b)];
+  });
+}
+
+function displayAxisLimits(res=state.res){
+  if(!res) return [[0,0],[0,0],[0,0]];
+  const axes = [res.h,res.k,res.l], ranges = displayIndexRanges(res);
+  return ranges.map((range, axis) => {
+    const a = Number(axes[axis][range[0]]), b = Number(axes[axis][range[1]]);
+    return [Math.min(a,b), Math.max(a,b)];
+  });
+}
+
+function displayBounds(res=state.res, transformed=false){
+  if(!res) return {min:[0,0,0], max:[1,1,1]};
+  const ranges = displayIndexRanges(res);
+  const mn = [Infinity,Infinity,Infinity], mx = [-Infinity,-Infinity,-Infinity];
+  for(const i of ranges[0]) for(const j of ranges[1]) for(const k of ranges[2]){
+    const p = pointAtIndex(res, i, j, k);
+    const q = transformed ? plotPoint(res, p[0], p[1], p[2]) : p;
+    for(let axis=0;axis<3;axis++){
+      if(q[axis] < mn[axis]) mn[axis] = q[axis];
+      if(q[axis] > mx[axis]) mx[axis] = q[axis];
+    }
+  }
+  return {min:mn, max:mx};
+}
+
+function pointInsideDisplayVolume(res, h, k, l){
+  const ranges = displayIndexRanges(res);
+  let f;
+  if(res.gridInv && Array.isArray(res.gridOrigin)){
+    const x = h - res.gridOrigin[0], y = k - res.gridOrigin[1], z = l - res.gridOrigin[2], m = res.gridInv;
+    f = [
+      m[0][0]*x + m[0][1]*y + m[0][2]*z,
+      m[1][0]*x + m[1][1]*y + m[1][2]*z,
+      m[2][0]*x + m[2][1]*y + m[2][2]*z
+    ];
+  }else{
+    f = [
+      axisToFraction(res.h, res.axes.h, h),
+      axisToFraction(res.k, res.axes.k, k),
+      axisToFraction(res.l, res.axes.l, l)
+    ];
+  }
+  return f.every((value, axis) => Number.isFinite(value) && value >= ranges[axis][0] - 1e-7 && value <= ranges[axis][1] + 1e-7);
+}
+
 function affineBounds(res, transformed=false){
   const mn = [Infinity,Infinity,Infinity], mx = [-Infinity,-Infinity,-Infinity];
   const hs = [0, res.shape[0] - 1], ks = [0, res.shape[1] - 1], ls = [0, res.shape[2] - 1];
@@ -3311,7 +3459,7 @@ function qBoundsFromAxes(res){
 }
 
 function plotBounds(res){
-  return useBasisToQ(res) && res.qBounds ? res.qBounds : res.bounds;
+  return displayBounds(res, usePlotBasis(res));
 }
 
 function renderAxisLabels(res=state.res){
@@ -3557,10 +3705,11 @@ function planeSliderInterval(origin, unit, bounds){
 }
 
 function centerOfRes(res){
+  const bounds = displayBounds(res, false);
   return [
-    0.5 * (res.bounds.min[0] + res.bounds.max[0]),
-    0.5 * (res.bounds.min[1] + res.bounds.max[1]),
-    0.5 * (res.bounds.min[2] + res.bounds.max[2])
+    0.5 * (bounds.min[0] + bounds.max[0]),
+    0.5 * (bounds.min[1] + bounds.max[1]),
+    0.5 * (bounds.min[2] + bounds.max[2])
   ];
 }
 
@@ -3577,7 +3726,7 @@ function rebuildPlaneSlider(targetT=0){
   const res = state.res, p = state.plane;
   if(!res || !p) return;
   p.normalUnit = norm3(p.normal);
-  const iv = planeSliderInterval(p.origin, p.normalUnit, res.bounds);
+  const iv = planeSliderInterval(p.origin, p.normalUnit, displayBounds(res, false));
   const count = 401;
   p.slider = Array.from({length:count}, (_,i) => iv[0] + (iv[1] - iv[0]) * i / (count - 1));
   let best = 0, bestAbs = Infinity;
@@ -3608,7 +3757,7 @@ function readPlaneInputsIntoState(){
     sliderIndex:prev ? prev.sliderIndex : 0
   };
   const p = state.plane;
-  const iv = planeSliderInterval(p.origin, p.normalUnit, state.res.bounds);
+  const iv = planeSliderInterval(p.origin, p.normalUnit, displayBounds(state.res, false));
   const count = 401;
   p.slider = Array.from({length:count}, (_,i) => iv[0] + (iv[1] - iv[0]) * i / (count - 1));
   p.sliderIndex = clamp(Math.round(p.sliderIndex), 0, p.slider.length - 1);
@@ -3672,7 +3821,7 @@ function rebuildAvgVolSlider(targetT=0){
   const res = state.res, p = state.avgvol;
   if(!res || !p) return;
   p.normalUnit = norm3(p.normal);
-  const iv = planeSliderInterval(p.origin, p.normalUnit, res.bounds);
+  const iv = planeSliderInterval(p.origin, p.normalUnit, displayBounds(res, false));
   const count = 401;
   p.slider = Array.from({length:count}, (_,i) => iv[0] + (iv[1] - iv[0]) * i / (count - 1));
   let best = 0, bestAbs = Infinity;
@@ -3703,7 +3852,7 @@ function readAvgVolInputsIntoState(){
     sliderIndex:prev ? prev.sliderIndex : 0
   };
   const p = state.avgvol;
-  const iv = planeSliderInterval(p.origin, p.normalUnit, state.res.bounds);
+  const iv = planeSliderInterval(p.origin, p.normalUnit, displayBounds(state.res, false));
   const count = 401;
   p.slider = Array.from({length:count}, (_,i) => iv[0] + (iv[1] - iv[0]) * i / (count - 1));
   p.sliderIndex = clamp(Math.round(p.sliderIndex), 0, p.slider.length - 1);
@@ -3776,6 +3925,7 @@ function sampledAxisIndex(pos, count, fullCount){
 function buildAxisSlice(res, axisName, fixed, maxCells=MAX_AXIS_SLICE_CELLS, include3d=true){
   const [nH,nK,nL] = res.shape;
   const labels = nativeAxisLabels(res);
+  const ranges = displayIndexRanges(res);
   fixed = Math.round(fixed);
   const sampled = (fullRows, fullCols) => {
     const strides = chooseSliceStrides(fullRows, fullCols, maxCells);
@@ -3789,15 +3939,16 @@ function buildAxisSlice(res, axisName, fixed, maxCells=MAX_AXIS_SLICE_CELLS, inc
     };
   };
   if(axisName === "h"){
-    fixed = clamp(fixed, 0, nH - 1);
-    const smp = sampled(nK, nL);
+    fixed = clamp(fixed, ranges[0][0], ranges[0][1]);
+    const fullK = ranges[1][1] - ranges[1][0] + 1, fullL = ranges[2][1] - ranges[2][0] + 1;
+    const smp = sampled(fullK, fullL);
     const rows = smp.rows, cols = smp.cols, d = new Float64Array(rows * cols);
     const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
     for(let r=0;r<rows;r++){
-      const rr = sampledAxisIndex(r, rows, nK);
+      const rr = ranges[1][0] + sampledAxisIndex(r, rows, fullK);
       if(include3d){ x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols); }
       for(let c=0;c<cols;c++){
-        const cc = sampledAxisIndex(c, cols, nL);
+        const cc = ranges[2][0] + sampledAxisIndex(c, cols, fullL);
         d[r*cols+c] = res.I[idx3(res.shape, fixed, rr, cc)];
         if(include3d){
           const p = pointAtIndex(res, fixed, rr, cc);
@@ -3805,18 +3956,19 @@ function buildAxisSlice(res, axisName, fixed, maxCells=MAX_AXIS_SLICE_CELLS, inc
         }
       }
     }
-    return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[0]}[${fixed}] = ${fmt(res.h[fixed])}`, xLabel:labels[2], yLabel:labels[1], xMin:res.l[0], xMax:res.l[nL-1], yMin:res.k[0], yMax:res.k[nK-1], xVec:gridVector(res,2), yVec:gridVector(res,1), ...smp};
+    return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[0]}[${fixed}] = ${fmt(res.h[fixed])}`, xLabel:labels[2], yLabel:labels[1], xMin:res.l[ranges[2][0]], xMax:res.l[ranges[2][1]], yMin:res.k[ranges[1][0]], yMax:res.k[ranges[1][1]], xVec:gridVector(res,2), yVec:gridVector(res,1), ...smp};
   }
   if(axisName === "k"){
-    fixed = clamp(fixed, 0, nK - 1);
-    const smp = sampled(nH, nL);
+    fixed = clamp(fixed, ranges[1][0], ranges[1][1]);
+    const fullH = ranges[0][1] - ranges[0][0] + 1, fullL = ranges[2][1] - ranges[2][0] + 1;
+    const smp = sampled(fullH, fullL);
     const rows = smp.rows, cols = smp.cols, d = new Float64Array(rows * cols);
     const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
     for(let r=0;r<rows;r++){
-      const rr = sampledAxisIndex(r, rows, nH);
+      const rr = ranges[0][0] + sampledAxisIndex(r, rows, fullH);
       if(include3d){ x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols); }
       for(let c=0;c<cols;c++){
-        const cc = sampledAxisIndex(c, cols, nL);
+        const cc = ranges[2][0] + sampledAxisIndex(c, cols, fullL);
         d[r*cols+c] = res.I[idx3(res.shape, rr, fixed, cc)];
         if(include3d){
           const p = pointAtIndex(res, rr, fixed, cc);
@@ -3824,17 +3976,18 @@ function buildAxisSlice(res, axisName, fixed, maxCells=MAX_AXIS_SLICE_CELLS, inc
         }
       }
     }
-    return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[1]}[${fixed}] = ${fmt(res.k[fixed])}`, xLabel:labels[2], yLabel:labels[0], xMin:res.l[0], xMax:res.l[nL-1], yMin:res.h[0], yMax:res.h[nH-1], xVec:gridVector(res,2), yVec:gridVector(res,0), ...smp};
+    return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[1]}[${fixed}] = ${fmt(res.k[fixed])}`, xLabel:labels[2], yLabel:labels[0], xMin:res.l[ranges[2][0]], xMax:res.l[ranges[2][1]], yMin:res.h[ranges[0][0]], yMax:res.h[ranges[0][1]], xVec:gridVector(res,2), yVec:gridVector(res,0), ...smp};
   }
-  fixed = clamp(fixed, 0, nL - 1);
-  const smp = sampled(nH, nK);
+  fixed = clamp(fixed, ranges[2][0], ranges[2][1]);
+  const fullH = ranges[0][1] - ranges[0][0] + 1, fullK = ranges[1][1] - ranges[1][0] + 1;
+  const smp = sampled(fullH, fullK);
   const rows = smp.rows, cols = smp.cols, d = new Float64Array(rows * cols);
   const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
   for(let r=0;r<rows;r++){
-      const rr = sampledAxisIndex(r, rows, nH);
+      const rr = ranges[0][0] + sampledAxisIndex(r, rows, fullH);
       if(include3d){ x3[r] = new Array(cols); y3[r] = new Array(cols); z3[r] = new Array(cols); }
       for(let c=0;c<cols;c++){
-        const cc = sampledAxisIndex(c, cols, nK);
+        const cc = ranges[1][0] + sampledAxisIndex(c, cols, fullK);
         d[r*cols+c] = res.I[idx3(res.shape, rr, cc, fixed)];
         if(include3d){
           const p = pointAtIndex(res, rr, cc, fixed);
@@ -3842,17 +3995,18 @@ function buildAxisSlice(res, axisName, fixed, maxCells=MAX_AXIS_SLICE_CELLS, inc
         }
       }
     }
-  return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[2]}[${fixed}] = ${fmt(res.l[fixed])}`, xLabel:labels[1], yLabel:labels[0], xMin:res.k[0], xMax:res.k[nK-1], yMin:res.h[0], yMax:res.h[nH-1], xVec:gridVector(res,1), yVec:gridVector(res,0), ...smp};
+  return {type:"axis", rows, cols, d, x3, y3, z3, plane:`${labels[2]}[${fixed}] = ${fmt(res.l[fixed])}`, xLabel:labels[1], yLabel:labels[0], xMin:res.k[ranges[1][0]], xMax:res.k[ranges[1][1]], yMin:res.h[ranges[0][0]], yMax:res.h[ranges[0][1]], xVec:gridVector(res,1), yVec:gridVector(res,0), ...smp};
 }
 
 function buildNormalPlaneSlice(res, resOverride=null, include3d=true){
   if(!state.plane) resetPlaneState();
   const p = state.plane;
   const n = p.normalUnit, basis = planeBasisFromNormal(n), u = basis.u, v = basis.v;
+  const shownBounds = displayBounds(res, false);
   const range = Math.max(
-    Math.abs(res.bounds.max[0] - res.bounds.min[0]),
-    Math.abs(res.bounds.max[1] - res.bounds.min[1]),
-    Math.abs(res.bounds.max[2] - res.bounds.min[2]),
+    Math.abs(shownBounds.max[0] - shownBounds.min[0]),
+    Math.abs(shownBounds.max[1] - shownBounds.min[1]),
+    Math.abs(shownBounds.max[2] - shownBounds.min[2]),
     1e-6
   );
   const scale = Math.max(0.2, Math.min(4, Number($("pScale").value) || 1.35));
@@ -3860,7 +4014,8 @@ function buildNormalPlaneSlice(res, resOverride=null, include3d=true){
   const size = range * scale, half = size / 2, step = nRes > 1 ? size / (nRes - 1) : 0;
   const rows = nRes, cols = nRes, d = new Float64Array(rows * cols);
   const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
-  const sample = makeTrilinearSampler(res);
+  const rawSample = makeTrilinearSampler(res);
+  const sample = (h,k,l) => pointInsideDisplayVolume(res,h,k,l) ? rawSample(h,k,l) : NaN;
   let valid = 0;
   for(let r=0;r<rows;r++){
     const vv = -half + r * step;
@@ -3883,10 +4038,11 @@ function buildAvgVolSlice(res, resOverride=null, include3d=true, options={}){
   if(!state.avgvol) resetAvgVolState();
   const p = state.avgvol;
   const n = p.normalUnit, basis = planeBasisFromNormal(n), u = basis.u, v = basis.v;
+  const shownBounds = displayBounds(res, false);
   const range = Math.max(
-    Math.abs(res.bounds.max[0] - res.bounds.min[0]),
-    Math.abs(res.bounds.max[1] - res.bounds.min[1]),
-    Math.abs(res.bounds.max[2] - res.bounds.min[2]),
+    Math.abs(shownBounds.max[0] - shownBounds.min[0]),
+    Math.abs(shownBounds.max[1] - shownBounds.min[1]),
+    Math.abs(shownBounds.max[2] - shownBounds.min[2]),
     1e-6
   );
   const scale = Math.max(0.2, Math.min(4, Number($("avScale").value) || 1.2));
@@ -3898,7 +4054,8 @@ function buildAvgVolSlice(res, resOverride=null, include3d=true, options={}){
   const slabStep = slabN > 1 ? 2 * slabHalf / (slabN - 1) : 0;
   const rows = nRes, cols = nRes, d = new Float64Array(rows * cols);
   const x3 = include3d ? new Array(rows) : null, y3 = include3d ? new Array(rows) : null, z3 = include3d ? new Array(rows) : null;
-  const sample = makeTrilinearSampler(res);
+  const rawSample = makeTrilinearSampler(res);
+  const sample = (h,k,l) => pointInsideDisplayVolume(res,h,k,l) ? rawSample(h,k,l) : NaN;
   let valid = 0;
   for(let r=0;r<rows;r++){
     const vv = -half + r * step;
@@ -4242,8 +4399,8 @@ function draw2d(options={}){
   const mapX = marginL, mapY = marginT, mapW = Math.max(1, barX - mapX - 10), mapH = Math.max(1, cssH - marginT - marginB);
   ctx.imageSmoothingEnabled = false;
   let drawX, drawY, drawW, drawH, mapXY = null;
-  if(useBasisToQ(state.res) && Array.isArray(sl.xVec) && Array.isArray(sl.yVec)){
-    const qxVec = hklVecToQ(sl.xVec, state.res.Bq), qyVec = hklVecToQ(sl.yVec, state.res.Bq);
+  if(usePlotBasis(state.res) && Array.isArray(sl.xVec) && Array.isArray(sl.yVec)){
+    const qxVec = plotVector(state.res, sl.xVec), qyVec = plotVector(state.res, sl.yVec);
     const qxLen = normVec(qxVec), qyLen = normVec(qyVec);
     if(qxLen > 1e-12 && qyLen > 1e-12){
       const ex = qxVec.map(v => v / qxLen);
@@ -4401,12 +4558,261 @@ function updateSliceValue(sl){
   }
 }
 
+function gridRangeForLimits(axis, requestedMin, requestedMax){
+  const fullMin = Math.min(Number(axis[0]), Number(axis[axis.length - 1]));
+  const fullMax = Math.max(Number(axis[0]), Number(axis[axis.length - 1]));
+  const lo = clamp(requestedMin, fullMin, fullMax);
+  const hi = clamp(requestedMax, fullMin, fullMax);
+  let first = -1, last = -1;
+  for(let i=0;i<axis.length;i++){
+    const value = Number(axis[i]);
+    if(value >= lo - 1e-12 && value <= hi + 1e-12){
+      if(first < 0) first = i;
+      last = i;
+    }
+  }
+  if(first >= 0) return [first,last];
+  const target = 0.5 * (lo + hi);
+  let best = 0, distance = Infinity;
+  for(let i=0;i<axis.length;i++){
+    const d = Math.abs(Number(axis[i]) - target);
+    if(d < distance){ distance = d; best = i; }
+  }
+  return [best,best];
+}
+
+function sliderPositionFromAxisIndex(axis, index){
+  return axis[axis.length - 1] >= axis[0] ? index : axis.length - 1 - index;
+}
+
+function axisIndexFromSliderPosition(axis, position){
+  const p = clamp(Math.round(Number(position)), 0, axis.length - 1);
+  return axis[axis.length - 1] >= axis[0] ? p : axis.length - 1 - p;
+}
+
+function updateDualRangeTrack(axis){
+  const loSlider = $("viewMinSlider" + axis), hiSlider = $("viewMaxSlider" + axis), track = $("viewRange" + axis);
+  if(!loSlider || !hiSlider || !track) return;
+  const min = Number(loSlider.min) || 0, max = Number(loSlider.max) || 0, span = Math.max(1, max - min);
+  const loPct = 100 * (Number(loSlider.value) - min) / span;
+  const hiPct = 100 * (Number(hiSlider.value) - min) / span;
+  track.style.setProperty("--range-low", clamp(loPct,0,100) + "%");
+  track.style.setProperty("--range-high", clamp(hiPct,0,100) + "%");
+  loSlider.style.left = clamp(loPct,0,100) + "%";
+  hiSlider.style.left = clamp(hiPct,0,100) + "%";
+}
+
+function syncShownVolumeNumbersFromSliders(axis, changed){
+  const res = state.res;
+  if(!res) return;
+  const values = [res.h,res.k,res.l][axis];
+  const loSlider = $("viewMinSlider" + axis), hiSlider = $("viewMaxSlider" + axis);
+  let lo = Number(loSlider.value), hi = Number(hiSlider.value);
+  if(lo > hi){
+    if(changed === "min"){ lo = hi; loSlider.value = String(lo); }
+    else{ hi = lo; hiSlider.value = String(hi); }
+  }
+  const loValue = Number(values[axisIndexFromSliderPosition(values, lo)]);
+  const hiValue = Number(values[axisIndexFromSliderPosition(values, hi)]);
+  $("viewMin" + axis).value = fmt(Math.min(loValue, hiValue), 9);
+  $("viewMax" + axis).value = fmt(Math.max(loValue, hiValue), 9);
+  updateDualRangeTrack(axis);
+  $("viewInfo").textContent = "Slider values updated. Release the handle to redraw the cropped volume.";
+}
+
+function setShownVolumeHandle(axis, kind, position){
+  const loSlider = $("viewMinSlider" + axis), hiSlider = $("viewMaxSlider" + axis);
+  const min = Number(loSlider.min) || 0, max = Number(loSlider.max) || 0;
+  let value = clamp(Math.round(Number(position)), min, max);
+  if(kind === "min") value = Math.min(value, Number(hiSlider.value));
+  else value = Math.max(value, Number(loSlider.value));
+  const slider = kind === "min" ? loSlider : hiSlider;
+  slider.value = String(value);
+  syncShownVolumeNumbersFromSliders(axis, kind);
+}
+
+function setShownVolumeRange(axis, lower, upper){
+  const loSlider = $("viewMinSlider" + axis), hiSlider = $("viewMaxSlider" + axis);
+  const min = Number(loSlider.min) || 0, max = Number(loSlider.max) || 0;
+  const width = Math.max(0, Number(upper) - Number(lower));
+  let lo = clamp(Math.round(Number(lower)), min, Math.max(min, max - width));
+  let hi = lo + width;
+  if(hi > max){ hi = max; lo = max - width; }
+  loSlider.value = String(lo);
+  hiSlider.value = String(hi);
+  syncShownVolumeNumbersFromSliders(axis, "min");
+}
+
+function dualRangePosition(track, slider, clientX){
+  const rect = track.getBoundingClientRect();
+  const fraction = rect.width > 0 ? clamp((clientX - rect.left) / rect.width, 0, 1) : 0;
+  const min = Number(slider.min) || 0, max = Number(slider.max) || 0;
+  return min + fraction * (max - min);
+}
+
+function applyShownVolumeSafely(){
+  try{ applyShownVolume(); }
+  catch(err){ status(`Shown-volume error: ${err.message}`, "err"); }
+}
+
+function bindDualVolumeSlider(axis){
+  const track = $("viewRange" + axis), loSlider = $("viewMinSlider" + axis), hiSlider = $("viewMaxSlider" + axis);
+  let active = null;
+  const chooseAction = (position, target) => {
+    const lo = Number(loSlider.value), hi = Number(hiSlider.value);
+    if(target === loSlider) return "min";
+    if(target === hiSlider) return "max";
+    if(lo === hi) return position <= lo ? "min" : "max";
+    if(position > lo && position < hi) return "range";
+    return Math.abs(position - lo) <= Math.abs(position - hi) ? "min" : "max";
+  };
+  track.addEventListener("pointerdown", ev => {
+    if(loSlider.disabled || hiSlider.disabled) return;
+    ev.preventDefault();
+    const position = dualRangePosition(track, loSlider, ev.clientX);
+    const action = chooseAction(position, ev.target);
+    active = {
+      action,
+      startPosition:position,
+      startLo:Number(loSlider.value),
+      startHi:Number(hiSlider.value),
+      changed:false
+    };
+    track.classList.add("dragging");
+    if(track.setPointerCapture) track.setPointerCapture(ev.pointerId);
+    if(action !== "range"){
+      setShownVolumeHandle(axis, action, position);
+      active.changed = Number(loSlider.value) !== active.startLo || Number(hiSlider.value) !== active.startHi;
+    }
+  });
+  track.addEventListener("pointermove", ev => {
+    if(!active) return;
+    ev.preventDefault();
+    const position = dualRangePosition(track, loSlider, ev.clientX);
+    if(active.action === "range"){
+      const min = Number(loSlider.min) || 0, max = Number(loSlider.max) || 0;
+      const delta = clamp(Math.round(position - active.startPosition), min - active.startLo, max - active.startHi);
+      setShownVolumeRange(axis, active.startLo + delta, active.startHi + delta);
+    }else{
+      setShownVolumeHandle(axis, active.action, position);
+    }
+    active.changed = active.changed || Number(loSlider.value) !== active.startLo || Number(hiSlider.value) !== active.startHi;
+  });
+  const finish = ev => {
+    if(!active) return;
+    if(track.releasePointerCapture && track.hasPointerCapture && track.hasPointerCapture(ev.pointerId)) track.releasePointerCapture(ev.pointerId);
+    const changed = active.changed;
+    active = null;
+    track.classList.remove("dragging");
+    if(changed) applyShownVolumeSafely();
+  };
+  track.addEventListener("pointerup", finish);
+  track.addEventListener("pointercancel", finish);
+  for(const [kind,slider] of [["min",loSlider],["max",hiSlider]]){
+    slider.addEventListener("keydown", ev => {
+      const step = ev.key === "ArrowLeft" || ev.key === "ArrowDown" ? -1 : ev.key === "ArrowRight" || ev.key === "ArrowUp" ? 1 : 0;
+      if(!step && ev.key !== "Home" && ev.key !== "End") return;
+      ev.preventDefault();
+      const target = ev.key === "Home" ? Number(slider.min) : ev.key === "End" ? Number(slider.max) : Number(slider.value) + step;
+      setShownVolumeHandle(axis, kind, target);
+      applyShownVolumeSafely();
+    });
+  }
+}
+
+function syncShownVolumeSlidersFromNumbers(axis){
+  const res = state.res;
+  if(!res) return;
+  const values = [res.h,res.k,res.l][axis];
+  const lo = Number($("viewMin" + axis).value), hi = Number($("viewMax" + axis).value);
+  if(!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo) return;
+  const range = gridRangeForLimits(values, lo, hi);
+  const positions = range.map(index => sliderPositionFromAxisIndex(values, index)).sort((a,b) => a - b);
+  $("viewMinSlider" + axis).value = String(positions[0]);
+  $("viewMaxSlider" + axis).value = String(positions[1]);
+  updateDualRangeTrack(axis);
+}
+
+function updateShownVolumeInputs(){
+  const res = state.res;
+  if(!res){
+    $("viewInfo").textContent = "Load data to set the shown volume.";
+    return;
+  }
+  const limits = displayAxisLimits(res);
+  const labels = nativeAxisLabels(res);
+  const ranges = displayIndexRanges(res);
+  for(let axis=0;axis<3;axis++){
+    const values = [res.h,res.k,res.l][axis];
+    const positions = ranges[axis].map(index => sliderPositionFromAxisIndex(values, index)).sort((a,b) => a - b);
+    for(const kind of ["Min","Max"]){
+      const slider = $("view" + kind + "Slider" + axis);
+      slider.min = "0";
+      slider.max = String(Math.max(0, values.length - 1));
+      slider.step = "1";
+    }
+    $("viewMinSlider" + axis).value = String(positions[0]);
+    $("viewMaxSlider" + axis).value = String(positions[1]);
+    updateDualRangeTrack(axis);
+    $("viewMin" + axis).value = fmt(limits[axis][0], 9);
+    $("viewMax" + axis).value = fmt(limits[axis][1], 9);
+  }
+  const size = ranges.map(range => range[1] - range[0] + 1);
+  const cap = Math.max(5000, Math.floor(Number($("voxelCap").value) || 220000));
+  const strides = chooseVolumeStrides(size, cap);
+  const sampled = size.map((n,axis) => Math.ceil(n / strides[axis]));
+  const sampledCount = sampled[0] * sampled[1] * sampled[2];
+  const cropped = size.some((n,axis) => n < res.shape[axis]);
+  const detail = cropped ? "crop uses the voxel budget for finer sampling" : "crop the volume for finer sampling";
+  $("viewInfo").textContent = labels.map((label,axis) => label + " " + fmt(limits[axis][0]) + ".." + fmt(limits[axis][1])).join(" | ") +
+    " | grid " + size.join(" x ") + " | 3D stride " + strides.join(" x ") + " (~" + sampledCount.toLocaleString() + " points); " + detail + ".";
+}
+
+function resetShownVolume(redraw=true){
+  if(!state.res) return;
+  state.displayRanges = fullDisplayRanges(state.res);
+  updateShownVolumeInputs();
+  updateAxisIndexBounds();
+  resetPlaneState();
+  resetAvgVolState();
+  updateMeta();
+  if(redraw){
+    resetDisplayLevels(false);
+    draw2d();
+    scheduleRender3d(0);
+    status("Showing the full data volume.", "ok");
+  }
+}
+
+function applyShownVolume(){
+  const res = state.res;
+  if(!res) return;
+  const axes = [res.h,res.k,res.l], ranges = [];
+  for(let axis=0;axis<3;axis++){
+    const lo = Number($("viewMin" + axis).value);
+    const hi = Number($("viewMax" + axis).value);
+    if(!Number.isFinite(lo) || !Number.isFinite(hi)) throw new Error("All shown-volume limits must be numbers.");
+    if(hi < lo) throw new Error(nativeAxisLabels(res)[axis] + " maximum must be greater than or equal to its minimum.");
+    ranges.push(gridRangeForLimits(axes[axis], lo, hi));
+  }
+  state.displayRanges = ranges;
+  updateShownVolumeInputs();
+  updateAxisIndexBounds();
+  resetPlaneState();
+  resetAvgVolState();
+  resetDisplayLevels(false);
+  updateMeta();
+  draw2d();
+  scheduleRender3d(0);
+  status("Applied shown-volume limits; source data and unified export remain unchanged.", "ok");
+}
+
 function syncControls(){
   const has = !!state.res;
   const cellAllowed = has && !isRealSpaceData(state.res) && state.res.coordKind === "hkl";
   const sm = $("sliceMode").value;
   const axisMode = sm === "axis", planeMode = sm === "plane", avgMode = sm === "avgvol";
-  for(const id of ["coordMode","sliceMode","scale","colorMap","levelMode","resetLevels","render3d","savePng","saveCsv","saveUnified","savePlaneSvg","saveIsoSvg","savePlaneHtml","saveIsoHtml","isoPct","isoCount","voxelCap","auto3d","showPlane3d","showIso3d"]){
+  for(const id of ["coordMode","sliceMode","scale","colorMap","levelMode","resetLevels","render3d","savePng","saveCsv","saveUnified","savePlaneSvg","saveIsoSvg","savePlaneHtml","saveIsoHtml","isoPct","isoCount","voxelCap","auto3d","showPlane3d","showIso3d","viewMin0","viewMax0","viewMin1","viewMax1","viewMin2","viewMax2","viewMinSlider0","viewMaxSlider0","viewMinSlider1","viewMaxSlider1","viewMinSlider2","viewMaxSlider2","viewApply","viewReset"]){
     $(id).disabled = !has;
   }
   if(has && isRealSpaceData(state.res)) $("coordMode").disabled = true;
@@ -4437,9 +4843,11 @@ function syncControls(){
 function updateAxisIndexBounds(){
   if(!state.res) return;
   const axis = $("axis").value;
-  const max = axis === "h" ? state.res.shape[0] - 1 : axis === "k" ? state.res.shape[1] - 1 : state.res.shape[2] - 1;
-  $("idx").max = String(Math.max(0, max));
-  $("idx").value = String(clamp(Number($("idx").value), 0, max));
+  const axisIndex = axis === "h" ? 0 : axis === "k" ? 1 : 2;
+  const range = displayIndexRanges(state.res)[axisIndex];
+  $("idx").min = String(range[0]);
+  $("idx").max = String(range[1]);
+  $("idx").value = String(clamp(Number($("idx").value), range[0], range[1]));
 }
 
 function updateMeta(){
@@ -4470,8 +4878,9 @@ function updateMeta(){
   $("mI").textContent = `${r.rawMin.toExponential(4)} .. ${r.rawMax.toExponential(4)}`;
   const h = r.header;
   $("mHeader").textContent = h ? `n=${h.points.toLocaleString()}, sec=${h.sections}${h.scale !== null ? `, scale=${fmt(h.scale)}` : ""}${h.offset !== null ? `, offset=${fmt(h.offset)}` : ""}` : "not found";
-  const basis = r.Bq ? ` | basis=${r.basisSource || "Bq"}` : "";
-  $("mFormat").value = `${r.format || "data"} | ${dataKindText(r)} | detected ${(r.coordKind || "q").toUpperCase()} | showing ${useBasisToQ(r) ? "Q from HKL" : activeCoordKind().toUpperCase()}${basis}`;
+  const basis = usePlotBasis(r) ? ` | basis=${r.basisSource || (useBasisToQ(r) ? "Bq" : "direct cell")}` : "";
+  const geometry = useBasisToQ(r) ? "Q from HKL" : useBasisToDirect(r) ? "XYZ" : activeCoordKind().toUpperCase();
+  $("mFormat").value = `${r.format || "data"} | ${dataKindText(r)} | detected ${(r.coordKind || "q").toUpperCase()} | showing ${geometry}${basis}`;
   $("tbFile").textContent = r.file;
   $("tbKind").textContent = r.dataKind && r.dataKind.label ? r.dataKind.label : "Type -";
   $("tbGrid").textContent = `${r.shape[0]} x ${r.shape[1]} x ${r.shape[2]}`;
@@ -4592,7 +5001,7 @@ async function ensurePlotly(){
 }
 
 function plotMeshFromSlice(res, sl, colorValues){
-  const transformed = useBasisToQ(res);
+  const transformed = usePlotBasis(res);
   const pointIndex = new Int32Array(sl.rows * sl.cols);
   pointIndex.fill(-1);
   const x = [], y = [], z = [], intensity = [], custom = [];
@@ -4655,12 +5064,14 @@ function chooseVolumeStrides(shape, cap){
 
 function buildVolumeSample(res, mode, cap){
   const maxVox = Math.max(5000, Math.floor(cap || 220000));
-  const strides = chooseVolumeStrides(res.shape, maxVox);
+  const ranges = displayIndexRanges(res);
+  const shownShape = ranges.map(range => range[1] - range[0] + 1);
+  const strides = chooseVolumeStrides(shownShape, maxVox);
   const x = [], y = [], z = [], value = [], sorted = [], custom = [];
   let min = Infinity, max = -Infinity, finiteCount = 0, skippedGeometry = 0;
-  for(let i=0;i<res.shape[0];i+=strides[0]){
-    for(let j=0;j<res.shape[1];j+=strides[1]){
-      for(let k=0;k<res.shape[2];k+=strides[2]){
+  for(let i=ranges[0][0];i<=ranges[0][1];i+=strides[0]){
+    for(let j=ranges[1][0];j<=ranges[1][1];j+=strides[1]){
+      for(let k=ranges[2][0];k<=ranges[2][1];k+=strides[2]){
         const v = transformedValue(res.I[idx3(res.shape, i, j, k)], mode);
         const p = pointAtIndex(res, i, j, k);
         const h = p[0], kk = p[1], l = p[2], q = plotPoint(res, h, kk, l);
@@ -4721,35 +5132,30 @@ function plotlyConfig(){
 function hklTickValues(min, max, target=6){
   const lo = Math.min(min,max), hi = Math.max(min,max), span = hi - lo;
   if(!Number.isFinite(span) || span <= 0) return [lo];
-  const firstInteger = Math.ceil(lo - 1e-9), lastInteger = Math.floor(hi + 1e-9);
-  if(firstInteger <= lastInteger){
-    const integerCount = lastInteger - firstInteger + 1;
-    const integerStep = Math.max(1, Math.ceil(integerCount / 121));
-    const integers = [];
-    for(let v=firstInteger;v<=lastInteger;v+=integerStep) integers.push(v);
-    if(integers[integers.length-1] !== lastInteger) integers.push(lastInteger);
-    return integers;
-  }
   const raw = span / Math.max(1, target - 1);
   const power = Math.pow(10, Math.floor(Math.log10(raw)));
-  const step = [1,2,5,10].map(v => v * power).find(v => v >= raw) || raw;
+  const step = [1,2,5,10].map(v => v * power).find(v => v >= raw - Math.abs(raw)*1e-12) || raw;
   const out = [];
-  for(let v=Math.ceil(lo/step)*step; v<=hi+step*1e-9 && out.length<32; v+=step) out.push(Math.abs(v) < step*1e-12 ? 0 : v);
+  for(let n=Math.ceil((lo-step*1e-9)/step); n*step<=hi+step*1e-9 && out.length<64; n++){
+    const v = n * step;
+    out.push(Math.abs(v) < step*1e-12 ? 0 : Number(v.toPrecision(12)));
+  }
   if(!out.length) out.push(lo,hi);
   return out;
 }
 
 function hklAxisOverlayTraces(res=state.res){
-  if(!res || !useBasisToQ(res)) return [];
-  const ranges = [res.h,res.k,res.l].map(axis => {
-    const a = Number(axis[0]), b = Number(axis[axis.length-1]);
+  if(!res || !usePlotBasis(res)) return [];
+  const indexRanges = displayIndexRanges(res);
+  const ranges = [res.h,res.k,res.l].map((axis, i) => {
+    const a = Number(axis[indexRanges[i][0]]), b = Number(axis[indexRanges[i][1]]);
     return [Math.min(a,b), Math.max(a,b)];
   });
   const base = ranges.map(r => r[0]);
   const corners = [];
   for(let mask=0;mask<8;mask++){
     const p = [0,1,2].map(i => ranges[i][(mask >> i) & 1]);
-    corners.push(hklToQ(p[0],p[1],p[2],res.Bq));
+    corners.push(plotPoint(res,p[0],p[1],p[2]));
   }
   const edgePairs = [[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]];
   const ex=[], ey=[], ez=[];
@@ -4761,11 +5167,11 @@ function hklAxisOverlayTraces(res=state.res){
   const traces = [{
     type:"scatter3d", mode:"lines", x:ex, y:ey, z:ez,
     line:{color:"rgba(96,125,154,.7)",width:2}, hoverinfo:"skip", showlegend:false,
-    name:"Reciprocal cell edges"
+    name:useBasisToQ(res) ? "Reciprocal cell edges" : "Direct-space cell edges"
   }];
   const labels = nativeAxisLabels(res);
   const colors = ["#fca5a5","#86efac","#93c5fd"];
-  const qBounds = res.qBounds || qBoundsFromAxes(res);
+  const qBounds = displayBounds(res, true);
   const qCenter = qBounds ? [0,1,2].map(i => 0.5 * (qBounds.min[i] + qBounds.max[i])) : [0,0,0];
   const diag = qBounds ? Math.max(1e-9, Math.hypot(
     qBounds.max[0]-qBounds.min[0], qBounds.max[1]-qBounds.min[1], qBounds.max[2]-qBounds.min[2])) : 1;
@@ -4776,12 +5182,13 @@ function hklAxisOverlayTraces(res=state.res){
   const vNorm = v => Math.hypot(v[0],v[1],v[2]);
   const vHat = v => { const n=vNorm(v); return n>1e-12 ? vScale(v,1/n) : [0,0,0]; };
   const vOrth = (v,u) => { const uh=vHat(u), d=dot(v,uh); return vSub(v,vScale(uh,d)); };
-  const basisDirs = [0,1,2].map(i => vHat(hklVecToQ([i===0?1:0,i===1?1:0,i===2?1:0],res.Bq)));
+  const basisDirs = [0,1,2].map(i => vHat(plotVector(res,[i===0?1:0,i===1?1:0,i===2?1:0])));
+  const axisUnit = useBasisToQ(res) ? " (r.l.u.)" : "";
   for(let axis=0;axis<3;axis++){
     const start = base.slice(), end = base.slice();
     start[axis] = ranges[axis][0]; end[axis] = ranges[axis][1];
-    const qs = hklToQ(start[0],start[1],start[2],res.Bq);
-    const qe = hklToQ(end[0],end[1],end[2],res.Bq);
+    const qs = plotPoint(res,start[0],start[1],start[2]);
+    const qe = plotPoint(res,end[0],end[1],end[2]);
     const qAlong = vHat(vSub(qe,qs));
     const partner = basisDirs[(axis+1)%3];
     let outward = vOrth(partner,qAlong);
@@ -4795,12 +5202,12 @@ function hklAxisOverlayTraces(res=state.res){
       x:[qs[0],qe[0]], y:[qs[1],qe[1]], z:[qs[2],qe[2]],
       marker:{size:3,color:colors[axis]},
       line:{color:colors[axis],width:5}, hoverinfo:"skip", showlegend:false,
-      name:`${labels[axis]} reciprocal axis`
+      name:`${labels[axis]} basis axis`
     });
     const bx=[], by=[], bz=[], tx=[], ty=[], tz=[], tt=[];
     for(const tick of hklTickValues(ranges[axis][0],ranges[axis][1])){
       const p = base.slice(); p[axis] = tick;
-      const q = hklToQ(p[0],p[1],p[2],res.Bq);
+      const q = plotPoint(res,p[0],p[1],p[2]);
       const qBar = vAdd(q,vScale(outward,tickLen));
       const qText = vAdd(q,vScale(outward,tickGap));
       bx.push(q[0],qBar[0],null); by.push(q[1],qBar[1],null); bz.push(q[2],qBar[2],null);
@@ -4820,7 +5227,7 @@ function hklAxisOverlayTraces(res=state.res){
     const qLabel = vAdd(qMid,vScale(outward,labelGap));
     traces.push({
       type:"scatter3d", mode:"text", x:[qLabel[0]], y:[qLabel[1]], z:[qLabel[2]],
-      text:[`${labels[axis]} (r.l.u.)`], textposition:"middle center",
+      text:[`${labels[axis]}${axisUnit}`], textposition:"middle center",
       textfont:{color:colors[axis],size:13}, hoverinfo:"skip", showlegend:false,
       name:`${labels[axis]} label`
     });
@@ -4835,7 +5242,7 @@ function withHklAxisOverlay(traces, res=state.res){
 function plotBoundsWithAxisOverlay(res=state.res){
   const source = plotBounds(res);
   const min = source.min.slice(), max = source.max.slice();
-  if(!useBasisToQ(res)) return {min,max};
+  if(!usePlotBasis(res)) return {min,max};
   for(const trace of hklAxisOverlayTraces(res)){
     if(!trace || !Array.isArray(trace.x) || !Array.isArray(trace.y) || !Array.isArray(trace.z)) continue;
     const n = Math.min(trace.x.length,trace.y.length,trace.z.length);
@@ -4859,7 +5266,7 @@ function sceneLayout(title, camera){
   const labels = renderAxisLabels();
   const span = [0,1,2].map(i => Math.max(1e-12, Math.abs(b.max[i] - b.min[i])));
   const maxSpan = Math.max(span[0], span[1], span[2], 1e-12);
-  const hideCartesianAxes = useBasisToQ(state.res);
+  const hideCartesianAxes = usePlotBasis(state.res);
   const sceneAxis = (i) => hideCartesianAxes ? {
     range:[b.min[i],b.max[i]], autorange:false, visible:false,
     showgrid:false, zeroline:false, showbackground:false, showline:false,
@@ -4987,6 +5394,7 @@ function makePlane3dTrace(sl, stats, levels){
   const plot = plotMeshFromSlice(state.res, sl, stats.values);
   const labels = renderAxisLabels(state.res);
   const nativeLabels = nativeAxisLabels(state.res);
+  const transformedLabels = useBasisToQ(state.res) ? ["Qx","Qy","Qz"] : ["Cartesian X","Cartesian Y","Cartesian Z"];
   const valLabel = valueLabel(state.res);
   if(!plot.i.length){
     if(!plot.x.length) return {trace:null, plot};
@@ -5002,7 +5410,7 @@ function makePlane3dTrace(sl, stats, levels){
         marker:{size:3.2, color:plot.intensity, colorscale:plotlyColorscale(), cmin:levels.min, cmax:levels.max},
         line:{width:3, color:"#dbeafe"},
         hovertemplate:plot.transformed
-          ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
+          ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>${transformedLabels[0]}=%{customdata[3]:.5g}<br>${transformedLabels[1]}=%{customdata[4]:.5g}<br>${transformedLabels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
           : `${labels[0]}=%{customdata[3]:.5g}<br>${labels[1]}=%{customdata[4]:.5g}<br>${labels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
       }
     };
@@ -5021,7 +5429,7 @@ function makePlane3dTrace(sl, stats, levels){
       intensitymode:"vertex",
       customdata:plot.custom,
       hovertemplate:plot.transformed
-        ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
+        ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>${transformedLabels[0]}=%{customdata[3]:.5g}<br>${transformedLabels[1]}=%{customdata[4]:.5g}<br>${transformedLabels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
         : `${labels[0]}=%{customdata[3]:.5g}<br>${labels[1]}=%{customdata[4]:.5g}<br>${labels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`,
       colorscale:plotlyColorscale(),
       cmin:levels.min,
@@ -5121,6 +5529,7 @@ async function renderPlane3d(Plotly){
   const plot = plotMeshFromSlice(state.res, sl, stats.values);
   const labels = renderAxisLabels(state.res);
   const nativeLabels = nativeAxisLabels(state.res);
+  const transformedLabels = useBasisToQ(state.res) ? ["Qx","Qy","Qz"] : ["Cartesian X","Cartesian Y","Cartesian Z"];
   const valLabel = valueLabel(state.res);
   if(!plot.i.length){
     if(plot.x.length){
@@ -5134,7 +5543,7 @@ async function renderPlane3d(Plotly){
         marker:{size:3.2, color:plot.intensity, colorscale:plotlyColorscale(), cmin:levels.min, cmax:levels.max},
         line:{width:3, color:"#dbeafe"},
         hovertemplate:plot.transformed
-          ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
+          ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>${transformedLabels[0]}=%{customdata[3]:.5g}<br>${transformedLabels[1]}=%{customdata[4]:.5g}<br>${transformedLabels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
           : `${labels[0]}=%{customdata[3]:.5g}<br>${labels[1]}=%{customdata[4]:.5g}<br>${labels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
       };
       await Plotly.react("plot3dPlane", withHklAxisOverlay([trace]), sceneLayout(`Slice Points (${sl.type})`, planeCamera || state.cameras.plane), plotlyConfig());
@@ -5162,7 +5571,7 @@ async function renderPlane3d(Plotly){
     intensitymode:"vertex",
     customdata:plot.custom,
     hovertemplate:plot.transformed
-      ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
+      ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>${transformedLabels[0]}=%{customdata[3]:.5g}<br>${transformedLabels[1]}=%{customdata[4]:.5g}<br>${transformedLabels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
       : `${labels[0]}=%{customdata[3]:.5g}<br>${labels[1]}=%{customdata[4]:.5g}<br>${labels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`,
     colorscale:plotlyColorscale(),
     cmin:levels.min,
@@ -5215,6 +5624,7 @@ async function renderIso3d(Plotly){
   let isoMax = sample.max;
   const labels = renderAxisLabels(state.res);
   const nativeLabels = nativeAxisLabels(state.res);
+  const transformedLabels = useBasisToQ(state.res) ? ["Qx","Qy","Qz"] : ["Cartesian X","Cartesian Y","Cartesian Z"];
   const valLabel = valueLabel(state.res);
   if(!(isoMax > isoMin)){
     isoMin = sample.min;
@@ -5229,7 +5639,8 @@ async function renderIso3d(Plotly){
     }
   }
   let trace;
-  if(useBasisToQ(state.res) && isNonOrthBq(state.res.Bq)){
+  const activeBasis = useBasisToQ(state.res) ? state.res.Bq : directPlotBasis(state.res);
+  if(usePlotBasis(state.res) && isNonOrthBq(activeBasis)){
     const keep = [];
     for(let i=0;i<sample.value.length;i++) if(sample.value[i] >= isoMin) keep.push(i);
     const maxPts = 120000, stride = Math.max(1, Math.ceil(keep.length / maxPts)), n = Math.max(0, Math.ceil(keep.length / stride));
@@ -5247,7 +5658,7 @@ async function renderIso3d(Plotly){
       customdata:custom,
       marker:{size:2.2, opacity:0.26, color:val, colorscale:plotlyColorscale(), cmin:colorMin, cmax:colorMax},
       name:"Iso fallback cloud",
-      hovertemplate:`${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{marker.color:.5g}<extra></extra>`
+      hovertemplate:`${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>${transformedLabels[0]}=%{customdata[3]:.5g}<br>${transformedLabels[1]}=%{customdata[4]:.5g}<br>${transformedLabels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{marker.color:.5g}<extra></extra>`
     };
   }else{
     trace = {
@@ -5266,8 +5677,8 @@ async function renderIso3d(Plotly){
       caps:{x:{show:false}, y:{show:false}, z:{show:false}},
       colorscale:plotlyColorscale(),
       name:"Volume isosurface",
-      hovertemplate:useBasisToQ(state.res)
-        ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{value:.5g}<extra></extra>`
+      hovertemplate:usePlotBasis(state.res)
+        ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>${transformedLabels[0]}=%{customdata[3]:.5g}<br>${transformedLabels[1]}=%{customdata[4]:.5g}<br>${transformedLabels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{value:.5g}<extra></extra>`
         : `${labels[0]}=%{x:.5g}<br>${labels[1]}=%{y:.5g}<br>${labels[2]}=%{z:.5g}<br>${valLabel}=%{value:.5g}<extra></extra>`
     };
   }
@@ -5507,6 +5918,7 @@ async function onFile(file){
   await nextFrame();
   state.res = parsed;
   state.sourceBasis = snapshotCellBasis(parsed);
+  state.displayRanges = fullDisplayRanges(parsed);
   state.cameras = {plane:null, iso:null};
   state.lastSlice = null;
   state.lastBar = null;
@@ -5521,6 +5933,7 @@ async function onFile(file){
   $("levelMode").value = "slice";
   populateCellInputs(parsed.cellDeg);
   updateAxisOptionText();
+  updateShownVolumeInputs();
   updateMeta();
   syncControls();
   draw2d();
@@ -5548,6 +5961,21 @@ function bind(){
   $("cellRestore").addEventListener("click", () => {
     try{ restoreFileCell(); }catch(err){ status(`Cell restore failed: ${err.message}`, "err"); }
   });
+  $("viewApply").addEventListener("click", () => {
+    try{ applyShownVolume(); }catch(err){ status(`Shown-volume error: ${err.message}`, "err"); }
+  });
+  $("viewReset").addEventListener("click", () => resetShownVolume(true));
+  for(let axis=0;axis<3;axis++){
+    bindDualVolumeSlider(axis);
+    $("viewMin" + axis).addEventListener("change", () => {
+      syncShownVolumeSlidersFromNumbers(axis);
+      applyShownVolumeSafely();
+    });
+    $("viewMax" + axis).addEventListener("change", () => {
+      syncShownVolumeSlidersFromNumbers(axis);
+      applyShownVolumeSafely();
+    });
+  }
   $("sliceMode").addEventListener("change", () => { syncControls(); draw2d(); scheduleRender3d(); });
   $("axis").addEventListener("change", () => { updateAxisIndexBounds(); draw2d(); scheduleRender3d(); });
   $("idx").addEventListener("input", () => {
@@ -5600,7 +6028,10 @@ function bind(){
     $(id).addEventListener("change", () => { setAvgVolInputs(); draw2d(); scheduleRender3d(); });
   }
   for(const id of ["isoPct","isoCount","voxelCap","showPlane3d","showIso3d"]){
-    $(id).addEventListener("change", () => scheduleRender3d());
+    $(id).addEventListener("change", () => {
+      if(id === "voxelCap") updateShownVolumeInputs();
+      scheduleRender3d();
+    });
   }
   $("auto3d").addEventListener("change", () => { if($("auto3d").value === "1") scheduleRender3d(0); });
   $("render3d").addEventListener("click", () => render3d().catch(err => status(`3D render failed: ${err.message}`, "err")));
