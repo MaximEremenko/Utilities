@@ -146,6 +146,26 @@ input[type=range]{padding:0;border:0;accent-color:var(--brand)}
           <div class="k" id="mIName">Intensity</div><div id="mI">-</div>
           <div class="k">Header</div><div id="mHeader">-</div>
         </div>
+        <details class="toolbox" id="cellTool">
+          <summary>Unit Cell (optional override)</summary>
+          <div class="toolbody">
+            <div class="row3">
+              <label>a (Angstrom)<input id="cellA" type="number" min="0" step="any" placeholder="a"></label>
+              <label>b (Angstrom)<input id="cellB" type="number" min="0" step="any" placeholder="b"></label>
+              <label>c (Angstrom)<input id="cellC" type="number" min="0" step="any" placeholder="c"></label>
+            </div>
+            <div class="row3">
+              <label>alpha (deg)<input id="cellAlpha" type="number" min="0" max="180" step="any" placeholder="90"></label>
+              <label>beta (deg)<input id="cellBeta" type="number" min="0" max="180" step="any" placeholder="90"></label>
+              <label>gamma (deg)<input id="cellGamma" type="number" min="0" max="180" step="any" placeholder="90"></label>
+            </div>
+            <div class="btns">
+              <button id="cellApply" disabled>Apply Cell</button>
+              <button id="cellRestore" class="alt" disabled>Restore File Cell</button>
+            </div>
+            <div class="fine" id="cellInfo">Load reciprocal-space data to inspect or enter its unit cell.</div>
+          </div>
+        </details>
         <div id="status">Waiting for data file.</div>
       </section>
 
@@ -369,10 +389,11 @@ const ORDERED_INDEXED_SAMPLE_BYTES = 32 * 1024 * 1024;
 const ORDERED_INDEXED_TAIL_BYTES = 1024 * 1024;
 const CACHE_DB_NAME = "three_ds_plotter_cache_v1";
 const CACHE_STORE_NAME = "parsed_volumes";
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const $ = (id) => document.getElementById(id);
 const state = {
   res:null,
+  sourceBasis:null,
   plane:null,
   avgvol:null,
   lastSlice:null,
@@ -467,7 +488,7 @@ function openCacheDb(){
 function cacheBaseFromResult(res){
   const keys = [
     "file","header","skipped","rows","filled","format","coordKind","shape",
-    "h","k","l","I","rawMin","rawMax","dataKind","Bq","Bp","basisSource",
+    "h","k","l","I","rawMin","rawMax","dataKind","Bq","Bp","cellDeg","basisSource",
     "gridOrigin","gridVectors","gridVectorSource","axisLabels","h5"
   ];
   const base = {};
@@ -637,11 +658,11 @@ function vec2space(v){
   return {B:inv3(Bp), Bp};
 }
 
-function basisFromCell(cell){
+function basisFromCell(cell, anglesAreDegrees=false){
   if((!Array.isArray(cell) && !ArrayBuffer.isView(cell)) || cell.length < 6) return null;
   const nums = Array.from(cell).slice(0,6).map(Number);
   if(!nums.every(Number.isFinite) || nums[0] <= 0 || nums[1] <= 0 || nums[2] <= 0) return null;
-  const angles = nums.slice(3).map(v => Math.abs(v) > Math.PI * 2 ? v * Math.PI / 180 : v);
+  const angles = nums.slice(3).map(v => anglesAreDegrees || Math.abs(v) > Math.PI * 2 ? v * Math.PI / 180 : v);
   try{
     const direct = cell2vec(nums[0], nums[1], nums[2], angles[0], angles[1], angles[2]);
     const sp = vec2space(direct);
@@ -649,6 +670,14 @@ function basisFromCell(cell){
   }catch(_){
     return null;
   }
+}
+
+function isUnitMetricCell(cell){
+  if((!Array.isArray(cell) && !ArrayBuffer.isView(cell)) || cell.length < 6) return false;
+  const nums = Array.from(cell).slice(0,6).map(Number);
+  if(!nums.every(Number.isFinite)) return false;
+  const anglesDeg = nums.slice(3).map(v => Math.abs(v) > Math.PI * 2 ? v : v * 180 / Math.PI);
+  return nums.slice(0,3).every(v => Math.abs(v - 1) <= 1e-8) && anglesDeg.every(v => Math.abs(v - 90) <= 1e-6);
 }
 
 function parseNumberList(s){
@@ -710,6 +739,7 @@ function activeCoordKind(){
   if(isRealSpaceData(state.res)) return state.res.coordKind || "xyz";
   const mode = $("coordMode") ? $("coordMode").value : "auto";
   if(mode && mode !== "auto") return mode;
+  if(state.res && state.res.coordKind === "hkl" && validMatrix3(state.res.Bq)) return "q";
   return state.res && state.res.coordKind ? state.res.coordKind : "q";
 }
 
@@ -2498,6 +2528,52 @@ function readH5Text(file, candidates){
   return "";
 }
 
+const UNIFIED_DATA_AXES = new Set([
+  "hkl", "Q", "2theta", "dstar", "sin(theta)/lambda", "theta",
+  "xyz", "uvw", "r"
+]);
+
+function unifiedDataContract(h5file, dataGroup, space){
+  const dictionary = readH5Text(h5file, ["entry/data/audit_conform_dict_name"]) ||
+    h5Text(h5AttrValue(h5file, "audit_conform_dict_name")).trim();
+  if(dictionary && dictionary !== "Disorder unified data" && dictionary !== "Disorder scattering"){
+    throw new Error("This HDF5 file is identified as " + dictionary + ", not unified scattering data.");
+  }
+  const reciprocal = String(space || "").trim();
+  const axesType = readH5Text(h5file, ["entry/data/data_type_axes"]) ||
+    h5Text(h5AttrValue(dataGroup, "data_type_axes")).trim() ||
+    (reciprocal === "patterson" ? "uvw" : reciprocal === "direct" ? "xyz" : "hkl");
+  if(!UNIFIED_DATA_AXES.has(axesType)){
+    throw new Error("Unsupported unified data_type_axes " + axesType + ".");
+  }
+  const numberType = readH5Text(h5file, ["entry/data/data_type_number"]) ||
+    h5Text(h5AttrValue(dataGroup, "data_type_number")).trim() || "real";
+  if(numberType !== "real"){
+    throw new Error("Unsupported unified data_type_number " + numberType + "; the slice tool requires real data.");
+  }
+  if(["2theta", "dstar", "sin(theta)/lambda", "theta", "r"].includes(axesType)){
+    throw new Error("Unified data_type_axes " + axesType + " is one-dimensional and cannot describe a 3-D slice volume.");
+  }
+  return {
+    dictionary,
+    legacy: !dictionary || dictionary === "Disorder scattering",
+    axesType,
+    numberType
+  };
+}
+
+function unifiedAxesNames(axesType){
+  if(axesType === "Q") return ["qx", "qy", "qz"];
+  if(axesType === "xyz") return ["x", "y", "z"];
+  if(axesType === "uvw") return ["u", "v", "w"];
+  return ["h", "k", "l"];
+}
+
+function unifiedCoordKind(axesType){
+  if(axesType === "Q") return "q";
+  return axesType;
+}
+
 function parseH5AxesNames(value){
   if(value === null || value === undefined) return [];
   if(Array.isArray(value)) return value.map(h5Text).map(s => s.trim()).filter(Boolean);
@@ -2517,12 +2593,13 @@ function parseH5AxesNames(value){
 function readH5CellBasis(file, prefixes){
   for(const prefix of prefixes){
     const cell = readH5Array(file, [`${prefix}/unit_cell`, `${prefix}/cell`, `${prefix}/unit_cell_parameters`]);
-    const directBasis = basisFromCell(cell);
+    const directBasis = isUnitMetricCell(cell) ? null : basisFromCell(cell);
     if(directBasis) return {...directBasis, basisSource:`${prefix}/unit_cell`};
     const lengths = readH5Array(file, [`${prefix}/unit_cell_lengths`, `${prefix}/cell_lengths`, `${prefix}/lattice_lengths`]);
     const angles = readH5Array(file, [`${prefix}/unit_cell_angles`, `${prefix}/cell_angles`, `${prefix}/lattice_angles`]);
     if(lengths.length >= 3 && angles.length >= 3){
-      const basis = basisFromCell([lengths[0], lengths[1], lengths[2], angles[0], angles[1], angles[2]]);
+      const cell6 = [lengths[0], lengths[1], lengths[2], angles[0], angles[1], angles[2]];
+      const basis = isUnitMetricCell(cell6) ? null : basisFromCell(cell6);
       if(basis) return {...basis, basisSource:`${prefix}/unit_cell_lengths+angles`};
     }
   }
@@ -2531,7 +2608,7 @@ function readH5CellBasis(file, prefixes){
 
 function readDiscusUnitCellBasis(file){
   const cell = readH5Array(file, ["unit_cell"]);
-  const basis = basisFromCell(cell);
+  const basis = isUnitMetricCell(cell) ? null : basisFromCell(cell);
   return basis ? {...basis, basisSource:"unit_cell"} : null;
 }
 
@@ -2708,15 +2785,15 @@ function parseFortranUnifiedH5(h5file, name){
   const vecFlat = readH5Array(h5file, ["entry/data/data_increment_vector"]);
   const vectors = matrix3FromH5(vecFlat, true);
   const space = readH5Text(h5file, ["entry/data/data_type_reciprocal"]);
+  const contract = unifiedDataContract(h5file, h5Lookup(h5file, "entry/data"), space);
   const axesCodes = readH5Array(h5file, ["entry/data/data_axes"]).slice(0, 3).map(v => Math.round(Number(v)));
-  let axesNames = axesCodes.map(v => defaultAxesForH5Space(space)[v - 1] || "");
-  if(!axesNames.some(Boolean)) axesNames = defaultAxesForH5Space(space);
+  const defaultNames = unifiedAxesNames(contract.axesType);
+  let axesNames = axesCodes.map(v => defaultNames[v - 1] || "");
+  if(!axesNames.some(Boolean)) axesNames = defaultNames;
   const content = readH5Text(h5file, ["entry/data/data_type_content"]);
   const radiation = readH5Text(h5file, ["entry/data/data_radiation"]);
   const dataKind = classifyDataKind({content, space, name, format:"RMCProfile/DiffuseCode unified HDF5", shape});
-  const coordKind = dataKind.code === "delta_pdf" || dataKind.code === "direct_space" || dataKind.code === "scattering_density"
-    ? realSpaceCoordKindFromAxes(axesNames)
-    : h5AxisKindFromNames(space, axesNames, name);
+  const coordKind = unifiedCoordKind(contract.axesType);
   const axisLabelsMeta = isRealSpaceData({dataKind, coordKind})
     ? realSpaceAxisLabelsFromNames(axesNames, coordKind)
     : axesNames.some(Boolean) ? axisLabelsFromNames(axesNames, axisLabels(coordKind, {dataKind, coordKind})) : null;
@@ -2743,7 +2820,7 @@ function parseFortranUnifiedH5(h5file, name){
     {...meta, ...gridMeta, dataKind, ...(axisLabelsMeta ? {axisLabels:axisLabelsMeta} : {})}
   );
   result.header = {points:values.length, sections:1, scale:null, offset:null};
-  result.h5 = {space, content, radiation, axes:axesNames};
+  result.h5 = {space, content, radiation, axes:axesNames, axesType:contract.axesType, dictionary:contract.dictionary};
   return result;
 }
 
@@ -2811,8 +2888,9 @@ function parseCommonScatteringH5(h5file, name){
   shape = assertVolumeFits(shape, "DiffuseDevelopers unified HDF5 grid").dims;
   const values = reorderCOrderCube(rawFlat, shape);
   const space = h5Text(h5AttrValue(dataGroup, "space"));
+  const contract = unifiedDataContract(h5file, dataGroup, space);
   let axesNames = parseH5AxesNames(h5AttrValue(dataGroup, "axes"));
-  if(!axesNames.length) axesNames = defaultAxesForH5Space(space);
+  if(!axesNames.length) axesNames = unifiedAxesNames(contract.axesType);
   const content = h5Text(h5AttrValue(dataGroup, "content"));
   const radiation = h5Text(h5AttrValue(dataGroup, "radiation"));
   const dataKind = classifyDataKind({content, space, name, format:"DiffuseDevelopers unified HDF5", shape});
@@ -2828,9 +2906,7 @@ function parseCommonScatteringH5(h5file, name){
     gridVectors:vectors,
     gridVectorSource:"scattering/data/step_vectors"
   } : {};
-  const coordKind = dataKind.code === "delta_pdf" || dataKind.code === "direct_space" || dataKind.code === "scattering_density"
-    ? realSpaceCoordKindFromAxes(axesNames)
-    : h5AxisKindFromNames(space, axesNames, name);
+  const coordKind = unifiedCoordKind(contract.axesType);
   const axisLabelsMeta = axesNames.length
     ? isRealSpaceData({dataKind, coordKind})
       ? realSpaceAxisLabelsFromNames(axesNames, coordKind)
@@ -2851,7 +2927,7 @@ function parseCommonScatteringH5(h5file, name){
     {...meta, ...gridMeta, dataKind, ...(axisLabelsMeta ? {axisLabels:axisLabelsMeta} : {})}
   );
   result.header = {points:values.length, sections:1, scale:null, offset:null};
-  result.h5 = {space, content, radiation, axes:axesNames};
+  result.h5 = {space, content, radiation, axes:axesNames, axesType:contract.axesType, dictionary:contract.dictionary};
   return result;
 }
 
@@ -3172,7 +3248,11 @@ function matVec(m, v){
 
 function gridVector(res, axis){
   if(validMatrix3(res && res.gridVectors)){
-    return [res.gridVectors[0][axis], res.gridVectors[1][axis], res.gridVectors[2][axis]];
+    const v = [res.gridVectors[0][axis], res.gridVectors[1][axis], res.gridVectors[2][axis]];
+    const coordAxis = [res.h,res.k,res.l][axis];
+    const coordStep = coordAxis && coordAxis.length > 1 ? (coordAxis[coordAxis.length-1] - coordAxis[0]) / (coordAxis.length - 1) : 1;
+    if(Number.isFinite(coordStep) && Math.abs(coordStep) > 1e-30) return v.map(x => x / coordStep);
+    return v;
   }
   return [[1,0,0],[0,1,0],[0,0,1]][axis].slice();
 }
@@ -4310,12 +4390,16 @@ function updateSliceValue(sl){
 
 function syncControls(){
   const has = !!state.res;
+  const cellAllowed = has && !isRealSpaceData(state.res) && state.res.coordKind === "hkl";
   const sm = $("sliceMode").value;
   const axisMode = sm === "axis", planeMode = sm === "plane", avgMode = sm === "avgvol";
   for(const id of ["coordMode","sliceMode","scale","colorMap","levelMode","resetLevels","render3d","savePng","saveCsv","savePlaneSvg","saveIsoSvg","savePlaneHtml","saveIsoHtml","isoPct","isoCount","voxelCap","auto3d","showPlane3d","showIso3d"]){
     $(id).disabled = !has;
   }
   if(has && isRealSpaceData(state.res)) $("coordMode").disabled = true;
+  for(const id of CELL_INPUT_IDS) $(id).disabled = !cellAllowed;
+  $("cellApply").disabled = !cellAllowed;
+  $("cellRestore").disabled = !cellAllowed;
   for(const id of ["axis","idx"]){
     $(id).disabled = !has || !axisMode;
   }
@@ -4334,6 +4418,7 @@ function syncControls(){
   if(has && axisMode) updateAxisIndexBounds();
   if(has && planeMode) setPlaneInputs();
   if(has && avgMode) setAvgVolInputs();
+  updateCellInfo();
 }
 
 function updateAxisIndexBounds(){
@@ -4380,9 +4465,85 @@ function updateMeta(){
   $("tbRange").textContent = `${labels[0]} ${fmt(b.min[0],2)}..${fmt(b.max[0],2)} ${labels[1]} ${fmt(b.min[1],2)}..${fmt(b.max[1],2)} ${labels[2]} ${fmt(b.min[2],2)}..${fmt(b.max[2],2)}`;
 }
 
-function scheduleRender3d(delay=180){
+const CELL_INPUT_IDS = ["cellA","cellB","cellC","cellAlpha","cellBeta","cellGamma"];
+
+function copyMatrix3(m){
+  return validMatrix3(m) ? m.map(row => row.slice()) : null;
+}
+
+function snapshotCellBasis(res){
+  if(!res) return {};
+  const out = {};
+  const Bq = copyMatrix3(res.Bq), Bp = copyMatrix3(res.Bp);
+  if(Bq) out.Bq = Bq;
+  if(Bp) out.Bp = Bp;
+  if(Array.isArray(res.cellDeg) && res.cellDeg.length >= 6) out.cellDeg = res.cellDeg.slice(0,6).map(Number);
+  if(res.basisSource) out.basisSource = res.basisSource;
+  return out;
+}
+
+function populateCellInputs(cell){
+  const vals = Array.isArray(cell) && cell.length >= 6 ? cell : ["","","","","",""];
+  for(let i=0;i<CELL_INPUT_IDS.length;i++) $(CELL_INPUT_IDS[i]).value = vals[i] === "" ? "" : fmt(Number(vals[i]), 8);
+}
+
+function updateCellInfo(){
+  const r = state.res;
+  if(!r){
+    $("cellInfo").textContent = "Load reciprocal-space data to inspect or enter its unit cell.";
+    return;
+  }
+  if(Array.isArray(r.cellDeg) && r.cellDeg.length >= 6){
+    const c = r.cellDeg;
+    $("cellInfo").textContent = `Using ${fmt(c[0],6)}, ${fmt(c[1],6)}, ${fmt(c[2],6)} Angstrom; ${fmt(c[3],5)}, ${fmt(c[4],5)}, ${fmt(c[5],5)} deg (${r.basisSource || "cell metadata"}).`;
+  }else if(validMatrix3(r.Bq)){
+    $("cellInfo").textContent = `Using reciprocal basis from ${r.basisSource || "file metadata"}; unit-cell parameters are not available.`;
+  }else{
+    $("cellInfo").textContent = "No reciprocal basis found. Enter a, b, c, alpha, beta, and gamma, then Apply Cell.";
+  }
+}
+
+function refreshAfterBasisChange(message){
+  state.res = finalizeResult(state.res);
+  state.cameras = {plane:null, iso:null};
+  updateAxisOptionText();
+  updateMeta();
+  updateCellInfo();
+  draw2d();
+  status(message, "ok");
+  scheduleRender3d(0, true);
+}
+
+function applyManualCell(){
+  if(!state.res) throw new Error("Load a data file before applying a unit cell.");
+  if(isRealSpaceData(state.res) || state.res.coordKind !== "hkl") throw new Error("A reciprocal unit cell can only be applied to HKL data.");
+  const raw = CELL_INPUT_IDS.map(id => String($(id).value).trim());
+  if(raw.some(v => v === "")) throw new Error("Enter all six unit-cell parameters.");
+  const vals = raw.map(Number);
+  if(!vals.every(Number.isFinite)) throw new Error("Enter all six unit-cell parameters.");
+  if(vals[0] <= 0 || vals[1] <= 0 || vals[2] <= 0) throw new Error("Cell lengths must be positive.");
+  if(vals.slice(3).some(v => !(v > 0 && v < 180))) throw new Error("Cell angles must be between 0 and 180 degrees.");
+  const basis = basisFromCell(vals, true);
+  if(!basis) throw new Error("The supplied unit cell is singular or geometrically invalid.");
+  state.res.Bq = basis.Bq;
+  state.res.Bp = basis.Bp;
+  state.res.cellDeg = basis.cellDeg;
+  state.res.basisSource = "manual unit cell";
+  populateCellInputs(basis.cellDeg);
+  refreshAfterBasisChange("Applied manual unit cell and rebuilt reciprocal Q axes.");
+}
+
+function restoreFileCell(){
   if(!state.res) return;
-  if($("auto3d") && $("auto3d").value !== "1") return;
+  for(const key of ["Bq","Bp","cellDeg","basisSource"]) delete state.res[key];
+  Object.assign(state.res, snapshotCellBasis(state.sourceBasis));
+  populateCellInputs(state.res.cellDeg);
+  refreshAfterBasisChange(validMatrix3(state.res.Bq) ? "Restored unit cell from file metadata." : "Removed manual unit cell; the file contains no reciprocal basis.");
+}
+
+function scheduleRender3d(delay=180, force=false){
+  if(!state.res) return;
+  if(!force && $("auto3d") && $("auto3d").value !== "1") return;
   if(state.moveActive) return;
   if(state.renderTimer) clearTimeout(state.renderTimer);
   state.renderTimer = setTimeout(() => {
@@ -4544,11 +4705,156 @@ function plotlyConfig(){
   return {responsive:true, displaylogo:false};
 }
 
+function hklTickValues(min, max, target=6){
+  const lo = Math.min(min,max), hi = Math.max(min,max), span = hi - lo;
+  if(!Number.isFinite(span) || span <= 0) return [lo];
+  const firstInteger = Math.ceil(lo - 1e-9), lastInteger = Math.floor(hi + 1e-9);
+  if(firstInteger <= lastInteger){
+    const integerCount = lastInteger - firstInteger + 1;
+    const integerStep = Math.max(1, Math.ceil(integerCount / 121));
+    const integers = [];
+    for(let v=firstInteger;v<=lastInteger;v+=integerStep) integers.push(v);
+    if(integers[integers.length-1] !== lastInteger) integers.push(lastInteger);
+    return integers;
+  }
+  const raw = span / Math.max(1, target - 1);
+  const power = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1,2,5,10].map(v => v * power).find(v => v >= raw) || raw;
+  const out = [];
+  for(let v=Math.ceil(lo/step)*step; v<=hi+step*1e-9 && out.length<32; v+=step) out.push(Math.abs(v) < step*1e-12 ? 0 : v);
+  if(!out.length) out.push(lo,hi);
+  return out;
+}
+
+function hklAxisOverlayTraces(res=state.res){
+  if(!res || !useBasisToQ(res)) return [];
+  const ranges = [res.h,res.k,res.l].map(axis => {
+    const a = Number(axis[0]), b = Number(axis[axis.length-1]);
+    return [Math.min(a,b), Math.max(a,b)];
+  });
+  const base = ranges.map(r => r[0]);
+  const corners = [];
+  for(let mask=0;mask<8;mask++){
+    const p = [0,1,2].map(i => ranges[i][(mask >> i) & 1]);
+    corners.push(hklToQ(p[0],p[1],p[2],res.Bq));
+  }
+  const edgePairs = [[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]];
+  const ex=[], ey=[], ez=[];
+  for(const [a,b] of edgePairs){
+    ex.push(corners[a][0],corners[b][0],null);
+    ey.push(corners[a][1],corners[b][1],null);
+    ez.push(corners[a][2],corners[b][2],null);
+  }
+  const traces = [{
+    type:"scatter3d", mode:"lines", x:ex, y:ey, z:ez,
+    line:{color:"rgba(96,125,154,.7)",width:2}, hoverinfo:"skip", showlegend:false,
+    name:"Reciprocal cell edges"
+  }];
+  const labels = nativeAxisLabels(res);
+  const colors = ["#fca5a5","#86efac","#93c5fd"];
+  const qBounds = res.qBounds || qBoundsFromAxes(res);
+  const qCenter = qBounds ? [0,1,2].map(i => 0.5 * (qBounds.min[i] + qBounds.max[i])) : [0,0,0];
+  const diag = qBounds ? Math.max(1e-9, Math.hypot(
+    qBounds.max[0]-qBounds.min[0], qBounds.max[1]-qBounds.min[1], qBounds.max[2]-qBounds.min[2])) : 1;
+  const tickLen = 0.018 * diag, tickGap = 0.042 * diag, labelGap = 0.105 * diag;
+  const vSub = (a,b) => [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+  const vAdd = (a,b) => [a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+  const vScale = (v,s) => [v[0]*s,v[1]*s,v[2]*s];
+  const vNorm = v => Math.hypot(v[0],v[1],v[2]);
+  const vHat = v => { const n=vNorm(v); return n>1e-12 ? vScale(v,1/n) : [0,0,0]; };
+  const vOrth = (v,u) => { const uh=vHat(u), d=dot(v,uh); return vSub(v,vScale(uh,d)); };
+  const basisDirs = [0,1,2].map(i => vHat(hklVecToQ([i===0?1:0,i===1?1:0,i===2?1:0],res.Bq)));
+  for(let axis=0;axis<3;axis++){
+    const start = base.slice(), end = base.slice();
+    start[axis] = ranges[axis][0]; end[axis] = ranges[axis][1];
+    const qs = hklToQ(start[0],start[1],start[2],res.Bq);
+    const qe = hklToQ(end[0],end[1],end[2],res.Bq);
+    const qAlong = vHat(vSub(qe,qs));
+    const partner = basisDirs[(axis+1)%3];
+    let outward = vOrth(partner,qAlong);
+    if(vNorm(outward)<=1e-10) outward = cross(qAlong,[0,0,1]);
+    if(vNorm(outward)<=1e-10) outward = cross(qAlong,[0,1,0]);
+    outward = vScale(vHat(outward),-1);
+    const qMid = vScale(vAdd(qs,qe),0.5);
+    if(dot(vSub(qCenter,qMid),outward)>0) outward = vScale(outward,-1);
+    traces.push({
+      type:"scatter3d", mode:"lines+markers",
+      x:[qs[0],qe[0]], y:[qs[1],qe[1]], z:[qs[2],qe[2]],
+      marker:{size:3,color:colors[axis]},
+      line:{color:colors[axis],width:5}, hoverinfo:"skip", showlegend:false,
+      name:`${labels[axis]} reciprocal axis`
+    });
+    const bx=[], by=[], bz=[], tx=[], ty=[], tz=[], tt=[];
+    for(const tick of hklTickValues(ranges[axis][0],ranges[axis][1])){
+      const p = base.slice(); p[axis] = tick;
+      const q = hklToQ(p[0],p[1],p[2],res.Bq);
+      const qBar = vAdd(q,vScale(outward,tickLen));
+      const qText = vAdd(q,vScale(outward,tickGap));
+      bx.push(q[0],qBar[0],null); by.push(q[1],qBar[1],null); bz.push(q[2],qBar[2],null);
+      tx.push(qText[0]); ty.push(qText[1]); tz.push(qText[2]); tt.push(fmt(tick,3));
+    }
+    traces.push({
+      type:"scatter3d", mode:"lines", x:bx, y:by, z:bz,
+      line:{color:colors[axis],width:2}, hoverinfo:"skip", showlegend:false,
+      name:`${labels[axis]} tick bars`
+    });
+    traces.push({
+      type:"scatter3d", mode:"text", x:tx, y:ty, z:tz, text:tt,
+      textposition:"middle center", textfont:{color:colors[axis],size:11},
+      hoverinfo:"skip", showlegend:false,
+      name:`${labels[axis]} ticks`
+    });
+    const qLabel = vAdd(qMid,vScale(outward,labelGap));
+    traces.push({
+      type:"scatter3d", mode:"text", x:[qLabel[0]], y:[qLabel[1]], z:[qLabel[2]],
+      text:[`${labels[axis]} (r.l.u.)`], textposition:"middle center",
+      textfont:{color:colors[axis],size:13}, hoverinfo:"skip", showlegend:false,
+      name:`${labels[axis]} label`
+    });
+  }
+  return traces;
+}
+
+function withHklAxisOverlay(traces, res=state.res){
+  return [...traces, ...hklAxisOverlayTraces(res)];
+}
+
+function plotBoundsWithAxisOverlay(res=state.res){
+  const source = plotBounds(res);
+  const min = source.min.slice(), max = source.max.slice();
+  if(!useBasisToQ(res)) return {min,max};
+  for(const trace of hklAxisOverlayTraces(res)){
+    if(!trace || !Array.isArray(trace.x) || !Array.isArray(trace.y) || !Array.isArray(trace.z)) continue;
+    const n = Math.min(trace.x.length,trace.y.length,trace.z.length);
+    for(let p=0;p<n;p++){
+      const raw = [trace.x[p],trace.y[p],trace.z[p]];
+      if(raw.some(v => v === null || v === undefined)) continue;
+      const q = raw.map(Number);
+      if(!q.every(Number.isFinite)) continue;
+      for(let i=0;i<3;i++){ if(q[i]<min[i]) min[i]=q[i]; if(q[i]>max[i]) max[i]=q[i]; }
+    }
+  }
+  for(let i=0;i<3;i++){
+    const pad = 0.03 * Math.max(1e-9,max[i]-min[i]);
+    min[i] -= pad; max[i] += pad;
+  }
+  return {min,max};
+}
+
 function sceneLayout(title, camera){
-  const b = plotBounds(state.res);
+  const b = plotBoundsWithAxisOverlay(state.res);
   const labels = renderAxisLabels();
   const span = [0,1,2].map(i => Math.max(1e-12, Math.abs(b.max[i] - b.min[i])));
   const maxSpan = Math.max(span[0], span[1], span[2], 1e-12);
+  const hideCartesianAxes = useBasisToQ(state.res);
+  const sceneAxis = (i) => hideCartesianAxes ? {
+    range:[b.min[i],b.max[i]], autorange:false, visible:false,
+    showgrid:false, zeroline:false, showbackground:false, showline:false,
+    showticklabels:false, ticks:"", title:{text:""}
+  } : {
+    title:labels[i], range:[b.min[i],b.max[i]],
+    gridcolor:"#223047", zerolinecolor:"#52667f", color:"#c8d5e2"
+  };
   return {
     margin:{l:0,r:0,t:30,b:0},
     paper_bgcolor:"#07111f",
@@ -4556,9 +4862,9 @@ function sceneLayout(title, camera){
     title:{text:title, font:{size:13, color:"#c8d5e2"}},
     scene:{
       bgcolor:"#07111f",
-      xaxis:{title:labels[0], range:[b.min[0], b.max[0]], gridcolor:"#223047", zerolinecolor:"#52667f", color:"#c8d5e2"},
-      yaxis:{title:labels[1], range:[b.min[1], b.max[1]], gridcolor:"#223047", zerolinecolor:"#52667f", color:"#c8d5e2"},
-      zaxis:{title:labels[2], range:[b.min[2], b.max[2]], gridcolor:"#223047", zerolinecolor:"#52667f", color:"#c8d5e2"},
+      xaxis:sceneAxis(0),
+      yaxis:sceneAxis(1),
+      zaxis:sceneAxis(2),
       aspectmode:"manual",
       aspectratio:{x:span[0]/maxSpan, y:span[1]/maxSpan, z:span[2]/maxSpan},
       camera:camera || undefined
@@ -4769,7 +5075,7 @@ async function updatePlane3dFast(){
           else await Plotly.restyle(gd, update, [0]);
         }
       }else{
-        await Plotly.react("plot3dPlane", [built.trace], sceneLayout(`Slice Plane (${sl.type})`, keepCamera || liveCamera || state.cameras.plane), plotlyConfig());
+        await Plotly.react("plot3dPlane", withHklAxisOverlay([built.trace]), sceneLayout(`Slice Plane (${sl.type})`, keepCamera || liveCamera || state.cameras.plane), plotlyConfig());
         wireCamera("plot3dPlane", "plane");
       }
       if(keepCamera) state.cameras.plane = cloneCamera(keepCamera);
@@ -4818,7 +5124,7 @@ async function renderPlane3d(Plotly){
           ? `${nativeLabels[0]}=%{customdata[0]:.5g}<br>${nativeLabels[1]}=%{customdata[1]:.5g}<br>${nativeLabels[2]}=%{customdata[2]:.5g}<br>Qx=%{customdata[3]:.5g}<br>Qy=%{customdata[4]:.5g}<br>Qz=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
           : `${labels[0]}=%{customdata[3]:.5g}<br>${labels[1]}=%{customdata[4]:.5g}<br>${labels[2]}=%{customdata[5]:.5g}<br>${valLabel}=%{customdata[6]:.5g}<extra></extra>`
       };
-      await Plotly.react("plot3dPlane", [trace], sceneLayout(`Slice Points (${sl.type})`, planeCamera || state.cameras.plane), plotlyConfig());
+      await Plotly.react("plot3dPlane", withHklAxisOverlay([trace]), sceneLayout(`Slice Points (${sl.type})`, planeCamera || state.cameras.plane), plotlyConfig());
       wireCamera("plot3dPlane", "plane");
       $("empty3dPlane").style.display = "none";
       const sampled = sl.decimated ? `, sampled ${sl.rows}x${sl.cols} from ${sl.fullRows}x${sl.fullCols}` : "";
@@ -4852,7 +5158,7 @@ async function renderPlane3d(Plotly){
     flatshading:false,
     lighting:{ambient:0.9, diffuse:0.35, specular:0.05, roughness:0.9}
   };
-  await Plotly.react("plot3dPlane", [trace], sceneLayout(`Slice Plane (${sl.type})`, planeCamera || state.cameras.plane), plotlyConfig());
+  await Plotly.react("plot3dPlane", withHklAxisOverlay([trace]), sceneLayout(`Slice Plane (${sl.type})`, planeCamera || state.cameras.plane), plotlyConfig());
   wireCamera("plot3dPlane", "plane");
   captureSceneCamera("plot3dPlane", "plane");
   $("empty3dPlane").style.display = "none";
@@ -4952,7 +5258,7 @@ async function renderIso3d(Plotly){
         : `${labels[0]}=%{x:.5g}<br>${labels[1]}=%{y:.5g}<br>${labels[2]}=%{z:.5g}<br>${valLabel}=%{value:.5g}<extra></extra>`
     };
   }
-  await Plotly.react("plot3dIso", [trace], sceneLayout(`Isosurface P${fmt(pct,2)} (${mode})`, isoCamera || state.cameras.iso), plotlyConfig());
+  await Plotly.react("plot3dIso", withHklAxisOverlay([trace]), sceneLayout(`Isosurface P${fmt(pct,2)} (${mode})`, isoCamera || state.cameras.iso), plotlyConfig());
   wireCamera("plot3dIso", "iso");
   captureSceneCamera("plot3dIso", "iso");
   $("empty3dIso").style.display = "none";
@@ -5109,6 +5415,7 @@ async function onFile(file){
   status(`Finalizing ${file.name} ...`);
   await nextFrame();
   state.res = parsed;
+  state.sourceBasis = snapshotCellBasis(parsed);
   state.cameras = {plane:null, iso:null};
   state.lastSlice = null;
   state.lastBar = null;
@@ -5121,6 +5428,7 @@ async function onFile(file){
   $("axis").value = "l";
   $("idx").value = String(Math.floor((parsed.shape[2] - 1) / 2));
   $("levelMode").value = "slice";
+  populateCellInputs(parsed.cellDeg);
   updateAxisOptionText();
   updateMeta();
   syncControls();
@@ -5143,6 +5451,12 @@ function bind(){
   file.addEventListener("change", e => onFile(e.target.files && e.target.files[0]).catch(err => status(`File load failed: ${err.message}`, "err")));
 
   $("coordMode").addEventListener("change", () => { updateAxisOptionText(); updateMeta(); draw2d(); scheduleRender3d(0); });
+  $("cellApply").addEventListener("click", () => {
+    try{ applyManualCell(); }catch(err){ status(`Cell error: ${err.message}`, "err"); }
+  });
+  $("cellRestore").addEventListener("click", () => {
+    try{ restoreFileCell(); }catch(err){ status(`Cell restore failed: ${err.message}`, "err"); }
+  });
   $("sliceMode").addEventListener("change", () => { syncControls(); draw2d(); scheduleRender3d(); });
   $("axis").addEventListener("change", () => { updateAxisIndexBounds(); draw2d(); scheduleRender3d(); });
   $("idx").addEventListener("input", () => {
